@@ -1,0 +1,116 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>桌面图标分区</title>
+  <link rel="stylesheet" href="styles.css">
+</head>
+<body>
+  <div id="app">
+    <div id="header" class="header">
+      <button id="toggle-btn" class="icon-btn" title="折叠">
+        <span id="toggle-icon">▼</span>
+      </button>
+      <span class="title">桌面图标</span>
+      <div class="header-actions">
+        <button id="settings-btn" class="icon-btn" title="设置">⚙️</button>
+        <button id="refresh-btn" class="icon-btn" title="刷新">🔄</button>
+        <button id="quit-btn" class="icon-btn" title="关闭">×</button>
+      </div>
+    </div>
+    
+    <!-- 设置面板 -->
+    <div id="settings-panel" class="settings-panel" style="display: none;">
+      <!-- 主题设置 -->
+      <div class="settings-section">
+        <h3>主题设置</h3>
+        <div class="setting-item">
+          <label for="theme-select">主题模式:</label>
+          <select id="theme-select">
+            <option value="dark">深色主题</option>
+            <option value="light">浅色主题</option>
+            <option value="system">跟随系统</option>
+          </select>
+        </div>
+        <div class="setting-item opacity-control">
+          <label for="opacity-slider">界面透明度:</label>
+          <input type="range" id="opacity-slider" min="50" max="100" step="5" value="92">
+          <span id="opacity-value">92%</span>
+        </div>
+        <div class="setting-description">
+          选择界面主题风格，调整背景透明度。"跟随系统"将自动匹配操作系统的深色/浅色模式。
+        </div>
+      </div>
+      
+      <!-- 图标大小设置 -->
+      <div class="settings-section">
+        <h3>图标大小</h3>
+        <div class="setting-item icon-size-control">
+          <label for="icon-size-slider">图标大小:</label>
+          <input type="range" id="icon-size-slider" min="24" max="96" step="4" value="40">
+          <span id="icon-size-value">40px</span>
+        </div>
+        <div class="setting-description">
+          调整图标显示大小，也可使用 Ctrl + 鼠标滚轮快速调整。
+        </div>
+      </div>
+      
+      <!-- 排序设置 -->
+      <div class="settings-section">
+        <h3>图标排序</h3>
+        <div class="setting-item">
+          <label for="sort-select">排序方式:</label>
+          <select id="sort-select">
+            <option value="name-asc">名称 (A-Z)</option>
+            <option value="name-desc">名称 (Z-A)</option>
+            <option value="type">类型</option>
+            <option value="modified-desc">修改时间 (最新)</option>
+            <option value="modified-asc">修改时间 (最早)</option>
+            <option value="size-desc">大小 (大到小)</option>
+            <option value="size-asc">大小 (小到大)</option>
+          </select>
+        </div>
+        <div class="setting-description">
+          选择桌面图标的排序方式，支持按名称、类型、修改时间和大小排序。
+        </div>
+      </div>
+      
+      <!-- 边缘自动隐藏设置 -->
+      <div class="settings-section">
+        <h3>边缘自动隐藏</h3>
+        <div class="setting-item">
+          <label class="switch">
+            <input type="checkbox" id="auto-hide-toggle">
+            <span class="slider"></span>
+          </label>
+          <span class="setting-label">启用边缘自动隐藏</span>
+        </div>
+        <div class="setting-item">
+          <label for="edge-select">吸附边缘:</label>
+          <select id="edge-select" disabled>
+            <option value="none">未设置</option>
+            <option value="top">顶部</option>
+            <option value="bottom">底部</option>
+            <option value="left">左侧</option>
+            <option value="right">右侧</option>
+          </select>
+        </div>
+        <div class="setting-item">
+          <span class="setting-label">状态:</span>
+          <span id="auto-hide-status" class="status-disabled">未启用</span>
+          <div id="auto-hide-indicator" class="indicator visible" title="窗口可见"></div>
+        </div>
+        <div class="setting-description">
+          启用后，窗口将吸附到指定边缘，鼠标移开时自动隐藏，鼠标移到边缘时自动显示。
+        </div>
+      </div>
+    </div>
+    
+    <div id="content" class="content">
+      <div id="files-list" class="files-list"></div>
+    </div>
+  </div>
+  <script src="renderer.js"></script>
+</body>
+</html>

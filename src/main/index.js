@@ -1,0 +1,749 @@
+const { app, BrowserWindow, ipcMain, shell, nativeTheme } = require('electron');
+const path = require('path');
+const fs = require('fs');
+const os = require('os');
+const { execSync } = require('child_process');
+const Store = require('electron-store');
+const { getFileIcon, getFileIcons, initializeDesktopAPI, getSystemIconEmoji } = require('./desktop-api');
+const { showDesktopContextMenu, showFileContextMenu, cancelDesktopContextMenu, compileExe } = require('./shell-context-menu');
+const { 
+  createMainWindow, 
+  setAutoHideEnabled, 
+  getAutoHideStatus,
+  EDGE_TYPES 
+} = require('./window-manager');
+const { createTray, updateTrayMenu, destroyTray } = require('./tray');
+
+const store = new Store();
+let mainWindow = null;
+let tray = null;
+
+// 获取桌面路径
+function getDesktopPath() {
+  return path.join(process.env.USERPROFILE || '', 'Desktop');
+}
+
+// 获取公共桌面路径
+function getPublicDesktopPath() {
+  try {
+    // 使用 PowerShell 获取公共桌面路径
+    const result = execSync(
+      'powershell -Command "[Environment]::GetFolderPath(\'CommonDesktopDirectory\')"',
+      { timeout: 5000, encoding: 'utf8' }
+    );
+    return result.trim();
+  } catch (e) {
+    // 回退到默认路径
+    return path.join(process.env.ProgramData || 'C:\\ProgramData', 'Desktop');
+  }
+}
+
+// 获取系统图标（此电脑、回收站、网络等）
+function getSystemIcons() {
+  try {
+    const psScript = `[Console]::OutputEncoding = [System.Text.Encoding]::UTF8
+$shell = New-Object -ComObject Shell.Application
+$desktop = $shell.Namespace(0)
+$items = @()
+foreach ($item in $desktop.Items()) {
+  $items += @{
+    Name = $item.Name
+    Path = $item.Path
+    IsFolder = $item.IsFolder
+    IsSystem = $true
+  }
+}
+$items | ConvertTo-Json -Depth 3`;
+    
+    const tempFile = path.join(os.tmpdir(), 'temp-system-icons.ps1');
+    fs.writeFileSync(tempFile, psScript, 'utf8');
+    
+    const result = execSync(
+      `powershell -ExecutionPolicy Bypass -File "${tempFile}"`,
+      { timeout: 10000, encoding: 'utf8', maxBuffer: 1024 * 1024 }
+    );
+    
+    try { fs.unlinkSync(tempFile); } catch (e) { /* 临时文件可能已被清理，忽略 */ }
+    
+    if (!result || result.trim() === 'null') {
+      return [];
+    }
+    
+    const items = JSON.parse(result);
+    console.log('Shell.Application 枚举到', items.length, '个桌面项');
+    
+    // 调试：输出所有项的路径
+    for (const item of items) {
+      console.log('  -', item.Name, ':', item.Path);
+    }
+    
+    const resultItems = [];
+    for (const item of items) {
+      // 只保留 CLSID 虚拟图标（路径以 :: 开头或包含 CLSID），普通文件由 fs.readdirSync 处理
+      const path = item.Path || '';
+      const isClsid = path.startsWith('::') || path.includes('{') || path.match(/^[A-Z]:\\Users\\/i) === null;
+      // 排除普通文件路径（如 C:\Users\xxx\Desktop\xxx）
+      const isVirtual = !path.match(/^[A-Z]:\\Users\\[^\\]+\\Desktop\\/i);
+      
+      if (isVirtual && (path.startsWith('::') || path.includes('::'))) {
+        resultItems.push({
+          name: item.Name,
+          path: path,
+          isDirectory: item.IsFolder || false,
+          size: 0,
+          isSystem: true
+        });
+      }
+    }
+    console.log('筛选出', resultItems.length, '个 CLSID 系统图标');
+    return resultItems;
+  } catch (e) {
+    console.error('获取系统图标失败:', e.message);
+    return [];
+  }
+}
+
+// 获取桌面文件列表
+async function getDesktopFiles() {
+  try {
+    const items = [];
+    const seenPaths = new Set();
+    const CONCURRENCY_LIMIT = 10;
+    
+    // 扫描用户桌面
+    const userDesktopPath = getDesktopPath();
+    if (fs.existsSync(userDesktopPath)) {
+      try {
+        const files = await fs.promises.readdir(userDesktopPath);
+        const filteredFiles = files.filter(file => file !== 'desktop.ini');
+        const userItems = await processFilesWithConcurrency(
+          filteredFiles,
+          userDesktopPath,
+          seenPaths,
+          CONCURRENCY_LIMIT
+        );
+        for (const item of userItems) {
+          items.push(item);
+          seenPaths.add(item.path.toLowerCase());
+        }
+      } catch (e) {
+        console.error('扫描用户桌面失败:', e);
+      }
+    }
+    
+    // 扫描公共桌面
+    const publicDesktopPath = getPublicDesktopPath();
+    if (publicDesktopPath && fs.existsSync(publicDesktopPath)) {
+      try {
+        const files = await fs.promises.readdir(publicDesktopPath);
+        const filteredFiles = files.filter(file => file !== 'desktop.ini');
+        const publicItems = await processFilesWithConcurrency(
+          filteredFiles,
+          publicDesktopPath,
+          seenPaths,
+          CONCURRENCY_LIMIT
+        );
+        for (const item of publicItems) {
+          items.push(item);
+          seenPaths.add(item.path.toLowerCase());
+        }
+      } catch (e) {
+        console.error('扫描公共桌面失败:', e);
+      }
+    }
+    
+    // 获取系统图标（此电脑、回收站等）
+    const systemIcons = getSystemIcons();
+    for (const icon of systemIcons) {
+      // 过滤掉已经在文件列表中存在的项
+      if (!seenPaths.has(icon.path.toLowerCase()) && 
+          !items.some(item => item.name.toLowerCase() === icon.name.toLowerCase())) {
+        items.push(icon);
+      }
+    }
+    
+    return items;
+  } catch (error) {
+    console.error('获取桌面文件失败:', error);
+    return [];
+  }
+}
+
+// 带并发限制的文件处理函数
+async function processFilesWithConcurrency(files, basePath, seenPaths, limit) {
+  const results = [];
+  let index = 0;
+  
+  async function worker() {
+    while (index < files.length) {
+      const file = files[index++];
+      try {
+        const filePath = path.join(basePath, file);
+        if (seenPaths.has(filePath.toLowerCase())) continue;
+        const stats = await fs.promises.stat(filePath);
+        results.push({
+          name: file,
+          path: filePath,
+          isDirectory: stats.isDirectory(),
+          size: stats.size,
+          extension: stats.isDirectory() ? '' : path.extname(file).toLowerCase(),
+          modified: stats.mtime,
+          isSystem: false
+        });
+      } catch (e) {
+        // 跳过无法访问的文件
+      }
+    }
+  }
+  
+  const workers = Array.from({ length: Math.min(limit, files.length) }, () => worker());
+  await Promise.all(workers);
+  return results;
+}
+
+// 隐藏桌面图标
+function hideDesktopIcons() {
+  try {
+    console.log('开始隐藏桌面图标...');
+    
+    const psScript = `Add-Type @"
+using System;
+using System.Runtime.InteropServices;
+public class DesktopHelper {
+    [DllImport("user32.dll", SetLastError = true)]
+    public static extern IntPtr FindWindow(string lpClassName, string lpWindowName);
+    [DllImport("user32.dll", SetLastError = true)]
+    public static extern IntPtr FindWindowEx(IntPtr parentHandle, IntPtr childAfter, string className, string windowTitle);
+    [DllImport("user32.dll")]
+    public static extern bool ShowWindow(IntPtr hWnd, int nCmdShow);
+    public static void Hide() {
+        IntPtr progman = FindWindow("Progman", null);
+        IntPtr shellView = FindWindowEx(progman, IntPtr.Zero, "SHELLDLL_DefView", null);
+        if (shellView != IntPtr.Zero) {
+            ShowWindow(shellView, 0);
+        }
+    }
+}
+"@
+[DesktopHelper]::Hide()`;
+    
+    const tempFile = path.join(os.tmpdir(), 'temp-hide.ps1');
+    fs.writeFileSync(tempFile, psScript, 'utf8');
+    
+    execSync(`powershell -ExecutionPolicy Bypass -File "${tempFile}"`, { 
+      timeout: 10000,
+      encoding: 'utf8'
+    });
+    
+    try { fs.unlinkSync(tempFile); } catch (e) { /* 临时文件可能已被清理，忽略 */ }
+    console.log('桌面图标隐藏成功');
+    return true;
+  } catch (error) {
+    console.error('隐藏桌面图标失败:', error.message);
+    return false;
+  }
+}
+
+// 显示桌面图标
+function showDesktopIcons() {
+  try {
+    console.log('开始显示桌面图标...');
+    
+    const psScript = `Add-Type @"
+using System;
+using System.Runtime.InteropServices;
+public class DesktopHelper {
+    [DllImport("user32.dll", SetLastError = true)]
+    public static extern IntPtr FindWindow(string lpClassName, string lpWindowName);
+    [DllImport("user32.dll", SetLastError = true)]
+    public static extern IntPtr FindWindowEx(IntPtr parentHandle, IntPtr childAfter, string className, string windowTitle);
+    [DllImport("user32.dll")]
+    public static extern bool ShowWindow(IntPtr hWnd, int nCmdShow);
+    [DllImport("user32.dll")]
+    public static extern bool PostMessage(IntPtr hWnd, uint Msg, IntPtr wParam, IntPtr lParam);
+    public static void Show() {
+        IntPtr progman = FindWindow("Progman", null);
+        IntPtr shellView = FindWindowEx(progman, IntPtr.Zero, "SHELLDLL_DefView", null);
+        if (shellView != IntPtr.Zero) {
+            ShowWindow(shellView, 5);
+            PostMessage(progman, 0x0111, new IntPtr(0x7402), IntPtr.Zero);
+        }
+    }
+}
+"@
+[DesktopHelper]::Show()`;
+    
+    const tempFile = path.join(os.tmpdir(), 'temp-show.ps1');
+    fs.writeFileSync(tempFile, psScript, 'utf8');
+    
+    execSync(`powershell -ExecutionPolicy Bypass -File "${tempFile}"`, { 
+      timeout: 10000,
+      encoding: 'utf8'
+    });
+    
+    try { fs.unlinkSync(tempFile); } catch (e) { /* 临时文件可能已被清理，忽略 */ }
+    console.log('桌面图标显示成功');
+    return true;
+  } catch (error) {
+    console.error('显示桌面图标失败:', error.message);
+    return false;
+  }
+}
+
+// 创建主窗口
+function createWindow() {
+  mainWindow = createMainWindow(store);
+  
+  if (mainWindow) {
+    mainWindow.once('ready-to-show', async () => {
+      try {
+        const files = await getDesktopFiles();
+        mainWindow.webContents.send('init-data', {
+          files,
+          isCollapsed: store.get('isCollapsed', false),
+          autoHideEnabled: store.get('autoHideEnabled', false),
+          autoHideEdge: store.get('autoHideEdge', EDGE_TYPES.NONE),
+          sortBy: store.get('sortBy', 'name-asc'),
+          theme: store.get('theme', 'dark'),
+          opacity: store.get('opacity', 92),
+          iconSize: store.get('iconSize', 40)
+        });
+      } catch (error) {
+        console.error('发送初始化数据失败:', error);
+        mainWindow.webContents.send('init-data', {
+          files: [],
+          isCollapsed: store.get('isCollapsed', false),
+          autoHideEnabled: store.get('autoHideEnabled', false),
+          autoHideEdge: store.get('autoHideEdge', EDGE_TYPES.NONE),
+          sortBy: store.get('sortBy', 'name-asc'),
+          theme: store.get('theme', 'dark'),
+          opacity: store.get('opacity', 92),
+          iconSize: store.get('iconSize', 40)
+        });
+      }
+    });
+    
+    mainWindow.on('close', (event) => {
+      if (!app.isQuitting) {
+        event.preventDefault();
+        mainWindow.hide();
+        if (tray) {
+          updateTrayMenu(mainWindow, store);
+        }
+      } else {
+        try {
+          showDesktopIcons();
+        } catch (error) {
+          console.error('关闭时显示桌面图标失败:', error);
+        }
+      }
+    });
+    
+    mainWindow.on('closed', () => {
+      mainWindow = null;
+    });
+    
+    mainWindow.on('show', () => {
+      if (tray) {
+        updateTrayMenu(mainWindow, store);
+      }
+    });
+    
+    mainWindow.on('hide', () => {
+      if (tray) {
+        updateTrayMenu(mainWindow, store);
+      }
+    });
+    
+    mainWindow.on('moved', () => {
+      if (mainWindow) {
+        store.set('windowBounds', mainWindow.getBounds());
+      }
+    });
+    
+    mainWindow.on('resized', () => {
+      if (mainWindow && !mainWindow.isMinimized()) {
+        const bounds = mainWindow.getBounds();
+        if (bounds.height > 50) {
+          store.set('windowBounds', bounds);
+        }
+      }
+    });
+    
+    // F12 / Ctrl+Shift+I 打开开发者工具
+    mainWindow.webContents.on('before-input-event', (event, input) => {
+      if (input.key === 'F12' || (input.control && input.shift && input.key.toLowerCase() === 'i')) {
+        mainWindow.webContents.toggleDevTools();
+        event.preventDefault();
+      }
+    });
+  }
+  
+  return mainWindow;
+}
+
+// IPC 处理
+ipcMain.handle('get-files', async () => {
+  try {
+    return await getDesktopFiles();
+  } catch (error) {
+    console.error('获取文件列表失败:', error);
+    return [];
+  }
+});
+
+ipcMain.handle('toggle-collapse', async (event, collapse) => {
+  if (!mainWindow) return false;
+  
+  const bounds = mainWindow.getBounds();
+  store.set('isCollapsed', collapse);
+  
+  // 取消所有自动隐藏定时器
+  if (mainWindow.autoHideState) {
+    if (mainWindow.autoHideState.hideTimer) {
+      clearTimeout(mainWindow.autoHideState.hideTimer);
+      mainWindow.autoHideState.hideTimer = null;
+    }
+    if (mainWindow.autoHideState.showTimer) {
+      clearTimeout(mainWindow.autoHideState.showTimer);
+      mainWindow.autoHideState.showTimer = null;
+    }
+  }
+  
+  if (collapse) {
+    mainWindow.setBounds({
+      x: bounds.x,
+      y: bounds.y,
+      width: bounds.width,
+      height: 40
+    }, true);
+  } else {
+    const savedHeight = store.get('windowBounds', { height: 600 }).height;
+    mainWindow.setBounds({
+      x: bounds.x,
+      y: bounds.y,
+      width: bounds.width,
+      height: Math.max(savedHeight, 200)
+    }, true);
+    
+    // 展开时重置隐藏状态
+    if (mainWindow.autoHideState) {
+      mainWindow.autoHideState.isHidden = false;
+    }
+  }
+  
+  return true;
+});
+
+ipcMain.handle('quit-app', async () => {
+  // 设置退出标志
+  app.isQuitting = true;
+  // 退出应用，before-quit 事件会处理显示桌面图标的逻辑
+  app.quit();
+});
+
+ipcMain.handle('refresh-files', async () => {
+  try {
+    return await getDesktopFiles();
+  } catch (error) {
+    console.error('刷新文件列表失败:', error);
+    return [];
+  }
+});
+
+ipcMain.handle('open-file', (event, filePath) => {
+  shell.openPath(filePath);
+});
+
+ipcMain.handle('move-window', (event, newX, newY) => {
+  if (mainWindow) {
+    mainWindow.setPosition(Math.round(newX), Math.round(newY));
+  }
+});
+
+ipcMain.handle('get-file-icon', async (event, filePath) => {
+  try {
+    if (filePath && filePath.startsWith('::')) {
+      return getSystemIconEmoji(filePath) || '\u{1F4C1}';
+    }
+    const stats = fs.statSync(filePath);
+    const file = {
+      path: filePath,
+      isDirectory: stats.isDirectory()
+    };
+    const icon = await getFileIcon(file);
+    return icon;
+  } catch (error) {
+    return null;
+  }
+});
+
+// 批量获取文件图标
+ipcMain.handle('get-file-icons', async (event, files) => {
+  try {
+    if (!Array.isArray(files)) {
+      console.error('get-file-icons: 参数必须是数组');
+      return {};
+    }
+    
+    // 确保每个文件对象都有必要属性
+    const validatedFiles = files.map(file => {
+      if (typeof file === 'string') {
+        // 如果是字符串路径，尝试获取文件状态
+        try {
+          const stats = fs.statSync(file);
+          return {
+            path: file,
+            isDirectory: stats.isDirectory()
+          };
+        } catch (error) {
+          // 如果无法获取状态，假设是普通文件
+          return {
+            path: file,
+            isDirectory: false
+          };
+        }
+      }
+      return file;
+    });
+    
+    return await getFileIcons(validatedFiles);
+  } catch (error) {
+    console.error('批量获取图标失败:', error);
+    return {};
+  }
+});
+
+// 清除图标缓存
+ipcMain.handle('clear-icon-cache', async () => {
+  try {
+    const { clearIconCache } = require('./desktop-api');
+    clearIconCache();
+    console.log('图标缓存已清除');
+    return true;
+  } catch (error) {
+    console.error('清除图标缓存失败:', error);
+    return false;
+  }
+});
+
+// 主题功能的IPC处理
+ipcMain.handle('set-theme', async (event, theme) => {
+  try {
+    store.set('theme', theme);
+    return true;
+  } catch (error) {
+    console.error('Error setting theme:', error);
+    return false;
+  }
+});
+
+ipcMain.handle('get-theme', async () => {
+  return store.get('theme', 'dark');
+});
+
+// 透明度功能的IPC处理
+ipcMain.handle('set-opacity', async (event, opacity) => {
+  try {
+    store.set('opacity', opacity);
+    return true;
+  } catch (error) {
+    console.error('Error setting opacity:', error);
+    return false;
+  }
+});
+
+ipcMain.handle('get-opacity', async () => {
+  return store.get('opacity', 92);
+});
+
+// 图标大小功能的IPC处理
+ipcMain.handle('set-icon-size', async (event, size) => {
+  try {
+    store.set('iconSize', size);
+    return true;
+  } catch (error) {
+    console.error('Error setting icon size:', error);
+    return false;
+  }
+});
+
+ipcMain.handle('get-icon-size', async () => {
+  return store.get('iconSize', 40);
+});
+
+// 自动隐藏功能的IPC处理
+ipcMain.handle('set-auto-hide', async (event, enabled) => {
+  if (!mainWindow) return false;
+  const result = setAutoHideEnabled(mainWindow, enabled, store);
+  if (result && tray) {
+    updateTrayMenu(mainWindow, store);
+  }
+  return result;
+});
+
+ipcMain.handle('get-auto-hide-status', async () => {
+  if (!mainWindow) return { enabled: false, edge: EDGE_TYPES.NONE, isHidden: false };
+  return getAutoHideStatus(mainWindow);
+});
+
+ipcMain.handle('set-auto-hide-edge', async (event, edge) => {
+  if (!mainWindow) return false;
+  
+  try {
+    store.set('autoHideEdge', edge);
+    mainWindow.autoHideState.currentEdge = edge;
+    mainWindow.webContents.send('edge-changed', { edge });
+    return true;
+  } catch (error) {
+    console.error('Error setting auto-hide edge:', error);
+    return false;
+  }
+});
+
+ipcMain.handle('set-sort-by', async (event, sortBy) => {
+  try {
+    store.set('sortBy', sortBy);
+    return true;
+  } catch (error) {
+    console.error('Error setting sort by:', error);
+    return false;
+  }
+});
+
+ipcMain.handle('show-desktop-context-menu', async (event, x, y) => {
+  let restoreTimer = null;
+  try {
+    // 临时取消窗口置顶，避免遮挡右键菜单
+    if (mainWindow) {
+      mainWindow.setAlwaysOnTop(false);
+    }
+    
+    // 设置恢复超时（5秒后自动恢复窗口状态）
+    restoreTimer = setTimeout(() => {
+      if (mainWindow && !mainWindow.isDestroyed()) {
+        mainWindow.setAlwaysOnTop(true);
+      }
+    }, 5000);
+    
+    const result = await showDesktopContextMenu(Math.round(x), Math.round(y));
+    
+    // 恢复窗口状态
+    if (restoreTimer) clearTimeout(restoreTimer);
+    if (mainWindow && !mainWindow.isDestroyed()) {
+      mainWindow.setAlwaysOnTop(true);
+    }
+    return result;
+  } catch (error) {
+    console.error('显示桌面右键菜单失败:', error);
+    if (restoreTimer) clearTimeout(restoreTimer);
+    if (mainWindow && !mainWindow.isDestroyed()) {
+      mainWindow.setAlwaysOnTop(true);
+    }
+    return false;
+  }
+});
+
+// 取消桌面右键菜单并恢复窗口
+ipcMain.handle('cancel-desktop-context-menu', async () => {
+  if (mainWindow && !mainWindow.isDestroyed()) {
+    mainWindow.setAlwaysOnTop(true);
+    // 通过服务进程发送 WM_CANCELMODE 给桌面窗口取消菜单
+    try {
+      await cancelDesktopContextMenu();
+    } catch (e) { /* 忽略错误 */ }
+  }
+  return true;
+});
+
+ipcMain.handle('show-file-context-menu', async (event, filePath, x, y) => {
+  let restoreTimer = null;
+  try {
+    // 临时取消窗口置顶，避免遮挡右键菜单
+    if (mainWindow) {
+      mainWindow.setAlwaysOnTop(false);
+    }
+    
+    // 设置恢复超时（5秒后自动恢复窗口状态）
+    restoreTimer = setTimeout(() => {
+      if (mainWindow && !mainWindow.isDestroyed()) {
+        mainWindow.setAlwaysOnTop(true);
+      }
+    }, 5000);
+    
+    const result = await showFileContextMenu(filePath, Math.round(x), Math.round(y));
+    
+    // 恢复窗口状态
+    if (restoreTimer) clearTimeout(restoreTimer);
+    if (mainWindow && !mainWindow.isDestroyed()) {
+      mainWindow.setAlwaysOnTop(true);
+    }
+    return result;
+  } catch (error) {
+    console.error('显示文件右键菜单失败:', error);
+    if (restoreTimer) clearTimeout(restoreTimer);
+    if (mainWindow && !mainWindow.isDestroyed()) {
+      mainWindow.setAlwaysOnTop(true);
+    }
+    return false;
+  }
+});
+
+app.whenReady().then(() => {
+  // 修复透明窗口的 GPU 进程错误
+  app.commandLine.appendSwitch('disable-software-rasterizer');
+  app.commandLine.appendSwitch('disable-gpu-compositing');
+  
+  try {
+    initializeDesktopAPI(app.getPath('userData'));
+  } catch (e) {
+    console.error('初始化桌面API失败:', e.message);
+  }
+  
+  // 预编译右键菜单可执行文件，避免首次右键时的编译延迟
+  try {
+    compileExe();
+    console.log('右键菜单组件预编译完成');
+  } catch (e) {
+    console.warn('右键菜单组件预编译失败，首次使用时将重新编译:', e.message);
+  }
+  
+  // 先隐藏桌面图标，再创建窗口
+  hideDesktopIcons();
+  
+  createWindow();
+  tray = createTray(mainWindow, store);
+  
+  // 监听系统主题变化
+  nativeTheme.on('updated', () => {
+    if (mainWindow && !mainWindow.isDestroyed()) {
+      mainWindow.webContents.send('system-theme-changed', {
+        shouldUseDarkColors: nativeTheme.shouldUseDarkColors
+      });
+    }
+  });
+}).catch((error) => {
+  console.error('App 启动失败:', error);
+});
+
+app.on('window-all-closed', () => {
+  // 不要在所有窗口关闭时退出应用，因为有系统托盘
+});
+
+app.on('before-quit', () => {
+  // 无论是否正常退出，都应该显示桌面图标
+  try {
+    showDesktopIcons();
+  } catch (error) {
+    console.error('退出时显示桌面图标失败:', error);
+  }
+  
+  // 销毁托盘图标
+  destroyTray();
+});
+
+app.on('activate', () => {
+  if (BrowserWindow.getAllWindows().length === 0) {
+    createWindow();
+  }
+});

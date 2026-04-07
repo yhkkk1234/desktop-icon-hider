@@ -1,0 +1,56 @@
+appId: com.desktopiconhider.app
+productName: Desktop Icon Hider
+copyright: Copyright © 2024
+electronVersion: 27.0.0
+
+directories:
+  output: dist
+  buildResources: build
+
+files:
+  - src/**/*
+  - package.json
+  - binding.gyp
+  - !**/node_modules/**/{TEST,test,tests,__tests__}/**
+  - !**/node_modules/**/{README,readme}/**
+  - !**/node_modules/**/{LICENSE,license}/**
+  - !**/node_modules/**/{CONTRIBUTING,contributing}/**
+  - !**/node_modules/**/{CHANGELOG,changelog}/**
+  - !**/node_modules/**/{.github,.git}/**
+
+npmRebuild: true
+buildDependenciesFromSource: true
+
+win:
+  target:
+    - target: nsis
+      arch:
+        - x64
+        - ia32
+    - target: portable
+      arch:
+        - x64
+  icon: build/icon.ico
+  artifactName: ${productName}-${version}-${os}-${arch}.${ext}
+  requestedExecutionLevel: asInvoker
+
+nsis:
+  oneClick: false
+  allowToChangeInstallationDirectory: true
+  allowElevation: true
+  createDesktopShortcut: true
+  createStartMenuShortcut: true
+  shortcutName: Desktop Icon Hider
+  deleteAppDataOnUninstall: false
+  runAfterFinish: true
+
+portable:
+  artifactName: ${productName}-${version}-portable.${ext}
+
+publish:
+  provider: github
+  owner: your-username
+  repo: desktop-icon-hider
+
+afterSign: build/afterSign.js
+afterPack: build/afterPack.js
