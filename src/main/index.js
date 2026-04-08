@@ -617,11 +617,14 @@ ipcMain.handle('show-desktop-context-menu', async (event, x, y) => {
     // 临时取消窗口置顶，避免遮挡右键菜单
     if (mainWindow) {
       mainWindow.setAlwaysOnTop(false);
+      // 设置窗口完全透明，不拦截任何鼠标事件
+      mainWindow.setIgnoreMouseEvents(true, { forward: true });
     }
     
     // 设置恢复超时（5秒后自动恢复窗口状态）
     restoreTimer = setTimeout(() => {
       if (mainWindow && !mainWindow.isDestroyed()) {
+        mainWindow.setIgnoreMouseEvents(false);
         mainWindow.setAlwaysOnTop(true);
       }
     }, 5000);
@@ -631,6 +634,7 @@ ipcMain.handle('show-desktop-context-menu', async (event, x, y) => {
     // 恢复窗口状态
     if (restoreTimer) clearTimeout(restoreTimer);
     if (mainWindow && !mainWindow.isDestroyed()) {
+      mainWindow.setIgnoreMouseEvents(false);
       mainWindow.setAlwaysOnTop(true);
     }
     return result;
@@ -638,6 +642,7 @@ ipcMain.handle('show-desktop-context-menu', async (event, x, y) => {
     console.error('显示桌面右键菜单失败:', error);
     if (restoreTimer) clearTimeout(restoreTimer);
     if (mainWindow && !mainWindow.isDestroyed()) {
+      mainWindow.setIgnoreMouseEvents(false);
       mainWindow.setAlwaysOnTop(true);
     }
     return false;
@@ -647,6 +652,7 @@ ipcMain.handle('show-desktop-context-menu', async (event, x, y) => {
 // 取消桌面右键菜单并恢复窗口
 ipcMain.handle('cancel-desktop-context-menu', async () => {
   if (mainWindow && !mainWindow.isDestroyed()) {
+    mainWindow.setIgnoreMouseEvents(false);
     mainWindow.setAlwaysOnTop(true);
     // 通过服务进程发送 WM_CANCELMODE 给桌面窗口取消菜单
     try {
@@ -662,11 +668,14 @@ ipcMain.handle('show-file-context-menu', async (event, filePath, x, y) => {
     // 临时取消窗口置顶，避免遮挡右键菜单
     if (mainWindow) {
       mainWindow.setAlwaysOnTop(false);
+      // 设置窗口完全透明，不拦截任何鼠标事件
+      mainWindow.setIgnoreMouseEvents(true, { forward: true });
     }
     
     // 设置恢复超时（5秒后自动恢复窗口状态）
     restoreTimer = setTimeout(() => {
       if (mainWindow && !mainWindow.isDestroyed()) {
+        mainWindow.setIgnoreMouseEvents(false);
         mainWindow.setAlwaysOnTop(true);
       }
     }, 5000);
@@ -676,6 +685,7 @@ ipcMain.handle('show-file-context-menu', async (event, filePath, x, y) => {
     // 恢复窗口状态
     if (restoreTimer) clearTimeout(restoreTimer);
     if (mainWindow && !mainWindow.isDestroyed()) {
+      mainWindow.setIgnoreMouseEvents(false);
       mainWindow.setAlwaysOnTop(true);
     }
     return result;
@@ -683,6 +693,7 @@ ipcMain.handle('show-file-context-menu', async (event, filePath, x, y) => {
     console.error('显示文件右键菜单失败:', error);
     if (restoreTimer) clearTimeout(restoreTimer);
     if (mainWindow && !mainWindow.isDestroyed()) {
+      mainWindow.setIgnoreMouseEvents(false);
       mainWindow.setAlwaysOnTop(true);
     }
     return false;

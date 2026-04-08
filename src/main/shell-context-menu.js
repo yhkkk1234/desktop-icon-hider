@@ -183,7 +183,7 @@ class ContextMenuWindow : Form
             DateTime startTime = DateTime.Now;
             bool menuActive = true;
             int menuCheckDelay = 0;
-            const int MAX_WAIT_MINUTES = 5;
+            const int MAX_WAIT_MINUTES = 2;
             const string MENU_CLASS = "#32768";
 
             while (menuActive)
@@ -202,10 +202,10 @@ class ContextMenuWindow : Form
                 }
                 else
                 {
-                    System.Threading.Thread.Sleep(5);
+                    System.Threading.Thread.Sleep(2);
                     menuCheckDelay++;
 
-                    if (menuCheckDelay >= 20)
+                    if (menuCheckDelay >= 10)
                     {
                         menuCheckDelay = 0;
                         IntPtr foregroundWnd = GetForegroundWindow();
@@ -216,7 +216,7 @@ class ContextMenuWindow : Form
                             string clsName = className.ToString();
                             if (clsName != MENU_CLASS)
                             {
-                                System.Threading.Thread.Sleep(50);
+                                System.Threading.Thread.Sleep(20);
                                 IntPtr checkWnd = GetForegroundWindow();
                                 if (checkWnd != IntPtr.Zero)
                                 {
@@ -360,8 +360,7 @@ class ContextMenuWindow : Form
             DateTime waitStart = DateTime.Now;
             IntPtr dialogHwnd = IntPtr.Zero;
 
-            // 等待新窗口出现（最多2秒）
-            while ((DateTime.Now - waitStart).TotalSeconds < 2)
+            while ((DateTime.Now - waitStart).TotalSeconds < 0.5)
             {
                 MSG msg;
                 int hasMsg = PeekMessage(out msg, IntPtr.Zero, 0, 0, 1);
@@ -379,21 +378,19 @@ class ContextMenuWindow : Form
                         StringBuilder className = new StringBuilder(256);
                         GetClassName(dialogHwnd, className, 256);
                         string cls = className.ToString();
-                        // 确认是对话框窗口（#32777 是对话框类）
                         if (cls == "#32777" || cls == "#32768" || !cls.StartsWith("#"))
                         {
                             break;
                         }
                     }
-                    System.Threading.Thread.Sleep(10);
+                    System.Threading.Thread.Sleep(2);
                 }
             }
 
-            // 如果检测到新窗口，等待它关闭（最多60秒）
             if (dialogHwnd != IntPtr.Zero && dialogHwnd != this.Handle && IsWindow(dialogHwnd))
             {
                 DateTime dialogStart = DateTime.Now;
-                while ((DateTime.Now - dialogStart).TotalSeconds < 60 && IsWindow(dialogHwnd))
+                while ((DateTime.Now - dialogStart).TotalSeconds < 30 && IsWindow(dialogHwnd))
                 {
                     MSG msg;
                     int hasMsg = PeekMessage(out msg, IntPtr.Zero, 0, 0, 1);
@@ -405,7 +402,7 @@ class ContextMenuWindow : Form
                     }
                     else
                     {
-                        System.Threading.Thread.Sleep(10);
+                        System.Threading.Thread.Sleep(5);
                     }
                 }
             }

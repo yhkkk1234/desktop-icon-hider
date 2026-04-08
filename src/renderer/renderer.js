@@ -525,12 +525,11 @@ async function handleFileContextMenu(e, filePath) {
   if (item) item.classList.add('context-menu-active');
   
   window.api.cancelDesktopContextMenu();
-  await window.api.showFileContextMenu(filePath, screenX, screenY);
+  window.api.showFileContextMenu(filePath, screenX, screenY).then(() => {
+    if (item) item.classList.remove('context-menu-active');
+    debouncedHandleRefresh(300);
+  });
 
-  if (item) item.classList.remove('context-menu-active');
-  
-  debouncedHandleRefresh(100);
-  
   contextMenuTimeout = setTimeout(() => {
     contextMenuTimeout = null;
   }, 500);
@@ -546,9 +545,9 @@ async function handleDesktopContextMenu(e) {
   const screenY = e.screenY;
   
   window.api.cancelDesktopContextMenu();
-  await window.api.showDesktopContextMenu(screenX, screenY);
-
-  debouncedHandleRefresh(100);
+  window.api.showDesktopContextMenu(screenX, screenY).then(() => {
+    debouncedHandleRefresh(300);
+  });
 
   contextMenuTimeout = setTimeout(() => {
     contextMenuTimeout = null;
