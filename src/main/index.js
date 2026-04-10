@@ -4,7 +4,7 @@ const fs = require('fs');
 const os = require('os');
 const { execSync } = require('child_process');
 const Store = require('electron-store');
-const { getFileIcon, getFileIcons, initializeDesktopAPI, getSystemIconEmoji } = require('./desktop-api');
+const { getFileIcon, getFileIcons, initializeDesktopAPI, getSystemIconEmoji, cleanupIconCache } = require('./desktop-api');
 const { showDesktopContextMenu, showFileContextMenu, cancelDesktopContextMenu, compileExe } = require('./shell-context-menu');
 const { 
   createMainWindow, 
@@ -428,7 +428,9 @@ ipcMain.handle('quit-app', async () => {
 
 ipcMain.handle('refresh-files', async () => {
   try {
-    return await getDesktopFiles();
+    const files = await getDesktopFiles();
+    cleanupIconCache(files.map(f => f.path));
+    return files;
   } catch (error) {
     console.error('刷新文件列表失败:', error);
     return [];

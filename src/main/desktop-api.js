@@ -210,11 +210,24 @@ function clearIconCache() {
   }
 }
 
+function cleanupIconCache(validPaths) {
+  const pathSet = new Set(validPaths);
+  let changed = false;
+  for (const key of iconCache.keys()) {
+    if (!pathSet.has(key)) {
+      iconCache.delete(key);
+      changed = true;
+    }
+  }
+  if (changed) saveIconCache();
+}
+
 module.exports = {
   initializeDesktopAPI,
   getFileIcon,
   getFileIcons,
   extractDirectoryIcon,
   clearIconCache,
+  cleanupIconCache,
   getSystemIconEmoji,
 };

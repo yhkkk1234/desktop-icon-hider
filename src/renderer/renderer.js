@@ -536,6 +536,10 @@ function renderFiles() {
       if (nameDiv && nameDiv.textContent !== file.name) {
         nameDiv.textContent = file.name;
       }
+      const iconDiv = existing.querySelector('.file-icon');
+      if (iconDiv && (!iconDiv.querySelector('img') || iconDiv.dataset.iconFailed === 'true')) {
+        needsIconLoad = true;
+      }
       fragment.appendChild(existing);
     } else {
       const item = document.createElement('div');
@@ -584,7 +588,7 @@ async function handleFileContextMenu(e, filePath) {
   window.api.cancelDesktopContextMenu();
   window.api.showFileContextMenu(filePath, screenX, screenY).then(() => {
     if (item) item.classList.remove('context-menu-active');
-    debouncedHandleRefresh(300);
+    debouncedHandleRefresh(500);
   });
 
   contextMenuTimeout = setTimeout(() => {
@@ -603,7 +607,7 @@ async function handleDesktopContextMenu(e) {
   
   window.api.cancelDesktopContextMenu();
   window.api.showDesktopContextMenu(screenX, screenY).then(() => {
-    debouncedHandleRefresh(300);
+    debouncedHandleRefresh(500);
   });
 
   contextMenuTimeout = setTimeout(() => {
@@ -646,6 +650,9 @@ async function loadIconsAsync() {
         img.alt = 'icon';
         el.innerHTML = '';
         el.appendChild(img);
+        delete el.dataset.iconFailed;
+      } else {
+        el.dataset.iconFailed = 'true';
       }
     }
   } catch (error) {
