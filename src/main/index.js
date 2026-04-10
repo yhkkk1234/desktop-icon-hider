@@ -70,32 +70,22 @@ $items | ConvertTo-Json -Depth 3`;
     }
     
     const items = JSON.parse(result);
-    console.log('Shell.Application 枚举到', items.length, '个桌面项');
-    
-    // 调试：输出所有项的路径
-    for (const item of items) {
-      console.log('  -', item.Name, ':', item.Path);
-    }
     
     const resultItems = [];
     for (const item of items) {
-      // 只保留 CLSID 虚拟图标（路径以 :: 开头或包含 CLSID），普通文件由 fs.readdirSync 处理
-      const path = item.Path || '';
-      const isClsid = path.startsWith('::') || path.includes('{') || path.match(/^[A-Z]:\\Users\\/i) === null;
-      // 排除普通文件路径（如 C:\Users\xxx\Desktop\xxx）
-      const isVirtual = !path.match(/^[A-Z]:\\Users\\[^\\]+\\Desktop\\/i);
+      const itemPath = item.Path || '';
+      const isVirtual = !itemPath.match(/^[A-Z]:\\Users\\[^\\]+\\Desktop\\/i);
       
-      if (isVirtual && (path.startsWith('::') || path.includes('::'))) {
+      if (isVirtual && (itemPath.startsWith('::') || itemPath.includes('::'))) {
         resultItems.push({
           name: item.Name,
-          path: path,
+          path: itemPath,
           isDirectory: item.IsFolder || false,
           size: 0,
           isSystem: true
         });
       }
     }
-    console.log('筛选出', resultItems.length, '个 CLSID 系统图标');
     return resultItems;
   } catch (e) {
     console.error('获取系统图标失败:', e.message);
@@ -204,8 +194,6 @@ async function processFilesWithConcurrency(files, basePath, seenPaths, limit) {
 // 隐藏桌面图标
 function hideDesktopIcons() {
   try {
-    console.log('开始隐藏桌面图标...');
-    
     const psScript = `Add-Type @"
 using System;
 using System.Runtime.InteropServices;
@@ -236,7 +224,6 @@ public class DesktopHelper {
     });
     
     try { fs.unlinkSync(tempFile); } catch (e) { /* 临时文件可能已被清理，忽略 */ }
-    console.log('桌面图标隐藏成功');
     return true;
   } catch (error) {
     console.error('隐藏桌面图标失败:', error.message);
@@ -247,8 +234,6 @@ public class DesktopHelper {
 // 显示桌面图标
 function showDesktopIcons() {
   try {
-    console.log('开始显示桌面图标...');
-    
     const psScript = `Add-Type @"
 using System;
 using System.Runtime.InteropServices;
@@ -282,7 +267,6 @@ public class DesktopHelper {
     });
     
     try { fs.unlinkSync(tempFile); } catch (e) { /* 临时文件可能已被清理，忽略 */ }
-    console.log('桌面图标显示成功');
     return true;
   } catch (error) {
     console.error('显示桌面图标失败:', error.message);
@@ -519,7 +503,6 @@ ipcMain.handle('clear-icon-cache', async () => {
   try {
     const { clearIconCache } = require('./desktop-api');
     clearIconCache();
-    console.log('图标缓存已清除');
     return true;
   } catch (error) {
     console.error('清除图标缓存失败:', error);
@@ -612,49 +595,29 @@ ipcMain.handle('set-sort-by', async (event, sortBy) => {
 });
 
 ipcMain.handle('show-desktop-context-menu', async (event, x, y) => {
-  let restoreTimer = null;
   try {
-    // 临时取消窗口置顶，避免遮挡右键菜单
-    if (mainWindow) {
+    if (mainWindow && !mainWindow.isDestroyed()) {
       mainWindow.setAlwaysOnTop(false);
-      // 设置窗口完全透明，不拦截任何鼠标事件
-      mainWindow.setIgnoreMouseEvents(true, { forward: true });
     }
-    
-    // 设置恢复超时（5秒后自动恢复窗口状态）
-    restoreTimer = setTimeout(() => {
-      if (mainWindow && !mainWindow.isDestroyed()) {
-        mainWindow.setIgnoreMouseEvents(false);
-        mainWindow.setAlwaysOnTop(true);
-      }
-    }, 5000);
     
     const result = await showDesktopContextMenu(Math.round(x), Math.round(y));
     
-    // 恢复窗口状态
-    if (restoreTimer) clearTimeout(restoreTimer);
     if (mainWindow && !mainWindow.isDestroyed()) {
-      mainWindow.setIgnoreMouseEvents(false);
-      mainWindow.setAlwaysOnTop(true);
+      mainWindow.setAlwaysOnTop(true, 'floating');
     }
     return result;
   } catch (error) {
     console.error('显示桌面右键菜单失败:', error);
-    if (restoreTimer) clearTimeout(restoreTimer);
     if (mainWindow && !mainWindow.isDestroyed()) {
-      mainWindow.setIgnoreMouseEvents(false);
-      mainWindow.setAlwaysOnTop(true);
+      mainWindow.setAlwaysOnTop(true, 'floating');
     }
     return false;
   }
 });
 
-// 取消桌面右键菜单并恢复窗口
 ipcMain.handle('cancel-desktop-context-menu', async () => {
   if (mainWindow && !mainWindow.isDestroyed()) {
-    mainWindow.setIgnoreMouseEvents(false);
-    mainWindow.setAlwaysOnTop(true);
-    // 通过服务进程发送 WM_CANCELMODE 给桌面窗口取消菜单
+    mainWindow.setAlwaysOnTop(true, 'floating');
     try {
       await cancelDesktopContextMenu();
     } catch (e) { /* 忽略错误 */ }
@@ -663,38 +626,21 @@ ipcMain.handle('cancel-desktop-context-menu', async () => {
 });
 
 ipcMain.handle('show-file-context-menu', async (event, filePath, x, y) => {
-  let restoreTimer = null;
   try {
-    // 临时取消窗口置顶，避免遮挡右键菜单
-    if (mainWindow) {
+    if (mainWindow && !mainWindow.isDestroyed()) {
       mainWindow.setAlwaysOnTop(false);
-      // 设置窗口完全透明，不拦截任何鼠标事件
-      mainWindow.setIgnoreMouseEvents(true, { forward: true });
     }
-    
-    // 设置恢复超时（5秒后自动恢复窗口状态）
-    restoreTimer = setTimeout(() => {
-      if (mainWindow && !mainWindow.isDestroyed()) {
-        mainWindow.setIgnoreMouseEvents(false);
-        mainWindow.setAlwaysOnTop(true);
-      }
-    }, 5000);
     
     const result = await showFileContextMenu(filePath, Math.round(x), Math.round(y));
     
-    // 恢复窗口状态
-    if (restoreTimer) clearTimeout(restoreTimer);
     if (mainWindow && !mainWindow.isDestroyed()) {
-      mainWindow.setIgnoreMouseEvents(false);
-      mainWindow.setAlwaysOnTop(true);
+      mainWindow.setAlwaysOnTop(true, 'floating');
     }
     return result;
   } catch (error) {
     console.error('显示文件右键菜单失败:', error);
-    if (restoreTimer) clearTimeout(restoreTimer);
     if (mainWindow && !mainWindow.isDestroyed()) {
-      mainWindow.setIgnoreMouseEvents(false);
-      mainWindow.setAlwaysOnTop(true);
+      mainWindow.setAlwaysOnTop(true, 'floating');
     }
     return false;
   }
@@ -714,9 +660,8 @@ app.whenReady().then(() => {
   // 预编译右键菜单可执行文件，避免首次右键时的编译延迟
   try {
     compileExe();
-    console.log('右键菜单组件预编译完成');
   } catch (e) {
-    console.warn('右键菜单组件预编译失败，首次使用时将重新编译:', e.message);
+    console.warn('右键菜单组件预编译失败:', e.message);
   }
   
   // 先隐藏桌面图标，再创建窗口

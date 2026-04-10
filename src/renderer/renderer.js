@@ -177,15 +177,11 @@ async function handleRefresh() {
     const filesChanged = !areFilesEqual(files, newFiles);
     
     if (filesChanged) {
-      // 文件发生变化，更新并重新渲染
       files = newFiles;
       sortFiles();
       renderFiles();
-      console.log('文件发生变化，已重新渲染');
     } else {
-      // 文件未变化，只更新引用，不重新渲染
       files = newFiles;
-      console.log('文件未变化，跳过重新渲染');
     }
   } catch (error) {
     console.error('刷新失败:', error);
@@ -455,59 +451,120 @@ function getFileEmoji(file) {
   return '\u{1F4C4}';
 }
 
-// 渲染文件列表
+let filesListEventsAttached = false;
+function ensureFilesListEvents() {
+  if (filesListEventsAttached || !filesList) return;
+  filesListEventsAttached = true;
+  filesList.addEventListener('click', handleFilesListClick);
+  filesList.addEventListener('dblclick', handleFilesListDblClick);
+  filesList.addEventListener('contextmenu', handleFilesListContextMenu);
+}
+
+function handleFilesListClick(e) {
+  const item = e.target.closest('.file-item');
+  if (!item) return;
+  e.stopPropagation();
+  filesList.querySelectorAll('.file-item.selected').forEach(el => el.classList.remove('selected'));
+  item.classList.add('selected');
+}
+
+function handleFilesListDblClick(e) {
+  const item = e.target.closest('.file-item');
+  if (!item) return;
+  e.preventDefault();
+  e.stopPropagation();
+  const filePath = item.dataset.path;
+  if (filePath) window.api.openFile(filePath);
+}
+
+function handleFilesListContextMenu(e) {
+  const item = e.target.closest('.file-item');
+  if (item) {
+    e.preventDefault();
+    e.stopPropagation();
+    handleFileContextMenu(e, item.dataset.path);
+  } else {
+    e.preventDefault();
+    handleDesktopContextMenu(e);
+  }
+}
+
+let filesMap = new Map();
+function rebuildFilesMap() {
+  filesMap.clear();
+  for (const file of files) {
+    filesMap.set(file.path, file);
+  }
+}
+
 function renderFiles() {
   if (!filesList) return;
-  
+  ensureFilesListEvents();
+
   if (files.length === 0) {
     filesList.innerHTML = '<div class="empty">桌面为空</div>';
     return;
   }
-  
-  // 排序文件
+
   sortFiles();
-  
-  filesList.innerHTML = files.map((file) => `
-    <div class="file-item" data-path="${escapeHtml(file.path)}" data-is-system="${file.isSystem || false}">
-      <div class="file-icon" data-icon-path="${escapeHtml(file.path)}">${getFileEmoji(file)}</div>
-      <div class="file-name">${escapeHtml(file.name)}</div>
-    </div>
-  `).join('');
-  
-  // 异步加载真实图标
-  loadIconsAsync();
-  
-  // 双击打开文件
-  filesList.querySelectorAll('.file-item').forEach(item => {
-    item.addEventListener('dblclick', (e) => {
-      e.preventDefault();
-      e.stopPropagation();
-      const filePath = item.dataset.path;
-      if (filePath) {
-        window.api.openFile(filePath);
+  rebuildFilesMap();
+
+  const existingItems = filesList.querySelectorAll('.file-item');
+  const existingMap = new Map();
+  for (const el of existingItems) {
+    existingMap.set(el.dataset.path, el);
+  }
+
+  const newPaths = new Set(files.map(f => f.path));
+
+  for (const [path, el] of existingMap) {
+    if (!newPaths.has(path)) {
+      el.remove();
+    }
+  }
+
+  const emptyMsg = filesList.querySelector('.empty');
+  if (emptyMsg) emptyMsg.remove();
+
+  const fragment = document.createDocumentFragment();
+  let needsIconLoad = false;
+
+  for (const file of files) {
+    const existing = existingMap.get(file.path);
+    if (existing) {
+      const nameDiv = existing.querySelector('.file-name');
+      if (nameDiv && nameDiv.textContent !== file.name) {
+        nameDiv.textContent = file.name;
       }
-    });
-    
-    item.addEventListener('click', (e) => {
-      e.stopPropagation();
-      filesList.querySelectorAll('.file-item.selected').forEach(el => {
-        el.classList.remove('selected');
-      });
-      item.classList.add('selected');
-    });
-    
-    item.addEventListener('contextmenu', (e) => {
-      e.preventDefault();
-      e.stopPropagation();
-      handleFileContextMenu(e, item.dataset.path);
-    });
-  });
-  
-  filesList.addEventListener('contextmenu', (e) => {
-    if (e.target.closest('.file-item')) return;
-    e.preventDefault();
-    handleDesktopContextMenu(e);
-  });
+      fragment.appendChild(existing);
+    } else {
+      const item = document.createElement('div');
+      item.className = 'file-item';
+      item.dataset.path = file.path;
+      item.dataset.isSystem = file.isSystem || false;
+
+      const iconDiv = document.createElement('div');
+      iconDiv.className = 'file-icon';
+      iconDiv.dataset.iconPath = file.path;
+      iconDiv.textContent = getFileEmoji(file);
+
+      const nameDiv = document.createElement('div');
+      nameDiv.className = 'file-name';
+      nameDiv.textContent = file.name;
+
+      item.appendChild(iconDiv);
+      item.appendChild(nameDiv);
+      fragment.appendChild(item);
+      needsIconLoad = true;
+    }
+  }
+
+  filesList.innerHTML = '';
+  filesList.appendChild(fragment);
+
+  if (needsIconLoad) {
+    loadIconsAsync();
+  }
 }
 
 async function handleFileContextMenu(e, filePath) {
@@ -556,11 +613,9 @@ async function handleDesktopContextMenu(e) {
 
 // 异步加载图标
 async function loadIconsAsync() {
-  console.log(`开始异步加载图标，共有 ${filesList.querySelectorAll('.file-icon[data-icon-path]').length} 个图标元素`);
   const iconElements = filesList.querySelectorAll('.file-icon[data-icon-path]');
   if (iconElements.length === 0) return;
   
-  // 准备文件对象数组用于批量请求
   const fileObjects = [];
   const pathToElementMap = new Map();
   
@@ -568,33 +623,19 @@ async function loadIconsAsync() {
     const filePath = el.dataset.iconPath;
     if (!filePath) continue;
     
-    // 在全局files数组中查找文件信息
-    const fileInfo = files.find(f => f.path === filePath);
-    if (fileInfo) {
-      fileObjects.push({
-        path: filePath,
-        isDirectory: fileInfo.isDirectory
-      });
-    } else {
-      // 如果找不到文件信息，假设是普通文件
-      fileObjects.push({
-        path: filePath,
-        isDirectory: false
-      });
-    }
+    const fileInfo = filesMap.get(filePath);
+    fileObjects.push({
+      path: filePath,
+      isDirectory: fileInfo ? fileInfo.isDirectory : false
+    });
     pathToElementMap.set(filePath, el);
   }
   
   if (fileObjects.length === 0) return;
   
   try {
-    // 批量获取所有图标
     const iconResults = await window.api.getFileIcons(fileObjects);
     
-    let successCount = 0;
-    let emojiCount = 0;
-    
-    // 更新DOM元素
     for (const [filePath, iconData] of Object.entries(iconResults)) {
       const el = pathToElementMap.get(filePath);
       if (!el) continue;
@@ -605,28 +646,9 @@ async function loadIconsAsync() {
         img.alt = 'icon';
         el.innerHTML = '';
         el.appendChild(img);
-        successCount++;
-      } else {
-        // 如果不是图片数据（如emoji），保持原有emoji图标
-        if (iconData && !iconData.startsWith('data:image')) {
-          console.log(`非图片图标数据: ${filePath} -> ${iconData.substring(0, 30)}...`);
-        }
-        emojiCount++;
       }
     }
-    
-    console.log(`图标加载完成: ${successCount} 个真实图标, ${emojiCount} 个emoji图标`);
   } catch (error) {
     console.error('批量加载图标失败:', error);
-    // 失败时保持emoji图标
   }
-}
-
-// HTML 转义
-function escapeHtml(text) {
-  return text
-    .replace(/&/g, '&amp;')
-    .replace(/</g, '&lt;')
-    .replace(/>/g, '&gt;')
-    .replace(/"/g, '&quot;');
 }

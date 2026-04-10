@@ -16,13 +16,9 @@ function createTray(mainWindow, store) {
     try {
       trayIcon = nativeImage.createFromPath(iconPath);
       if (trayIcon.isEmpty()) {
-        console.warn('Tray icon is empty, path:', iconPath);
         trayIcon = nativeImage.createEmpty();
-      } else {
-        console.log('Loaded tray icon from:', iconPath);
       }
     } catch (e) {
-      console.warn('Failed to load tray icon from:', iconPath, e.message);
       trayIcon = nativeImage.createEmpty();
     }
 

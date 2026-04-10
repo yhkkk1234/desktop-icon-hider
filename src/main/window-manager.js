@@ -51,7 +51,7 @@ function createMainWindow(store) {
       y: savedBounds ? savedBounds.y : 0,
       transparent: true,
       frame: false,
-      alwaysOnTop: true,
+      alwaysOnTop: 'floating',
       skipTaskbar: true,
       resizable: true,
       movable: true,

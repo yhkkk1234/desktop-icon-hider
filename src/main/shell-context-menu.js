@@ -84,6 +84,16 @@ interface IContextMenu2 : IContextMenu
     [PreserveSig] int HandleMenuMsg(uint uMsg, IntPtr wParam, IntPtr lParam);
 }
 
+[ComImport, Guid("bcfce0a0-ec17-11d0-8d10-00a0c90f2719"), InterfaceType(ComInterfaceType.InterfaceIsIUnknown)]
+interface IContextMenu3 : IContextMenu2
+{
+    [PreserveSig] new int QueryContextMenu(IntPtr hMenu, uint indexMenu, int idCmdFirst, int idCmdLast, uint uFlags);
+    new void InvokeCommand(IntPtr pici);
+    new void GetCommandString(IntPtr idCmd, uint uType, IntPtr pReserved, StringBuilder pszName, uint cchMax);
+    [PreserveSig] new int HandleMenuMsg(uint uMsg, IntPtr wParam, IntPtr lParam);
+    [PreserveSig] int HandleMenuMsg2(uint uMsg, IntPtr wParam, IntPtr lParam, out IntPtr plResult);
+}
+
 [StructLayout(LayoutKind.Sequential, CharSet = CharSet.Unicode)]
 struct CMINVOKECOMMANDINFO
 {
@@ -117,7 +127,7 @@ struct CMINVOKECOMMANDINFOEX
 
 class ContextMenuWindow : Form
 {
-    private IContextMenu2 _ctxMenu2;
+    private IContextMenu3 _ctxMenu3;
 
     protected override void SetVisibleCore(bool value)
     {
@@ -126,16 +136,22 @@ class ContextMenuWindow : Form
 
     protected override void WndProc(ref Message m)
     {
-        if (_ctxMenu2 != null)
+        if (_ctxMenu3 != null)
         {
             switch (m.Msg)
             {
-                case 0x00B7:
+                case 0x0117:
                 case 0x002C:
+                case 0x002B:
                     try
                     {
-                        _ctxMenu2.HandleMenuMsg((uint)m.Msg, m.WParam, m.LParam);
-                        return;
+                        IntPtr lResult;
+                        int hr = _ctxMenu3.HandleMenuMsg2((uint)m.Msg, m.WParam, m.LParam, out lResult);
+                        if (hr >= 0)
+                        {
+                            m.Result = lResult;
+                            return;
+                        }
                     }
                     catch { }
                     break;
@@ -315,14 +331,14 @@ class ContextMenuWindow : Form
             hr = parentFolder.GetUIObjectOf(this.Handle, 1, ref relativePidl, ref iidCtx, IntPtr.Zero, out ppvCtx);
             if (hr != 0 || ppvCtx == IntPtr.Zero) return -1;
 
-            _ctxMenu2 = Marshal.GetObjectForIUnknown(ppvCtx) as IContextMenu2;
-            if (_ctxMenu2 == null) return -1;
+            _ctxMenu3 = Marshal.GetObjectForIUnknown(ppvCtx) as IContextMenu3;
+            if (_ctxMenu3 == null) return -1;
 
             hMenu = CreatePopupMenu();
             if (hMenu == IntPtr.Zero) return -1;
 
             uint flags = 0x00000004 | 0x00000100 | 0x00000400;
-            int result = _ctxMenu2.QueryContextMenu(hMenu, 0, 1, 0x7FFF, flags);
+            int result = _ctxMenu3.QueryContextMenu(hMenu, 0, 1, 0x7FFF, flags);
             if (result <= 0) return -1;
 
             uint tpmFlags = 0x0100;
@@ -334,7 +350,7 @@ class ContextMenuWindow : Form
 
             if (cmd > 0)
             {
-                InvokeCommand(_ctxMenu2, cmd - 1);
+                InvokeCommand(_ctxMenu3, cmd - 1);
                 WaitForDialogToClose();
             }
             return 0;
@@ -349,7 +365,7 @@ class ContextMenuWindow : Form
             if (fullPidl != IntPtr.Zero) ILFree(fullPidl);
             if (relativePidl != IntPtr.Zero) ILFree(relativePidl);
             if (ppvCtx != IntPtr.Zero) Marshal.Release(ppvCtx);
-            _ctxMenu2 = null;
+            _ctxMenu3 = null;
         }
     }
 
@@ -389,6 +405,7 @@ class ContextMenuWindow : Form
 
             if (dialogHwnd != IntPtr.Zero && dialogHwnd != this.Handle && IsWindow(dialogHwnd))
             {
+                SetForegroundWindow(dialogHwnd);
                 DateTime dialogStart = DateTime.Now;
                 while ((DateTime.Now - dialogStart).TotalSeconds < 30 && IsWindow(dialogHwnd))
                 {
