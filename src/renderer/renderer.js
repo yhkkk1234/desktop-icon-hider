@@ -51,6 +51,8 @@ document.addEventListener('DOMContentLoaded', () => {
   // Ctrl + 滚轮调整图标大小
   document.addEventListener('wheel', handleWheelIconSize, { passive: false });
   
+  document.addEventListener('keydown', handleKeyDown);
+  
   // 内容区域空白处右键弹出桌面菜单
   contentEl.addEventListener('contextmenu', (e) => {
     if (e.target.closest('.file-item')) return;
@@ -486,6 +488,93 @@ function handleFilesListContextMenu(e) {
   } else {
     e.preventDefault();
     handleDesktopContextMenu(e);
+  }
+}
+
+function getSelectedFilePath() {
+  const selected = filesList ? filesList.querySelector('.file-item.selected') : null;
+  return selected ? selected.dataset.path : null;
+}
+
+function handleKeyDown(e) {
+  if (e.key === 'F5') {
+    e.preventDefault();
+    debouncedHandleRefresh(0);
+    return;
+  }
+
+  const selectedPath = getSelectedFilePath();
+  if (!selectedPath) return;
+
+  if (e.key === 'F2') {
+    e.preventDefault();
+    startRename(selectedPath);
+  } else if (e.key === 'Delete') {
+    e.preventDefault();
+    deleteFile(selectedPath, e.shiftKey);
+  }
+}
+
+async function startRename(filePath) {
+  const item = filesList.querySelector(`.file-item[data-path="${CSS.escape(filePath)}"]`);
+  if (!item) return;
+
+  const nameDiv = item.querySelector('.file-name');
+  if (!nameDiv) return;
+
+  const file = filesMap.get(filePath);
+  if (!file) return;
+
+  const currentName = file.name;
+  const input = document.createElement('input');
+  input.type = 'text';
+  input.value = currentName;
+  input.className = 'rename-input';
+
+  const baseName = file.isDirectory ? currentName : currentName.replace(/\.[^.]+$/, '');
+
+  nameDiv.innerHTML = '';
+  nameDiv.appendChild(input);
+  input.focus();
+  input.setSelectionRange(0, baseName.length);
+
+  let committed = false;
+  const commit = async () => {
+    if (committed) return;
+    committed = true;
+    const newName = input.value.trim();
+    if (newName && newName !== currentName) {
+      const result = await window.api.renameFile(filePath, newName);
+      if (result.success) {
+        debouncedHandleRefresh(500);
+      } else {
+        nameDiv.textContent = currentName;
+      }
+    } else {
+      nameDiv.textContent = currentName;
+    }
+  };
+
+  input.addEventListener('blur', commit);
+  input.addEventListener('keydown', (e) => {
+    if (e.key === 'Enter') {
+      e.preventDefault();
+      input.blur();
+    } else if (e.key === 'Escape') {
+      e.preventDefault();
+      committed = true;
+      nameDiv.textContent = currentName;
+    }
+  });
+}
+
+async function deleteFile(filePath, permanent) {
+  const file = filesMap.get(filePath);
+  if (!file) return;
+
+  const result = await window.api.deleteFile(filePath, permanent);
+  if (result.success) {
+    debouncedHandleRefresh(500);
   }
 }
 

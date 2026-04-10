@@ -46,5 +46,8 @@ contextBridge.exposeInMainWorld('api', {
   // 右键菜单 API
   showDesktopContextMenu: (x, y) => ipcRenderer.invoke('show-desktop-context-menu', x, y),
   showFileContextMenu: (filePath, x, y) => ipcRenderer.invoke('show-file-context-menu', filePath, x, y),
-  cancelDesktopContextMenu: () => ipcRenderer.invoke('cancel-desktop-context-menu')
+  cancelDesktopContextMenu: () => ipcRenderer.invoke('cancel-desktop-context-menu'),
+
+  renameFile: (oldPath, newName) => ipcRenderer.invoke('rename-file', oldPath, newName),
+  deleteFile: (filePath, permanent) => ipcRenderer.invoke('delete-file', filePath, permanent)
 });

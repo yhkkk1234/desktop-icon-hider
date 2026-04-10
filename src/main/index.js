@@ -441,6 +441,32 @@ ipcMain.handle('open-file', (event, filePath) => {
   shell.openPath(filePath);
 });
 
+ipcMain.handle('rename-file', async (event, oldPath, newName) => {
+  try {
+    const dir = path.dirname(oldPath);
+    const newPath = path.join(dir, newName);
+    if (oldPath === newPath) return { success: true };
+    if (fs.existsSync(newPath)) return { success: false, error: '文件名已存在' };
+    await fs.promises.rename(oldPath, newPath);
+    return { success: true };
+  } catch (error) {
+    return { success: false, error: error.message };
+  }
+});
+
+ipcMain.handle('delete-file', async (event, filePath, permanent) => {
+  try {
+    if (permanent) {
+      await fs.promises.unlink(filePath);
+    } else {
+      await shell.trashItem(filePath);
+    }
+    return { success: true };
+  } catch (error) {
+    return { success: false, error: error.message };
+  }
+});
+
 ipcMain.handle('move-window', (event, newX, newY) => {
   if (mainWindow) {
     mainWindow.setPosition(Math.round(newX), Math.round(newY));

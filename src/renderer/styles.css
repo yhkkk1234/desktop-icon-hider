@@ -534,6 +534,20 @@ select option {
   pointer-events: none;
 }
 
+.rename-input {
+  width: 100%;
+  font-size: 11px;
+  color: var(--text-primary);
+  background: var(--bg-input);
+  border: 1px solid var(--border-input);
+  border-radius: 2px;
+  padding: 1px 3px;
+  outline: none;
+  text-align: center;
+  word-break: break-all;
+  box-sizing: border-box;
+}
+
 .empty {
   text-align: center;
   color: var(--text-disabled);
