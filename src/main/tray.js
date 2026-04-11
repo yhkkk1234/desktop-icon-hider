@@ -1,7 +1,13 @@
 const { Tray, Menu, app, nativeImage } = require('electron');
 const path = require('path');
+const AutoLaunch = require('electron-auto-launch');
 
 let tray = null;
+
+const autoLauncher = new AutoLaunch({
+  name: 'Desktop Icon Hider',
+  isHidden: true
+});
 
 function createTray(mainWindow, store) {
   try {
@@ -56,6 +62,7 @@ function updateTrayMenu(mainWindow, store) {
 
   const isWindowVisible = mainWindow && mainWindow.isVisible();
   const isAutoHideEnabled = store.get('autoHideEnabled', false);
+  const isAutoLaunchEnabled = store.get('autoLaunch', false);
 
   const menuTemplate = [
     {
@@ -96,14 +103,38 @@ function updateTrayMenu(mainWindow, store) {
       }
     },
     {
+      label: '开机自动启动',
+      type: 'checkbox',
+      checked: isAutoLaunchEnabled,
+      click: async () => {
+        const newState = !isAutoLaunchEnabled;
+        try {
+          if (newState) {
+            await autoLauncher.enable();
+          } else {
+            await autoLauncher.disable();
+          }
+          store.set('autoLaunch', newState);
+          if (mainWindow && !mainWindow.isDestroyed()) {
+            mainWindow.webContents.send('auto-launch-changed', { enabled: newState });
+          }
+        } catch (error) {
+          console.error('设置开机启动失败:', error);
+          store.set('autoLaunch', false);
+          if (mainWindow && !mainWindow.isDestroyed()) {
+            mainWindow.webContents.send('auto-launch-changed', { enabled: false });
+          }
+        }
+        updateTrayMenu(mainWindow, store);
+      }
+    },
+    {
       type: 'separator'
     },
     {
       label: '退出',
       click: () => {
-        // 设置退出标志
         app.isQuitting = true;
-        // 直接退出，before-quit 事件会处理显示桌面图标的逻辑
         app.quit();
       }
     }

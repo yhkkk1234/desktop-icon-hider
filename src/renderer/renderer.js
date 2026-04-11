@@ -5,6 +5,7 @@ let files = [];
 let autoHideEnabled = false;
 let autoHideEdge = 'none';
 let isAutoHidden = false;
+let autoLaunchEnabled = false;
 let contextMenuTimeout = null;
 let sortBy = 'name-asc'; // 默认按名称升序排序
 let theme = 'dark'; // 默认深色主题
@@ -16,6 +17,7 @@ let contentEl, toggleBtn, toggleIcon, refreshBtn, quitBtn, filesList;
 let settingsBtn, settingsPanel, autoHideToggle, edgeSelect, sortSelect, themeSelect;
 let opacitySlider, opacityValue;
 let iconSizeSlider, iconSizeValue;
+let autoLaunchToggle;
 
 // 初始化
 document.addEventListener('DOMContentLoaded', () => {
@@ -35,6 +37,7 @@ document.addEventListener('DOMContentLoaded', () => {
   opacityValue = document.getElementById('opacity-value');
   iconSizeSlider = document.getElementById('icon-size-slider');
   iconSizeValue = document.getElementById('icon-size-value');
+  autoLaunchToggle = document.getElementById('auto-launch-toggle');
   
   // 绑定事件
   toggleBtn.addEventListener('click', handleToggleCollapse);
@@ -47,6 +50,7 @@ document.addEventListener('DOMContentLoaded', () => {
   themeSelect.addEventListener('change', handleThemeChange);
   opacitySlider.addEventListener('input', handleOpacityChange);
   iconSizeSlider.addEventListener('input', handleIconSizeChange);
+  autoLaunchToggle.addEventListener('change', handleAutoLaunchToggle);
   
   // Ctrl + 滚轮调整图标大小
   document.addEventListener('wheel', handleWheelIconSize, { passive: false });
@@ -70,10 +74,12 @@ document.addEventListener('DOMContentLoaded', () => {
     theme = data.theme || 'dark';
     opacity = data.opacity || 92;
     iconSize = data.iconSize || 40;
+    autoLaunchEnabled = data.autoLaunch || false;
     
     renderFiles();
     updateCollapseState();
     updateAutoHideUI();
+    updateAutoLaunchUI();
     updateSortUI();
     applyTheme(theme);
     applyOpacity(opacity);
@@ -94,6 +100,11 @@ document.addEventListener('DOMContentLoaded', () => {
   window.api.onEdgeChanged((data) => {
     autoHideEdge = data.edge;
     edgeSelect.value = autoHideEdge;
+  });
+  
+  window.api.onAutoLaunchChanged((data) => {
+    autoLaunchEnabled = data.enabled;
+    updateAutoLaunchUI();
   });
   
   // 监听系统主题变化
@@ -317,6 +328,29 @@ async function handleAutoHideToggle() {
   } catch (error) {
     console.error('设置自动隐藏失败:', error);
     autoHideToggle.checked = !autoHideEnabled;
+  }
+}
+
+// 开机启动开关
+async function handleAutoLaunchToggle() {
+  const previousState = autoLaunchEnabled;
+  try {
+    autoLaunchEnabled = autoLaunchToggle.checked;
+    const result = await window.api.setAutoLaunch(autoLaunchEnabled);
+    if (!result) {
+      autoLaunchEnabled = previousState;
+      updateAutoLaunchUI();
+    }
+  } catch (error) {
+    console.error('设置开机启动失败:', error);
+    autoLaunchEnabled = previousState;
+    updateAutoLaunchUI();
+  }
+}
+
+function updateAutoLaunchUI() {
+  if (autoLaunchToggle) {
+    autoLaunchToggle.checked = autoLaunchEnabled;
   }
 }
 

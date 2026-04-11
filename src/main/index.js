@@ -13,10 +13,32 @@ const {
   EDGE_TYPES 
 } = require('./window-manager');
 const { createTray, updateTrayMenu, destroyTray } = require('./tray');
+const AutoLaunch = require('electron-auto-launch');
 
-const store = new Store();
+const store = new Store({
+  name: 'desktop-icon-hider',
+  defaults: {
+    windowBounds: null,
+    isCollapsed: false,
+    autoLaunch: false,
+    autoHideEnabled: false,
+    autoHideEdge: 'none',
+    theme: 'dark',
+    language: 'zh-CN',
+    lastPosition: null,
+    windowState: 'normal',
+    sortBy: 'name-asc',
+    opacity: 92,
+    iconSize: 40
+  }
+});
 let mainWindow = null;
 let tray = null;
+
+const autoLauncher = new AutoLaunch({
+  name: 'Desktop Icon Hider',
+  isHidden: true
+});
 
 // 获取桌面路径
 function getDesktopPath() {
@@ -290,7 +312,8 @@ function createWindow() {
           sortBy: store.get('sortBy', 'name-asc'),
           theme: store.get('theme', 'dark'),
           opacity: store.get('opacity', 92),
-          iconSize: store.get('iconSize', 40)
+          iconSize: store.get('iconSize', 40),
+          autoLaunch: store.get('autoLaunch', false)
         });
       } catch (error) {
         console.error('发送初始化数据失败:', error);
@@ -302,7 +325,8 @@ function createWindow() {
           sortBy: store.get('sortBy', 'name-asc'),
           theme: store.get('theme', 'dark'),
           opacity: store.get('opacity', 92),
-          iconSize: store.get('iconSize', 40)
+          iconSize: store.get('iconSize', 40),
+          autoLaunch: store.get('autoLaunch', false)
         });
       }
     });
@@ -618,6 +642,43 @@ ipcMain.handle('set-sort-by', async (event, sortBy) => {
     return true;
   } catch (error) {
     console.error('Error setting sort by:', error);
+    return false;
+  }
+});
+
+ipcMain.handle('get-auto-launch', async () => {
+  try {
+    return await autoLauncher.isEnabled();
+  } catch (error) {
+    console.error('Error getting auto launch status:', error);
+    return false;
+  }
+});
+
+ipcMain.handle('set-auto-launch', async (event, enabled) => {
+  try {
+    if (enabled) {
+      await autoLauncher.enable();
+    } else {
+      await autoLauncher.disable();
+    }
+    store.set('autoLaunch', enabled);
+    if (tray) {
+      updateTrayMenu(mainWindow, store);
+    }
+    if (mainWindow && !mainWindow.isDestroyed()) {
+      mainWindow.webContents.send('auto-launch-changed', { enabled });
+    }
+    return true;
+  } catch (error) {
+    console.error('Error setting auto launch:', error);
+    store.set('autoLaunch', false);
+    if (tray) {
+      updateTrayMenu(mainWindow, store);
+    }
+    if (mainWindow && !mainWindow.isDestroyed()) {
+      mainWindow.webContents.send('auto-launch-changed', { enabled: false });
+    }
     return false;
   }
 });
