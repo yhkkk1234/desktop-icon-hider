@@ -1,0 +1,15 @@
+diff --git a/node_modules/electron-auto-launch/dist/AutoLaunchWindows.js b/node_modules/electron-auto-launch/dist/AutoLaunchWindows.js
+index 98b15c6..a811c37 100644
+--- a/node_modules/electron-auto-launch/dist/AutoLaunchWindows.js
++++ b/node_modules/electron-auto-launch/dist/AutoLaunchWindows.js
+@@ -7,8 +7,8 @@ path = require('path');
+ Winreg = require('winreg');
+ 
+ regKey = new Winreg({
+-  hive: process.arch === 'x64' ? Winreg.HKLM : Winreg.HKCU,
+-  key: process.arch === 'x64' ? '\\Software\\Wow6432Node\\Microsoft\\Windows\\CurrentVersion\\Run' : '\\Software\\Microsoft\\Windows\\CurrentVersion\\Run'
++  hive: Winreg.HKCU,
++  key: '\\Software\\Microsoft\\Windows\\CurrentVersion\\Run'
+ });
+ 
+ module.exports = {
