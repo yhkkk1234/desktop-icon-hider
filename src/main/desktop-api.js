@@ -5,7 +5,12 @@ let iconExtractor = null;
 try {
   iconExtractor = require('../../build/Release/icon_extractor.node');
 } catch (e) {
-  console.warn('Native icon extractor not available, falling back to emoji:', e.message);
+  try {
+    const nativePath = require('path').join(process.resourcesPath, 'app.asar.unpacked', 'build', 'Release', 'icon_extractor.node');
+    iconExtractor = require(nativePath);
+  } catch (e2) {
+    console.warn('Native icon extractor not available, falling back to emoji:', e.message, e2.message);
+  }
 }
 
 const iconCache = new Map();

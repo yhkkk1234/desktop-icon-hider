@@ -43,7 +43,11 @@
     "files": [
       "src/**/*",
       "assets/**/*",
+      "build/Release/*.node",
       "package.json"
+    ],
+    "asarUnpack": [
+      "build/Release/*.node"
     ],
     "win": {
       "target": [

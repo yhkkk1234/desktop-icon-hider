@@ -32,10 +32,17 @@ contextBridge.exposeInMainWorld('api', {
   // 排序功能API
   setSortBy: (sortBy) => ipcRenderer.invoke('set-sort-by', sortBy),
   
+  // 开机启动功能API
+  getAutoLaunch: () => ipcRenderer.invoke('get-auto-launch'),
+  setAutoLaunch: (enabled) => ipcRenderer.invoke('set-auto-launch', enabled),
+  
   // 监听自动隐藏事件
   onAutoHideChanged: (callback) => ipcRenderer.on('auto-hide-changed', (event, data) => callback(data)),
   onAutoHideStatus: (callback) => ipcRenderer.on('auto-hide-status', (event, data) => callback(data)),
   onEdgeChanged: (callback) => ipcRenderer.on('edge-changed', (event, data) => callback(data)),
+  
+  // 监听开机启动变化事件
+  onAutoLaunchChanged: (callback) => ipcRenderer.on('auto-launch-changed', (event, data) => callback(data)),
   
   // 监听系统主题变化事件
   onSystemThemeChanged: (callback) => ipcRenderer.on('system-theme-changed', (event, data) => callback(data)),
