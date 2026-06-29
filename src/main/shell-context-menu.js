@@ -342,9 +342,27 @@ class ContextMenuWindow : Form
             if (result <= 0) return -1;
 
             uint tpmFlags = 0x0100;
+
+            // 用 AttachThreadInput 绕过前台窗口权限限制
+            // 服务进程常驻，SetForegroundWindow 通常被系统拒绝，导致菜单无法获得焦点
+            IntPtr foreHwnd = GetForegroundWindow();
+            uint foreThread = GetWindowThreadProcessId(foreHwnd, IntPtr.Zero);
+            uint currentThread = GetCurrentThreadId();
+            bool attached = false;
+            if (foreThread != currentThread && foreThread != 0)
+            {
+                attached = AttachThreadInput(currentThread, foreThread, true);
+            }
+
             SetForegroundWindow(this.Handle);
             int cmd = (int)(long)TrackPopupMenuEx(hMenu, tpmFlags, x, y, this.Handle, IntPtr.Zero);
             PostMessage(this.Handle, 0x0000, IntPtr.Zero, IntPtr.Zero);
+
+            if (attached)
+            {
+                AttachThreadInput(currentThread, foreThread, false);
+            }
+
             DestroyMenu(hMenu);
             hMenu = IntPtr.Zero;
 
@@ -672,6 +690,15 @@ class ContextMenuWindow : Form
     [DllImport("shell32.dll", CharSet = CharSet.Unicode)]
     static extern IntPtr ShellExecute(IntPtr hwnd, string lpOperation, string lpFile, string lpParameters, string lpDirectory, int nShowCmd);
 
+    [DllImport("user32.dll")]
+    static extern uint GetWindowThreadProcessId(IntPtr hWnd, IntPtr lpdwProcessId);
+
+    [DllImport("kernel32.dll")]
+    static extern uint GetCurrentThreadId();
+
+    [DllImport("user32.dll")]
+    static extern bool AttachThreadInput(uint idAttach, uint idAttachTo, bool fAttach);
+
     private static int GetDpiScale()
     {
         const int LOGPIXELSX = 88;
@@ -715,7 +742,7 @@ function findCscExe() {
 }
 
 // 版本号：当 C# 源码结构变化时递增，确保重新编译
-const SHELL_EXE_VERSION = 'v2';
+const SHELL_EXE_VERSION = 'v3';
 
 function compileExe() {
   const tempDir = os.tmpdir();
