@@ -1,4 +1,4 @@
-const { app, BrowserWindow, ipcMain, shell, nativeTheme } = require('electron');
+const { app, BrowserWindow, ipcMain, shell, nativeTheme, globalShortcut } = require('electron');
 const path = require('path');
 const fs = require('fs');
 const os = require('os');
@@ -29,7 +29,9 @@ const store = new Store({
     windowState: 'normal',
     sortBy: 'name-asc',
     opacity: 92,
-    iconSize: 40
+    iconSize: 40,
+    manualOrder: [],
+    groups: []
   }
 });
 let mainWindow = null;
@@ -313,7 +315,9 @@ function createWindow() {
           theme: store.get('theme', 'dark'),
           opacity: store.get('opacity', 92),
           iconSize: store.get('iconSize', 40),
-          autoLaunch: store.get('autoLaunch', false)
+          autoLaunch: store.get('autoLaunch', false),
+          manualOrder: store.get('manualOrder', []),
+          groups: store.get('groups', [])
         });
       } catch (error) {
         console.error('发送初始化数据失败:', error);
@@ -326,7 +330,9 @@ function createWindow() {
           theme: store.get('theme', 'dark'),
           opacity: store.get('opacity', 92),
           iconSize: store.get('iconSize', 40),
-          autoLaunch: store.get('autoLaunch', false)
+          autoLaunch: store.get('autoLaunch', false),
+          manualOrder: store.get('manualOrder', []),
+          groups: store.get('groups', [])
         });
       }
     });
@@ -654,6 +660,34 @@ ipcMain.handle('set-sort-by', async (event, sortBy) => {
   }
 });
 
+ipcMain.handle('set-manual-order', async (event, order) => {
+  try {
+    if (!Array.isArray(order)) return false;
+    store.set('manualOrder', order);
+    return true;
+  } catch (error) {
+    console.error('Error setting manual order:', error);
+    return false;
+  }
+});
+
+ipcMain.handle('set-groups', async (event, groups) => {
+  try {
+    if (!Array.isArray(groups)) return false;
+    // 简单校验每个分组的结构
+    const sanitized = groups.map(g => ({
+      id: String(g.id || ''),
+      name: String(g.name || '未命名'),
+      paths: Array.isArray(g.paths) ? g.paths.filter(p => typeof p === 'string') : []
+    })).filter(g => g.id);
+    store.set('groups', sanitized);
+    return true;
+  } catch (error) {
+    console.error('Error setting groups:', error);
+    return false;
+  }
+});
+
 ipcMain.handle('get-auto-launch', async () => {
   try {
     return await autoLauncher.isEnabled();
@@ -763,10 +797,13 @@ app.whenReady().then(() => {
   
   // 先隐藏桌面图标，再创建窗口
   hideDesktopIcons();
-  
+
   createWindow();
   tray = createTray(mainWindow, store);
-  
+
+  // 注册全局快捷键: Ctrl+Alt+D 切换窗口显示/隐藏
+  registerGlobalShortcuts();
+
   // 监听系统主题变化
   nativeTheme.on('updated', () => {
     if (mainWindow && !mainWindow.isDestroyed()) {
@@ -790,7 +827,7 @@ app.on('before-quit', () => {
   } catch (error) {
     console.error('退出时显示桌面图标失败:', error);
   }
-  
+
   // 销毁托盘图标
   destroyTray();
 });
@@ -800,3 +837,41 @@ app.on('activate', () => {
     createWindow();
   }
 });
+
+// 退出时注销所有全局快捷键
+app.on('will-quit', () => {
+  globalShortcut.unregisterAll();
+});
+
+// ============ 全局快捷键 ============
+const GLOBAL_SHORTCUTS = {
+  TOGGLE_WINDOW: 'CommandOrControl+Alt+D',
+  REFRESH: 'CommandOrControl+Alt+R'
+};
+
+function registerGlobalShortcuts() {
+  // Ctrl+Alt+D 切换窗口显示/隐藏
+  const reg1 = globalShortcut.register(GLOBAL_SHORTCUTS.TOGGLE_WINDOW, () => {
+    if (!mainWindow || mainWindow.isDestroyed()) return;
+    if (mainWindow.isVisible() && !mainWindow.isMinimized()) {
+      mainWindow.hide();
+    } else {
+      if (mainWindow.isMinimized()) mainWindow.restore();
+      mainWindow.show();
+      mainWindow.focus();
+    }
+  });
+  if (!reg1) {
+    console.warn('全局快捷键注册失败:', GLOBAL_SHORTCUTS.TOGGLE_WINDOW);
+  }
+
+  // Ctrl+Alt+R 刷新文件列表
+  const reg2 = globalShortcut.register(GLOBAL_SHORTCUTS.REFRESH, () => {
+    if (mainWindow && !mainWindow.isDestroyed() && mainWindow.webContents) {
+      mainWindow.webContents.send('refresh-files');
+    }
+  });
+  if (!reg2) {
+    console.warn('全局快捷键注册失败:', GLOBAL_SHORTCUTS.REFRESH);
+  }
+}

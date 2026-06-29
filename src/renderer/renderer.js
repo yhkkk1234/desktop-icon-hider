@@ -11,6 +11,12 @@ let sortBy = 'name-asc'; // 默认按名称升序排序
 let theme = 'dark'; // 默认深色主题
 let opacity = 92; // 默认透明度 92%
 let iconSize = 40; // 默认图标大小 40px
+let searchQuery = ''; // 搜索查询
+let searchVisible = false; // 搜索栏是否可见
+let manualOrder = []; // 手动排序的 path 顺序
+let draggedItem = null; // 正在拖拽的元素
+let groups = []; // 分组列表: [{ id, name, paths: [] }]
+let currentGroupId = null; // 当前选中的分组 ID, null 表示"全部"
 
 // DOM 元素
 let contentEl, toggleBtn, toggleIcon, refreshBtn, quitBtn, filesList;
@@ -18,6 +24,8 @@ let settingsBtn, settingsPanel, autoHideToggle, edgeSelect, sortSelect, themeSel
 let opacitySlider, opacityValue;
 let iconSizeSlider, iconSizeValue;
 let autoLaunchToggle;
+let searchBar, searchInput, searchClear, searchCount;
+let groupsList, addGroupBtn;
 
 // 初始化
 document.addEventListener('DOMContentLoaded', () => {
@@ -38,7 +46,13 @@ document.addEventListener('DOMContentLoaded', () => {
   iconSizeSlider = document.getElementById('icon-size-slider');
   iconSizeValue = document.getElementById('icon-size-value');
   autoLaunchToggle = document.getElementById('auto-launch-toggle');
-  
+  searchBar = document.getElementById('search-bar');
+  searchInput = document.getElementById('search-input');
+  searchClear = document.getElementById('search-clear');
+  searchCount = document.getElementById('search-count');
+  groupsList = document.getElementById('groups-list');
+  addGroupBtn = document.getElementById('add-group-btn');
+
   // 绑定事件
   toggleBtn.addEventListener('click', handleToggleCollapse);
   refreshBtn.addEventListener('click', () => debouncedHandleRefresh(0));
@@ -51,6 +65,13 @@ document.addEventListener('DOMContentLoaded', () => {
   opacitySlider.addEventListener('input', handleOpacityChange);
   iconSizeSlider.addEventListener('input', handleIconSizeChange);
   autoLaunchToggle.addEventListener('change', handleAutoLaunchToggle);
+
+  // 搜索栏事件
+  searchInput.addEventListener('input', handleSearchInput);
+  searchClear.addEventListener('click', clearSearch);
+
+  // 分组栏事件
+  addGroupBtn.addEventListener('click', handleAddGroup);
   
   // Ctrl + 滚轮调整图标大小
   document.addEventListener('wheel', handleWheelIconSize, { passive: false });
@@ -75,7 +96,10 @@ document.addEventListener('DOMContentLoaded', () => {
     opacity = data.opacity || 92;
     iconSize = data.iconSize || 40;
     autoLaunchEnabled = data.autoLaunch || false;
-    
+    manualOrder = Array.isArray(data.manualOrder) ? data.manualOrder : [];
+    groups = Array.isArray(data.groups) ? data.groups : [];
+
+    renderGroups();
     renderFiles();
     updateCollapseState();
     updateAutoHideUI();
@@ -118,6 +142,11 @@ document.addEventListener('DOMContentLoaded', () => {
   window.api.onOpenSettings(() => {
     settingsPanel.style.display = 'block';
     settingsBtn.title = '隐藏设置';
+  });
+
+  // 监听全局快捷键触发的刷新 (Ctrl+Alt+R)
+  window.api.onRefreshFiles(() => {
+    debouncedHandleRefresh(0);
   });
 });
 
@@ -386,19 +415,36 @@ function updateSortUI() {
 // 排序文件列表
 function sortFiles() {
   if (!files || files.length === 0) return;
-  
+
+  // 手动排序模式：使用保存的顺序，未记录的追加到末尾
+  if (sortBy === 'manual') {
+    const orderMap = new Map();
+    manualOrder.forEach((p, i) => orderMap.set(p, i));
+    files.sort((a, b) => {
+      // 系统图标始终排在最前面
+      if (a.isSystem && !b.isSystem) return -1;
+      if (!a.isSystem && b.isSystem) return 1;
+      const ia = orderMap.has(a.path) ? orderMap.get(a.path) : Number.MAX_SAFE_INTEGER;
+      const ib = orderMap.has(b.path) ? orderMap.get(b.path) : Number.MAX_SAFE_INTEGER;
+      if (ia !== ib) return ia - ib;
+      // 未记录的按名称排
+      return a.name.localeCompare(b.name, 'zh-CN', { sensitivity: 'base' });
+    });
+    return;
+  }
+
   files.sort((a, b) => {
     // 系统图标始终排在最前面
     if (a.isSystem && !b.isSystem) return -1;
     if (!a.isSystem && b.isSystem) return 1;
-    
+
     switch (sortBy) {
     case 'name-asc':
       return a.name.localeCompare(b.name, 'zh-CN', { sensitivity: 'base' });
-      
+
     case 'name-desc':
       return b.name.localeCompare(a.name, 'zh-CN', { sensitivity: 'base' });
-      
+
     case 'type': {
       // 文件夹优先，然后按扩展名排序
       if (a.isDirectory && !b.isDirectory) return -1;
@@ -408,19 +454,19 @@ function sortFiles() {
       if (extCompare !== 0) return extCompare;
       return a.name.localeCompare(b.name, 'zh-CN', { sensitivity: 'base' });
     }
-      
+
     case 'modified-desc':
       return new Date(b.modified) - new Date(a.modified);
-      
+
     case 'modified-asc':
       return new Date(a.modified) - new Date(b.modified);
-      
+
     case 'size-desc':
       return (b.size || 0) - (a.size || 0);
-      
+
     case 'size-asc':
       return (a.size || 0) - (b.size || 0);
-      
+
     default:
       return 0;
     }
@@ -531,6 +577,21 @@ function getSelectedFilePath() {
 }
 
 function handleKeyDown(e) {
+  // Ctrl+F 切换搜索栏
+  if ((e.ctrlKey || e.metaKey) && e.key === 'f') {
+    e.preventDefault();
+    toggleSearchBar();
+    return;
+  }
+
+  // 搜索栏可见时 ESC 关闭
+  if (e.key === 'Escape' && searchVisible) {
+    e.preventDefault();
+    clearSearch();
+    hideSearchBar();
+    return;
+  }
+
   if (e.key === 'F5') {
     e.preventDefault();
     debouncedHandleRefresh(0);
@@ -547,6 +608,90 @@ function handleKeyDown(e) {
     e.preventDefault();
     deleteFile(selectedPath, e.shiftKey);
   }
+}
+
+// ============ 搜索功能 ============
+function toggleSearchBar() {
+  if (searchVisible) {
+    // 已显示：聚焦输入框（若已聚焦则关闭）
+    if (document.activeElement === searchInput) {
+      hideSearchBar();
+    } else {
+      searchInput.focus();
+      searchInput.select();
+    }
+  } else {
+    showSearchBar();
+  }
+}
+
+function showSearchBar() {
+  searchVisible = true;
+  searchBar.style.display = 'flex';
+  searchInput.focus();
+  updateSearchCount();
+}
+
+function hideSearchBar() {
+  searchVisible = false;
+  searchBar.style.display = 'none';
+  if (searchQuery) {
+    searchQuery = '';
+    searchInput.value = '';
+    renderFiles();
+  }
+}
+
+function handleSearchInput(e) {
+  searchQuery = e.target.value.trim();
+  renderFiles();
+  updateSearchCount();
+}
+
+function clearSearch() {
+  if (searchInput.value) {
+    searchInput.value = '';
+    searchQuery = '';
+    renderFiles();
+    updateSearchCount();
+    searchInput.focus();
+  }
+}
+
+function updateSearchCount() {
+  if (!searchCount) return;
+  if (!searchQuery) {
+    searchCount.textContent = '';
+    return;
+  }
+  const filtered = getFilteredFiles();
+  searchCount.textContent = `${filtered.length}/${files.length}`;
+}
+
+function getFilteredFiles() {
+  let result = files;
+
+  // 先按分组过滤
+  if (currentGroupId !== null) {
+    const group = groups.find(g => g.id === currentGroupId);
+    if (group) {
+      const pathSet = new Set(group.paths || []);
+      // 系统图标始终显示
+      result = result.filter(f => f.isSystem || pathSet.has(f.path));
+    }
+  }
+
+  // 再按搜索过滤
+  if (searchQuery) {
+    const q = searchQuery.toLowerCase();
+    result = result.filter(f => {
+      if (f.name && f.name.toLowerCase().includes(q)) return true;
+      if (f.extension && ('.' + f.extension.toLowerCase()).includes(q)) return true;
+      return false;
+    });
+  }
+
+  return result;
 }
 
 async function startRename(filePath) {
@@ -635,13 +780,21 @@ function renderFiles() {
   sortFiles();
   rebuildFilesMap();
 
+  // 应用搜索过滤
+  const visibleFiles = getFilteredFiles();
+
+  if (visibleFiles.length === 0 && searchQuery) {
+    filesList.innerHTML = `<div class="empty">未找到匹配 "${escapeHtml(searchQuery)}" 的文件</div>`;
+    return;
+  }
+
   const existingItems = filesList.querySelectorAll('.file-item');
   const existingMap = new Map();
   for (const el of existingItems) {
     existingMap.set(el.dataset.path, el);
   }
 
-  const newPaths = new Set(files.map(f => f.path));
+  const newPaths = new Set(visibleFiles.map(f => f.path));
 
   for (const [path, el] of existingMap) {
     if (!newPaths.has(path)) {
@@ -655,7 +808,7 @@ function renderFiles() {
   const fragment = document.createDocumentFragment();
   let needsIconLoad = false;
 
-  for (const file of files) {
+  for (const file of visibleFiles) {
     const existing = existingMap.get(file.path);
     if (existing) {
       const nameDiv = existing.querySelector('.file-name');
@@ -666,6 +819,8 @@ function renderFiles() {
       if (iconDiv && (!iconDiv.querySelector('img') || iconDiv.dataset.iconFailed === 'true')) {
         needsIconLoad = true;
       }
+      // 更新拖拽属性
+      updateDraggable(existing, file);
       fragment.appendChild(existing);
     } else {
       const item = document.createElement('div');
@@ -684,6 +839,7 @@ function renderFiles() {
 
       item.appendChild(iconDiv);
       item.appendChild(nameDiv);
+      updateDraggable(item, file);
       fragment.appendChild(item);
       needsIconLoad = true;
     }
@@ -695,6 +851,242 @@ function renderFiles() {
   if (needsIconLoad) {
     loadIconsAsync();
   }
+}
+
+// ============ 拖拽排序 ============
+function updateDraggable(item, file) {
+  // 手动排序模式下可拖拽排序；存在分组时可拖到分组
+  const canDrag = !file.isSystem && (sortBy === 'manual' || groups.length > 0);
+  if (canDrag) {
+    item.draggable = true;
+    item.classList.add('draggable');
+    if (!item.dataset.dragBound) {
+      item.dataset.dragBound = 'true';
+      item.addEventListener('dragstart', handleDragStart);
+      item.addEventListener('dragend', handleDragEnd);
+      item.addEventListener('dragover', handleDragOver);
+      item.addEventListener('dragenter', handleDragEnter);
+      item.addEventListener('dragleave', handleDragLeave);
+      item.addEventListener('drop', handleDrop);
+    }
+  } else {
+    item.draggable = false;
+    item.classList.remove('draggable');
+  }
+}
+
+function handleDragStart(e) {
+  draggedItem = e.currentTarget;
+  draggedItem.classList.add('dragging');
+  e.dataTransfer.effectAllowed = 'move';
+  // 必须设置 data 才能在某些浏览器触发 drop
+  try { e.dataTransfer.setData('text/plain', draggedItem.dataset.path); } catch (_err) { /* 某些环境不支持，忽略 */ }
+}
+
+function handleDragEnd() {
+  if (draggedItem) draggedItem.classList.remove('dragging');
+  // 清理所有 drag-over 标记
+  document.querySelectorAll('.file-item.drag-over').forEach(el => el.classList.remove('drag-over'));
+  draggedItem = null;
+}
+
+function handleDragOver(e) {
+  if (!draggedItem) return;
+  e.preventDefault();
+  e.dataTransfer.dropEffect = 'move';
+}
+
+function handleDragEnter(e) {
+  if (!draggedItem) return;
+  const item = e.currentTarget;
+  if (item === draggedItem) return;
+  item.classList.add('drag-over');
+}
+
+function handleDragLeave(e) {
+  const item = e.currentTarget;
+  item.classList.remove('drag-over');
+}
+
+function handleDrop(e) {
+  e.preventDefault();
+  e.stopPropagation();
+  const targetItem = e.currentTarget;
+  if (!draggedItem || targetItem === draggedItem) return;
+  targetItem.classList.remove('drag-over');
+
+  // 仅在手动排序模式下重新排序 DOM
+  if (sortBy === 'manual') {
+    const parent = targetItem.parentNode;
+    const children = Array.from(parent.children);
+    const draggedIndex = children.indexOf(draggedItem);
+    const targetIndex = children.indexOf(targetItem);
+
+    if (draggedIndex < targetIndex) {
+      parent.insertBefore(draggedItem, targetItem.nextSibling);
+    } else {
+      parent.insertBefore(draggedItem, targetItem);
+    }
+
+    // 保存新的手动顺序
+    saveManualOrder();
+  }
+}
+
+function saveManualOrder() {
+  // 仅保存非系统图标的顺序
+  const items = filesList.querySelectorAll('.file-item:not([data-is-system="true"])');
+  manualOrder = Array.from(items).map(el => el.dataset.path);
+  if (window.api && window.api.setManualOrder) {
+    window.api.setManualOrder(manualOrder);
+  }
+}
+
+// HTML 转义，防止搜索关键词注入
+function escapeHtml(str) {
+  // 使用单字符 key 避开引号冲突
+  const map = { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' };
+  const quoteKey = String.fromCharCode(39); // 单引号
+  map[quoteKey] = '&#39;';
+  return String(str).replace(/[&<>"']/g, c => map[c]);
+}
+
+// ============ 分组管理 ============
+function renderGroups() {
+  if (!groupsList) return;
+  groupsList.innerHTML = '';
+
+  // "全部" 选项
+  const allTab = document.createElement('div');
+  allTab.className = 'group-tab' + (currentGroupId === null ? ' active' : '');
+  allTab.dataset.groupId = '';
+  allTab.innerHTML = '<span class="group-name">全部</span>';
+  allTab.addEventListener('click', () => switchGroup(null));
+  groupsList.appendChild(allTab);
+
+  for (const group of groups) {
+    const tab = document.createElement('div');
+    tab.className = 'group-tab' + (currentGroupId === group.id ? ' active' : '');
+    tab.dataset.groupId = group.id;
+    const count = (group.paths || []).length;
+    tab.innerHTML = `
+      <span class="group-name">${escapeHtml(group.name)}</span>
+      <span class="group-count">(${count})</span>
+      <button class="group-delete" title="删除分组">×</button>
+    `;
+
+    tab.addEventListener('click', (e) => {
+      if (e.target.closest('.group-delete')) return;
+      switchGroup(group.id);
+    });
+
+    // 删除按钮
+    tab.querySelector('.group-delete').addEventListener('click', (e) => {
+      e.stopPropagation();
+      handleDeleteGroup(group.id);
+    });
+
+    // 拖拽到分组时加入
+    tab.addEventListener('dragover', (e) => {
+      if (!draggedItem) return;
+      e.preventDefault();
+      tab.classList.add('drop-target');
+    });
+    tab.addEventListener('dragleave', () => {
+      tab.classList.remove('drop-target');
+    });
+    tab.addEventListener('drop', (e) => {
+      e.preventDefault();
+      tab.classList.remove('drop-target');
+      if (!draggedItem) return;
+      const path = draggedItem.dataset.path;
+      addPathToGroup(group.id, path);
+    });
+
+    // 双击重命名
+    tab.addEventListener('dblclick', (e) => {
+      if (e.target.closest('.group-delete')) return;
+      handleRenameGroup(group.id);
+    });
+
+    groupsList.appendChild(tab);
+  }
+}
+
+function switchGroup(groupId) {
+  currentGroupId = groupId;
+  renderGroups();
+  renderFiles();
+}
+
+function handleAddGroup() {
+  // 用简易输入框代替 prompt
+  const name = createInlineInput('新分组名称', '');
+  if (name === null) return;
+  const trimmed = name.trim();
+  if (!trimmed) return;
+
+  const newGroup = {
+    id: 'g_' + Date.now() + '_' + Math.random().toString(36).slice(2, 8),
+    name: trimmed,
+    paths: []
+  };
+  groups.push(newGroup);
+  saveGroups();
+  currentGroupId = newGroup.id;
+  renderGroups();
+  renderFiles();
+}
+
+function handleDeleteGroup(groupId) {
+  const group = groups.find(g => g.id === groupId);
+  if (!group) return;
+  if (!confirm(`确定删除分组 "${group.name}" 吗？（不会删除文件本身）`)) return;
+
+  groups = groups.filter(g => g.id !== groupId);
+  if (currentGroupId === groupId) currentGroupId = null;
+  saveGroups();
+  renderGroups();
+  renderFiles();
+}
+
+function handleRenameGroup(groupId) {
+  const group = groups.find(g => g.id === groupId);
+  if (!group) return;
+  const newName = createInlineInput('重命名分组', group.name);
+  if (newName === null) return;
+  const trimmed = newName.trim();
+  if (!trimmed || trimmed === group.name) return;
+  group.name = trimmed;
+  saveGroups();
+  renderGroups();
+}
+
+function addPathToGroup(groupId, path) {
+  const group = groups.find(g => g.id === groupId);
+  if (!group) return;
+  if (!group.paths) group.paths = [];
+  if (group.paths.includes(path)) {
+    // 已存在则移除（切换）
+    group.paths = group.paths.filter(p => p !== path);
+  } else {
+    group.paths.push(path);
+  }
+  saveGroups();
+  renderGroups();
+  // 不强制 renderFiles，避免打断拖拽
+}
+
+function saveGroups() {
+  if (window.api && window.api.setGroups) {
+    window.api.setGroups(groups);
+  }
+}
+
+// 简易输入对话框（使用 window.prompt 的替代方案）
+function createInlineInput(title, defaultValue) {
+  // 优先用原生 prompt（在 Electron 中可用）
+  return window.prompt(title, defaultValue);
 }
 
 async function handleFileContextMenu(e, filePath) {

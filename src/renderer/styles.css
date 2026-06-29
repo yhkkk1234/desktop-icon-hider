@@ -467,6 +467,201 @@ select option {
   max-height: calc(100% - 40px);
 }
 
+/* 搜索栏 */
+.search-bar {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 6px 10px;
+  margin-bottom: 8px;
+  background: var(--bg-input);
+  border: 1px solid var(--border-input);
+  border-radius: 6px;
+  -webkit-app-region: no-drag;
+}
+
+.search-bar .search-icon {
+  font-size: 12px;
+  opacity: 0.6;
+  flex-shrink: 0;
+}
+
+.search-bar #search-input {
+  flex: 1;
+  background: transparent;
+  border: none;
+  outline: none;
+  color: var(--text-primary);
+  font-size: 13px;
+  padding: 2px 0;
+  min-width: 0;
+}
+
+.search-bar #search-input::placeholder {
+  color: var(--text-muted);
+}
+
+.search-bar .search-clear {
+  width: 20px;
+  height: 20px;
+  border: none;
+  background: transparent;
+  color: var(--text-secondary);
+  cursor: pointer;
+  border-radius: 4px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 16px;
+  line-height: 1;
+  flex-shrink: 0;
+  transition: background 0.15s;
+}
+
+.search-bar .search-clear:hover {
+  background: var(--bg-button-hover);
+  color: var(--text-primary);
+}
+
+.search-bar .search-count {
+  font-size: 11px;
+  color: var(--text-muted);
+  flex-shrink: 0;
+  min-width: 40px;
+  text-align: right;
+}
+
+/* 快捷键样式 */
+kbd {
+  display: inline-block;
+  padding: 2px 8px;
+  background: var(--bg-button);
+  border: 1px solid var(--border-input);
+  border-radius: 4px;
+  font-family: 'Consolas', 'Monaco', monospace;
+  font-size: 11px;
+  color: var(--text-primary);
+  min-width: 80px;
+  text-align: center;
+  margin-right: 10px;
+}
+
+/* 分组栏 */
+.groups-bar {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 4px 10px;
+  margin-bottom: 8px;
+  border-bottom: 1px solid var(--border-secondary);
+  -webkit-app-region: no-drag;
+  min-height: 28px;
+}
+
+.groups-list {
+  display: flex;
+  gap: 4px;
+  flex: 1;
+  overflow-x: auto;
+  overflow-y: hidden;
+  scrollbar-width: thin;
+}
+
+.groups-list::-webkit-scrollbar {
+  height: 4px;
+}
+
+.groups-list::-webkit-scrollbar-thumb {
+  background: var(--scrollbar-thumb);
+  border-radius: 2px;
+}
+
+.group-tab {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  padding: 3px 10px;
+  background: var(--bg-button);
+  border: 1px solid transparent;
+  border-radius: 12px;
+  color: var(--text-secondary);
+  font-size: 12px;
+  cursor: pointer;
+  white-space: nowrap;
+  transition: background 0.15s, color 0.15s;
+  user-select: none;
+}
+
+.group-tab:hover {
+  background: var(--bg-button-hover);
+  color: var(--text-primary);
+}
+
+.group-tab.active {
+  background: var(--bg-context);
+  color: var(--text-primary);
+  border-color: var(--border-context);
+}
+
+.group-tab.drop-target {
+  background: var(--bg-active);
+  outline: 2px dashed var(--border-context);
+  outline-offset: 1px;
+}
+
+.group-tab .group-name {
+  pointer-events: none;
+}
+
+.group-tab .group-count {
+  font-size: 10px;
+  opacity: 0.7;
+  pointer-events: none;
+}
+
+.group-tab .group-delete {
+  width: 14px;
+  height: 14px;
+  border: none;
+  background: transparent;
+  color: var(--text-muted);
+  cursor: pointer;
+  border-radius: 50%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 12px;
+  line-height: 1;
+  padding: 0;
+}
+
+.group-tab .group-delete:hover {
+  background: rgba(255, 100, 100, 0.3);
+  color: #ff6666;
+}
+
+.add-group-btn {
+  width: 22px;
+  height: 22px;
+  border: none;
+  background: var(--bg-button);
+  color: var(--text-secondary);
+  border-radius: 50%;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 14px;
+  line-height: 1;
+  flex-shrink: 0;
+  transition: background 0.15s;
+}
+
+.add-group-btn:hover {
+  background: var(--bg-button-hover);
+  color: var(--text-primary);
+}
+
 .files-list {
   display: grid;
   grid-template-columns: repeat(auto-fill, minmax(70px, 1fr));
@@ -499,6 +694,26 @@ select option {
 
 .file-item.selected {
   background: var(--bg-context);
+}
+
+/* 拖拽相关样式 */
+.file-item.draggable {
+  cursor: grab;
+}
+
+.file-item.draggable:active {
+  cursor: grabbing;
+}
+
+.file-item.dragging {
+  opacity: 0.4;
+  transform: scale(0.95);
+}
+
+.file-item.drag-over {
+  background: var(--bg-active);
+  outline: 2px dashed var(--border-context);
+  outline-offset: -2px;
 }
 
 .file-icon {

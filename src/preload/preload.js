@@ -31,6 +31,8 @@ contextBridge.exposeInMainWorld('api', {
   
   // 排序功能API
   setSortBy: (sortBy) => ipcRenderer.invoke('set-sort-by', sortBy),
+  setManualOrder: (order) => ipcRenderer.invoke('set-manual-order', order),
+  setGroups: (groups) => ipcRenderer.invoke('set-groups', groups),
   
   // 开机启动功能API
   getAutoLaunch: () => ipcRenderer.invoke('get-auto-launch'),
@@ -49,6 +51,9 @@ contextBridge.exposeInMainWorld('api', {
   
   // 监听打开设置事件(从托盘)
   onOpenSettings: (callback) => ipcRenderer.on('open-settings', () => callback()),
+
+  // 监听全局快捷键触发的刷新
+  onRefreshFiles: (callback) => ipcRenderer.on('refresh-files', () => callback()),
 
   // 右键菜单 API
   showDesktopContextMenu: (x, y) => ipcRenderer.invoke('show-desktop-context-menu', x, y),
