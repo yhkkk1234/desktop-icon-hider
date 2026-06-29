@@ -609,6 +609,9 @@ async function deleteFile(filePath, permanent) {
   const result = await window.api.deleteFile(filePath, permanent);
   if (result.success) {
     debouncedHandleRefresh(500);
+  } else {
+    const action = permanent ? '永久删除' : '删除';
+    alert(`${action}失败：${result.error || '未知错误'}`);
   }
 }
 

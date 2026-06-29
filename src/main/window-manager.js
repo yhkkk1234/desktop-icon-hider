@@ -84,7 +84,12 @@ function createMainWindow(store) {
       mainWindow.show();
       
       if (savedCollapsed) {
-        mainWindow.setBounds(windowConfig.x, windowConfig.y, windowConfig.width, WINDOW_CONFIG.HEADER_HEIGHT);
+        mainWindow.setBounds({
+          x: windowConfig.x,
+          y: windowConfig.y,
+          width: windowConfig.width,
+          height: WINDOW_CONFIG.HEADER_HEIGHT
+        });
       }
       
       // 如果启用了自动隐藏，启动鼠标监听
@@ -167,11 +172,21 @@ function setWindowCollapsed(window, collapsed) {
     
     if (collapsed) {
       const bounds = window.getBounds();
-      window.setBounds(bounds.x, bounds.y, bounds.width, WINDOW_CONFIG.HEADER_HEIGHT);
+      window.setBounds({
+        x: bounds.x,
+        y: bounds.y,
+        width: bounds.width,
+        height: WINDOW_CONFIG.HEADER_HEIGHT
+      });
     } else {
       const primaryDisplay = screen.getPrimaryDisplay();
       const bounds = window.getBounds();
-      window.setBounds(bounds.x, bounds.y, bounds.width, primaryDisplay.workAreaSize.height);
+      window.setBounds({
+        x: bounds.x,
+        y: bounds.y,
+        width: bounds.width,
+        height: primaryDisplay.workAreaSize.height
+      });
     }
     
     // 折叠/展开时重置 isHidden 状态，避免逻辑混乱

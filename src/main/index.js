@@ -335,9 +335,7 @@ function createWindow() {
       if (!app.isQuitting) {
         event.preventDefault();
         mainWindow.hide();
-        if (tray) {
-          updateTrayMenu(mainWindow, store);
-        }
+        // hide 事件会触发 updateTrayMenu，无需重复调用
       } else {
         try {
           showDesktopIcons();
@@ -364,13 +362,13 @@ function createWindow() {
     });
     
     mainWindow.on('moved', () => {
-      if (mainWindow) {
+      if (mainWindow && !mainWindow.isCollapsed) {
         store.set('windowBounds', mainWindow.getBounds());
       }
     });
     
     mainWindow.on('resized', () => {
-      if (mainWindow && !mainWindow.isMinimized()) {
+      if (mainWindow && !mainWindow.isMinimized() && !mainWindow.isCollapsed) {
         const bounds = mainWindow.getBounds();
         if (bounds.height > 50) {
           store.set('windowBounds', bounds);
@@ -426,7 +424,8 @@ ipcMain.handle('toggle-collapse', async (event, collapse) => {
       height: 40
     }, true);
   } else {
-    const savedHeight = store.get('windowBounds', { height: 600 }).height;
+    const savedBounds = store.get('windowBounds');
+    const savedHeight = (savedBounds && typeof savedBounds.height === 'number') ? savedBounds.height : 600;
     mainWindow.setBounds({
       x: bounds.x,
       y: bounds.y,
@@ -470,7 +469,11 @@ ipcMain.handle('rename-file', async (event, oldPath, newName) => {
     const dir = path.dirname(oldPath);
     const newPath = path.join(dir, newName);
     if (oldPath === newPath) return { success: true };
-    if (fs.existsSync(newPath)) return { success: false, error: '文件名已存在' };
+    // Windows 大小写不敏感：仅大小写变化时允许重命名
+    const isCaseOnlyChange = oldPath.toLowerCase() === newPath.toLowerCase();
+    if (!isCaseOnlyChange && fs.existsSync(newPath)) {
+      return { success: false, error: '文件名已存在' };
+    }
     await fs.promises.rename(oldPath, newPath);
     return { success: true };
   } catch (error) {
@@ -481,7 +484,12 @@ ipcMain.handle('rename-file', async (event, oldPath, newName) => {
 ipcMain.handle('delete-file', async (event, filePath, permanent) => {
   try {
     if (permanent) {
-      await fs.promises.unlink(filePath);
+      const stats = await fs.promises.stat(filePath);
+      if (stats.isDirectory()) {
+        await fs.promises.rm(filePath, { recursive: true, force: true });
+      } else {
+        await fs.promises.unlink(filePath);
+      }
     } else {
       await shell.trashItem(filePath);
     }
@@ -492,7 +500,7 @@ ipcMain.handle('delete-file', async (event, filePath, permanent) => {
 });
 
 ipcMain.handle('move-window', (event, newX, newY) => {
-  if (mainWindow) {
+  if (mainWindow && Number.isFinite(newX) && Number.isFinite(newY)) {
     mainWindow.setPosition(Math.round(newX), Math.round(newY));
   }
 });
@@ -735,11 +743,11 @@ ipcMain.handle('show-file-context-menu', async (event, filePath, x, y) => {
   }
 });
 
+// 修复透明窗口的 GPU 进程错误（必须在 app.whenReady 之前调用）
+app.commandLine.appendSwitch('disable-software-rasterizer');
+app.commandLine.appendSwitch('disable-gpu-compositing');
+
 app.whenReady().then(() => {
-  // 修复透明窗口的 GPU 进程错误
-  app.commandLine.appendSwitch('disable-software-rasterizer');
-  app.commandLine.appendSwitch('disable-gpu-compositing');
-  
   try {
     initializeDesktopAPI(app.getPath('userData'));
   } catch (e) {
