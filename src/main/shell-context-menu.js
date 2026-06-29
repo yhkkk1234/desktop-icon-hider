@@ -1,5 +1,5 @@
 /* eslint-disable quotes */
-const { exec, execSync } = require('child_process');
+const { exec, execSync, spawn } = require('child_process');
 const fs = require('fs');
 const path = require('path');
 const os = require('os');
@@ -453,7 +453,14 @@ class ContextMenuWindow : Form
         {
             // 启用 DPI 感知，解决菜单模糊问题
             try { SetProcessDPIAware(); } catch { }
-            
+
+            // 服务模式：常驻进程，通过 stdin/stdout 通信
+            if (args.Length >= 1 && args[0] == "--service")
+            {
+                RunServiceMode();
+                return;
+            }
+
             if (args.Length < 1)
             {
                 Environment.Exit(1);
@@ -497,6 +504,94 @@ class ContextMenuWindow : Form
         {
             Environment.Exit(1);
         }
+    }
+
+    // ============ 服务模式 ============
+    // 协议：每条命令以换行分隔，字段以 \\t 分隔
+    // 格式: mode\\tx\\ty            (desktop)
+    //       mode\\tx\\ty\\tfilepath  (file)
+    //       mode                     (cancel)
+    // 响应: OK 或 FAIL
+    static void RunServiceMode()
+    {
+        try
+        {
+            ContextMenuWindow window = new ContextMenuWindow();
+            window.CreateControl();
+
+            // 输出就绪信号
+            Console.Out.WriteLine("READY");
+            Console.Out.Flush();
+
+            string line;
+            while ((line = Console.In.ReadLine()) != null)
+            {
+                string response;
+                try
+                {
+                    response = HandleServiceCommand(window, line);
+                }
+                catch (Exception ex)
+                {
+                    response = "FAIL: " + (ex.Message ?? "unknown").Replace("\\r", " ").Replace("\\n", " ");
+                }
+
+                Console.Out.WriteLine(response);
+                Console.Out.Flush();
+            }
+        }
+        catch
+        {
+            Environment.Exit(1);
+        }
+    }
+
+    static string HandleServiceCommand(ContextMenuWindow window, string line)
+    {
+        if (string.IsNullOrEmpty(line)) return "FAIL: empty command";
+
+        string[] parts = line.Split('\\t');
+        string mode = parts[0];
+
+        int x = 0, y = 0;
+        string filePath = null;
+
+        if (parts.Length >= 3)
+        {
+            int.TryParse(parts[1], out x);
+            int.TryParse(parts[2], out y);
+        }
+        if (parts.Length >= 4)
+        {
+            filePath = parts[3];
+            // 处理路径中可能包含的 \\t（理论不会出现，但保险起见）
+            for (int i = 4; i < parts.Length; i++)
+            {
+                filePath += "\\t" + parts[i];
+            }
+        }
+
+        int result = -1;
+        if (mode == "desktop")
+        {
+            result = window.ShowDesktopContextMenu(x, y);
+        }
+        else if (mode == "file")
+        {
+            if (string.IsNullOrEmpty(filePath)) return "FAIL: missing path";
+            result = window.ShowFileContextMenu(filePath, x, y);
+        }
+        else if (mode == "cancel")
+        {
+            window.CancelDesktopContextMenu();
+            result = 0;
+        }
+        else
+        {
+            return "FAIL: unknown mode " + mode;
+        }
+
+        return result >= 0 ? "OK" : "FAIL";
     }
 
     [DllImport("user32.dll")]
@@ -619,15 +714,19 @@ function findCscExe() {
   return null;
 }
 
+// 版本号：当 C# 源码结构变化时递增，确保重新编译
+const SHELL_EXE_VERSION = 'v2';
+
 function compileExe() {
-  if (compiledExePath && fs.existsSync(compiledExePath)) {
+  const tempDir = os.tmpdir();
+  const exeName = `ShellContextMenu-${SHELL_EXE_VERSION}.exe`;
+  const exePath = path.join(tempDir, exeName);
+
+  if (compiledExePath && fs.existsSync(exePath)) {
     return compiledExePath;
   }
 
-  const tempDir = os.tmpdir();
-  const exeName = 'ShellContextMenu.exe';
-  const exePath = path.join(tempDir, exeName);
-  const csPath = path.join(tempDir, 'ShellContextMenu.cs');
+  const csPath = path.join(tempDir, `ShellContextMenu-${SHELL_EXE_VERSION}.cs`);
 
   const cscPath = findCscExe();
   if (!cscPath) {
@@ -638,7 +737,7 @@ function compileExe() {
     fs.writeFileSync(csPath, CSHARP_SOURCE, 'utf8');
 
     const compileCmd = `"${cscPath}" /target:winexe /out:"${exePath}" /r:System.Windows.Forms.dll /r:System.Drawing.dll "${csPath}"`;
-    
+
     execSync(compileCmd, {
       timeout: 30000,
       encoding: 'utf8',
@@ -660,6 +759,11 @@ function compileExe() {
 }
 
 function showDesktopContextMenu(x, y) {
+  // 优先使用常驻服务进程
+  if (isServiceReady()) {
+    return sendServiceCommand(`desktop\t${x}\t${y}`);
+  }
+  // 回退到一次性进程
   const exePath = compileExe();
   if (!exePath) return Promise.resolve(false);
 
@@ -678,6 +782,11 @@ function showDesktopContextMenu(x, y) {
 }
 
 function showFileContextMenu(filePath, x, y) {
+  // 优先使用常驻服务进程
+  if (isServiceReady()) {
+    return sendServiceCommand(`file\t${x}\t${y}\t${filePath}`);
+  }
+  // 回退到一次性进程
   const exePath = compileExe();
   if (!exePath) {
     return Promise.resolve(false);
@@ -700,6 +809,11 @@ function showFileContextMenu(filePath, x, y) {
 }
 
 function cancelDesktopContextMenu() {
+  // 优先使用常驻服务进程
+  if (isServiceReady()) {
+    return sendServiceCommand('cancel');
+  }
+  // 回退到一次性进程
   const exePath = compileExe();
   if (!exePath) return Promise.resolve(false);
 
@@ -713,8 +827,183 @@ function cancelDesktopContextMenu() {
   });
 }
 
+// ============ 常驻服务进程 ============
+let serviceProc = null;
+let serviceReady = false;
+let serviceBuffer = '';
+let pendingResolve = null;
+let serviceStartupPromise = null;
+let fallbackMode = false; // 服务启动失败后回退到 exec 模式
+
+function isServiceReady() {
+  return serviceReady && serviceProc && !serviceProc.killed;
+}
+
+function startService() {
+  if (serviceStartupPromise) return serviceStartupPromise;
+  if (isServiceReady()) return Promise.resolve(true);
+  if (fallbackMode) return Promise.resolve(false);
+
+  const exePath = compileExe();
+  if (!exePath) {
+    fallbackMode = true;
+    return Promise.resolve(false);
+  }
+
+  serviceStartupPromise = new Promise((resolve) => {
+    try {
+      const proc = spawn(exePath, ['--service'], {
+        windowsHide: true,
+        stdio: ['pipe', 'pipe', 'pipe']
+      });
+      serviceProc = proc;
+
+      let startupTimer = setTimeout(() => {
+        // 启动超时，回退
+        console.warn('ShellContextMenu 服务启动超时，回退到 exec 模式');
+        try { proc.kill(); } catch (_) { /* ignore */ }
+        fallbackMode = true;
+        serviceProc = null;
+        serviceStartupPromise = null;
+        resolve(false);
+      }, 3000);
+
+      proc.stdout.on('data', (data) => {
+        serviceBuffer += data.toString('utf8');
+        let idx;
+        while ((idx = serviceBuffer.indexOf('\n')) >= 0) {
+          const line = serviceBuffer.slice(0, idx).replace(/\r$/, '');
+          serviceBuffer = serviceBuffer.slice(idx + 1);
+          handleServiceLine(line);
+        }
+      });
+
+      proc.stderr.on('data', (data) => {
+        console.error('ShellContextMenu stderr:', data.toString());
+      });
+
+      proc.on('exit', () => {
+        if (startupTimer) {
+          clearTimeout(startupTimer);
+          startupTimer = null;
+        }
+        const wasReady = serviceReady;
+        serviceReady = false;
+        serviceProc = null;
+        serviceStartupPromise = null;
+        if (pendingResolve) {
+          pendingResolve(false);
+          pendingResolve = null;
+        }
+        // 如果已经成功运行过，重启；否则回退
+        if (wasReady) {
+          console.warn('ShellContextMenu 服务意外退出，下次右键将重启');
+        } else {
+          console.warn('ShellContextMenu 服务启动失败，回退到 exec 模式');
+          fallbackMode = true;
+        }
+      });
+
+      proc.on('error', (err) => {
+        console.error('ShellContextMenu 服务启动错误:', err.message);
+        if (startupTimer) {
+          clearTimeout(startupTimer);
+          startupTimer = null;
+        }
+        fallbackMode = true;
+        serviceProc = null;
+        serviceStartupPromise = null;
+        resolve(false);
+      });
+
+      // 设置 ready 标志的回调在 handleServiceLine 中处理
+      // 启动成功时 resolve(true)
+      const origResolve = resolve;
+      // 等待 READY 信号
+      serviceStartupResolve = (success) => {
+        if (startupTimer) {
+          clearTimeout(startupTimer);
+          startupTimer = null;
+        }
+        serviceStartupPromise = null;
+        if (success) {
+          serviceReady = true;
+          origResolve(true);
+        } else {
+          fallbackMode = true;
+          origResolve(false);
+        }
+      };
+    } catch (e) {
+      console.error('启动 ShellContextMenu 服务失败:', e.message);
+      fallbackMode = true;
+      serviceStartupPromise = null;
+      resolve(false);
+    }
+  });
+
+  return serviceStartupPromise;
+}
+
+let serviceStartupResolve = null;
+
+function handleServiceLine(line) {
+  if (line === 'READY') {
+    if (serviceStartupResolve) {
+      serviceStartupResolve(true);
+      serviceStartupResolve = null;
+    }
+    return;
+  }
+  // 处理命令响应
+  if (pendingResolve) {
+    const success = line === 'OK' || line.startsWith('OK');
+    pendingResolve(success);
+    pendingResolve = null;
+  }
+}
+
+function sendServiceCommand(command) {
+  return new Promise((resolve) => {
+    if (!isServiceReady()) {
+      resolve(false);
+      return;
+    }
+    // 上一个命令还没完成，直接失败（不应该发生，因为右键菜单是模态的）
+    if (pendingResolve) {
+      pendingResolve(false);
+      pendingResolve = null;
+    }
+    pendingResolve = resolve;
+    try {
+      serviceProc.stdin.write(command + '\n');
+    } catch (e) {
+      pendingResolve(false);
+      pendingResolve = null;
+    }
+  });
+}
+
 function shutdownService() {
-  // No persistent service in this version
+  if (serviceProc && !serviceProc.killed) {
+    try {
+      serviceProc.stdin.end();
+    } catch (_) { /* ignore */ }
+    try {
+      serviceProc.kill();
+    } catch (_) { /* ignore */ }
+  }
+  serviceProc = null;
+  serviceReady = false;
+  serviceStartupPromise = null;
+  pendingResolve = null;
+}
+
+// 预启动服务（异步，不阻塞）
+function preheatService() {
+  if (!serviceStartupPromise && !fallbackMode) {
+    startService().catch(() => {});
+  }
 }
 
 module.exports = {
@@ -722,5 +1011,6 @@ module.exports = {
   showFileContextMenu,
   cancelDesktopContextMenu,
   compileExe,
-  shutdownService
+  shutdownService,
+  preheatService
 };
