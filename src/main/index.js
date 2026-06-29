@@ -5,7 +5,7 @@ const os = require('os');
 const { execSync } = require('child_process');
 const Store = require('electron-store');
 const { getFileIcon, getFileIcons, initializeDesktopAPI, getSystemIconEmoji, cleanupIconCache } = require('./desktop-api');
-const { showDesktopContextMenu, showFileContextMenu, cancelDesktopContextMenu, compileExe, preheatService, shutdownService } = require('./shell-context-menu');
+const { showDesktopContextMenu, showFileContextMenu, cancelDesktopContextMenu, compileExe } = require('./shell-context-menu');
 const { 
   createMainWindow, 
   setAutoHideEnabled, 
@@ -794,10 +794,7 @@ app.whenReady().then(() => {
   } catch (e) {
     console.warn('右键菜单组件预编译失败:', e.message);
   }
-
-  // 预启动常驻服务进程，让首次右键也能快速响应
-  preheatService();
-
+  
   // 先隐藏桌面图标，再创建窗口
   hideDesktopIcons();
 
@@ -829,13 +826,6 @@ app.on('before-quit', () => {
     showDesktopIcons();
   } catch (error) {
     console.error('退出时显示桌面图标失败:', error);
-  }
-
-  // 关闭常驻右键菜单服务进程
-  try {
-    shutdownService();
-  } catch (error) {
-    console.error('关闭右键菜单服务失败:', error);
   }
 
   // 销毁托盘图标
