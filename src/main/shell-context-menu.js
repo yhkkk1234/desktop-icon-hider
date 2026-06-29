@@ -963,25 +963,43 @@ function handleServiceLine(line) {
   }
 }
 
+// 命令串行链：保证多条命令按顺序执行，避免响应错位
+let serviceCommandChain = Promise.resolve();
+
 function sendServiceCommand(command) {
-  return new Promise((resolve) => {
-    if (!isServiceReady()) {
-      resolve(false);
-      return;
-    }
-    // 上一个命令还没完成，直接失败（不应该发生，因为右键菜单是模态的）
-    if (pendingResolve) {
-      pendingResolve(false);
-      pendingResolve = null;
-    }
-    pendingResolve = resolve;
-    try {
-      serviceProc.stdin.write(command + '\n');
-    } catch (e) {
-      pendingResolve(false);
-      pendingResolve = null;
-    }
+  const resultPromise = serviceCommandChain.then(() => {
+    return new Promise((resolve) => {
+      if (!isServiceReady()) {
+        resolve(false);
+        return;
+      }
+
+      let timer = null;
+      const wrappedResolve = (v) => {
+        if (timer) clearTimeout(timer);
+        if (pendingResolve === wrappedResolve) {
+          pendingResolve = null;
+        }
+        resolve(v);
+      };
+
+      // 超时保护：菜单类命令最长等待 120 秒（与 C# 端 MAX_WAIT_MINUTES 一致）
+      timer = setTimeout(() => {
+        console.warn('ShellContextMenu 命令超时:', JSON.stringify(command));
+        wrappedResolve(false);
+      }, 120000);
+
+      pendingResolve = wrappedResolve;
+      try {
+        serviceProc.stdin.write(command + '\n');
+      } catch (e) {
+        wrappedResolve(false);
+      }
+    });
   });
+  // 防止链中断：捕获异常后继续
+  serviceCommandChain = resultPromise.catch(() => {});
+  return resultPromise;
 }
 
 function shutdownService() {
@@ -997,6 +1015,8 @@ function shutdownService() {
   serviceReady = false;
   serviceStartupPromise = null;
   pendingResolve = null;
+  // 重置命令链，避免下次启动时残留的 pending 阻塞
+  serviceCommandChain = Promise.resolve();
 }
 
 // 预启动服务（异步，不阻塞）
