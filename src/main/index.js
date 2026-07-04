@@ -12,8 +12,7 @@ const {
   getAutoHideStatus,
   EDGE_TYPES 
 } = require('./window-manager');
-const { createTray, updateTrayMenu, destroyTray } = require('./tray');
-const AutoLaunch = require('electron-auto-launch');
+const { createTray, updateTrayMenu, destroyTray, autoLauncher } = require('./tray');
 
 const store = new Store({
   name: 'desktop-icon-hider',
@@ -36,11 +35,6 @@ const store = new Store({
 });
 let mainWindow = null;
 let tray = null;
-
-const autoLauncher = new AutoLaunch({
-  name: 'Desktop Icon Hider',
-  isHidden: true
-});
 
 // 获取桌面路径
 function getDesktopPath() {
@@ -698,6 +692,7 @@ ipcMain.handle('get-auto-launch', async () => {
 });
 
 ipcMain.handle('set-auto-launch', async (event, enabled) => {
+  const previousState = store.get('autoLaunch', false);
   try {
     if (enabled) {
       await autoLauncher.enable();
@@ -714,12 +709,12 @@ ipcMain.handle('set-auto-launch', async (event, enabled) => {
     return true;
   } catch (error) {
     console.error('Error setting auto launch:', error);
-    store.set('autoLaunch', false);
+    store.set('autoLaunch', previousState);
     if (tray) {
       updateTrayMenu(mainWindow, store);
     }
     if (mainWindow && !mainWindow.isDestroyed()) {
-      mainWindow.webContents.send('auto-launch-changed', { enabled: false });
+      mainWindow.webContents.send('auto-launch-changed', { enabled: previousState });
     }
     return false;
   }
@@ -781,7 +776,7 @@ ipcMain.handle('show-file-context-menu', async (event, filePath, x, y) => {
 app.commandLine.appendSwitch('disable-software-rasterizer');
 app.commandLine.appendSwitch('disable-gpu-compositing');
 
-app.whenReady().then(() => {
+app.whenReady().then(async () => {
   try {
     initializeDesktopAPI(app.getPath('userData'));
   } catch (e) {
@@ -793,6 +788,17 @@ app.whenReady().then(() => {
     compileExe();
   } catch (e) {
     console.warn('右键菜单组件预编译失败:', e.message);
+  }
+  
+  // 同步实际的开机启动状态
+  try {
+    const actualEnabled = await autoLauncher.isEnabled();
+    const storedEnabled = store.get('autoLaunch', false);
+    if (actualEnabled !== storedEnabled) {
+      store.set('autoLaunch', actualEnabled);
+    }
+  } catch (e) {
+    console.warn('同步开机启动状态失败:', e.message);
   }
   
   // 先隐藏桌面图标，再创建窗口

@@ -120,9 +120,9 @@ function updateTrayMenu(mainWindow, store) {
           }
         } catch (error) {
           console.error('设置开机启动失败:', error);
-          store.set('autoLaunch', false);
+          store.set('autoLaunch', isAutoLaunchEnabled);
           if (mainWindow && !mainWindow.isDestroyed()) {
-            mainWindow.webContents.send('auto-launch-changed', { enabled: false });
+            mainWindow.webContents.send('auto-launch-changed', { enabled: isAutoLaunchEnabled });
           }
         }
         updateTrayMenu(mainWindow, store);
@@ -159,5 +159,6 @@ module.exports = {
   createTray,
   updateTrayMenu,
   destroyTray,
-  getTray
+  getTray,
+  autoLauncher
 };
