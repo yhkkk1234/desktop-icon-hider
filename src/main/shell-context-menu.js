@@ -199,7 +199,7 @@ class ContextMenuWindow : Form
             DateTime startTime = DateTime.Now;
             bool menuActive = true;
             bool menuWasShown = false;
-            int idleCount = 0;
+            int checkCount = 0;
             const int MAX_WAIT_MINUTES = 2;
             const string MENU_CLASS = "#32768";
 
@@ -216,17 +216,17 @@ class ContextMenuWindow : Form
                         break;
                     TranslateMessage(ref msg);
                     DispatchMessage(ref msg);
-                    idleCount = 0;
+                    checkCount = 0;
                 }
                 else
                 {
-                    System.Threading.Thread.Sleep(5);
-                    idleCount++;
+                    System.Threading.Thread.Sleep(10);
+                    checkCount++;
 
-                    if (idleCount >= 5)
+                    if (checkCount >= 3)
                     {
-                        idleCount = 0;
-                        IntPtr menuHwnd = FindWindow(MENU_CLASS, null);
+                        checkCount = 0;
+                        IntPtr menuHwnd = FindAnyMenuWindow();
                         if (menuHwnd != IntPtr.Zero)
                         {
                             menuWasShown = true;
@@ -251,8 +251,7 @@ class ContextMenuWindow : Form
     {
         try
         {
-            const string MENU_CLASS = "#32768";
-            IntPtr menuHwnd = FindWindow(MENU_CLASS, null);
+            IntPtr menuHwnd = FindAnyMenuWindow();
             
             if (menuHwnd != IntPtr.Zero)
             {
@@ -541,8 +540,33 @@ class ContextMenuWindow : Form
     [DllImport("user32.dll")]
     static extern IntPtr DispatchMessage(ref MSG lpMsg);
 
+    [DllImport("user32.dll")]
+    static extern bool EnumWindows(EnumWindowsProc lpEnumFunc, IntPtr lParam);
+    delegate bool EnumWindowsProc(IntPtr hWnd, IntPtr lParam);
+
     [DllImport("user32.dll", CharSet = CharSet.Unicode)]
     static extern int GetClassName(IntPtr hWnd, StringBuilder lpClassName, int nMaxCount);
+
+    private static IntPtr _foundMenuHwnd = IntPtr.Zero;
+
+    private static bool FindMenuWindow(IntPtr hWnd, IntPtr lParam)
+    {
+        StringBuilder className = new StringBuilder(256);
+        GetClassName(hWnd, className, 256);
+        if (className.ToString() == "#32768")
+        {
+            _foundMenuHwnd = hWnd;
+            return false;
+        }
+        return true;
+    }
+
+    private static IntPtr FindAnyMenuWindow()
+    {
+        _foundMenuHwnd = IntPtr.Zero;
+        EnumWindows(FindMenuWindow, IntPtr.Zero);
+        return _foundMenuHwnd;
+    }
 
     [DllImport("user32.dll")]
     static extern bool SetProcessDPIAware();
