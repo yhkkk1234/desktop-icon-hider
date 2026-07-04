@@ -187,6 +187,9 @@ class ContextMenuWindow : Form
 
             _lastShellView = shellView;
 
+            // 将前台窗口设置给 Explorer，避免隐藏 Form 拦截菜单外点击
+            SetForegroundWindow(progman);
+
             POINT pt = new POINT { x = x, y = y };
             ScreenToClient(shellView, ref pt);
 
@@ -195,6 +198,9 @@ class ContextMenuWindow : Form
 
             SendMessage(shellView, 0x0204, wParam, lParam);
             SendMessage(shellView, 0x0205, wParam, lParam);
+
+            // SendMessage 跨进程可能阻塞直到菜单关闭，返回后菜单可能已关闭
+            menuWasShown = true;
 
             DateTime startTime = DateTime.Now;
             bool menuActive = true;
