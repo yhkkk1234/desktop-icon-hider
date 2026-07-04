@@ -198,7 +198,8 @@ class ContextMenuWindow : Form
 
             DateTime startTime = DateTime.Now;
             bool menuActive = true;
-            int menuCheckDelay = 0;
+            bool menuWasShown = false;
+            int idleCount = 0;
             const int MAX_WAIT_MINUTES = 2;
             const string MENU_CLASS = "#32768";
 
@@ -215,41 +216,22 @@ class ContextMenuWindow : Form
                         break;
                     TranslateMessage(ref msg);
                     DispatchMessage(ref msg);
+                    idleCount = 0;
                 }
                 else
                 {
-                    System.Threading.Thread.Sleep(2);
-                    menuCheckDelay++;
+                    System.Threading.Thread.Sleep(5);
+                    idleCount++;
 
-                    if (menuCheckDelay >= 10)
+                    if (idleCount >= 5)
                     {
-                        menuCheckDelay = 0;
-                        IntPtr foregroundWnd = GetForegroundWindow();
-                        if (foregroundWnd != IntPtr.Zero)
+                        idleCount = 0;
+                        IntPtr menuHwnd = FindWindow(MENU_CLASS, null);
+                        if (menuHwnd != IntPtr.Zero)
                         {
-                            StringBuilder className = new StringBuilder(256);
-                            GetClassName(foregroundWnd, className, 256);
-                            string clsName = className.ToString();
-                            if (clsName != MENU_CLASS)
-                            {
-                                System.Threading.Thread.Sleep(20);
-                                IntPtr checkWnd = GetForegroundWindow();
-                                if (checkWnd != IntPtr.Zero)
-                                {
-                                    StringBuilder checkClass = new StringBuilder(256);
-                                    GetClassName(checkWnd, checkClass, 256);
-                                    if (checkClass.ToString() != MENU_CLASS)
-                                    {
-                                        menuActive = false;
-                                    }
-                                }
-                                else
-                                {
-                                    menuActive = false;
-                                }
-                            }
+                            menuWasShown = true;
                         }
-                        else
+                        else if (menuWasShown)
                         {
                             menuActive = false;
                         }
