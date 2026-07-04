@@ -815,3 +815,87 @@ kbd {
 .settings-section + .settings-section {
   margin-top: 16px;
 }
+
+/* 自定义输入对话框 */
+.prompt-overlay {
+  position: fixed;
+  top: 0;
+  left: 0;
+  width: 100%;
+  height: 100%;
+  background: rgba(0, 0, 0, 0.5);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 10000;
+  backdrop-filter: blur(4px);
+}
+
+.prompt-dialog {
+  background: var(--bg-tertiary);
+  border: 1px solid var(--border-primary);
+  border-radius: 8px;
+  padding: 16px;
+  min-width: 280px;
+  max-width: 360px;
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.4);
+  animation: slideDown 0.15s ease;
+}
+
+.prompt-title {
+  color: var(--text-primary);
+  font-size: 13px;
+  font-weight: 500;
+  margin-bottom: 12px;
+}
+
+.prompt-input {
+  width: 100%;
+  background: var(--bg-input);
+  border: 1px solid var(--border-input);
+  border-radius: 4px;
+  color: var(--text-primary);
+  font-size: 13px;
+  padding: 8px 10px;
+  outline: none;
+  box-sizing: border-box;
+  margin-bottom: 14px;
+}
+
+.prompt-input:focus {
+  border-color: var(--switch-active);
+}
+
+.prompt-buttons {
+  display: flex;
+  justify-content: flex-end;
+  gap: 8px;
+}
+
+.prompt-btn {
+  padding: 6px 16px;
+  border-radius: 4px;
+  font-size: 12px;
+  cursor: pointer;
+  border: 1px solid var(--border-input);
+  transition: background 0.15s;
+}
+
+.prompt-btn-confirm {
+  background: var(--switch-active);
+  color: #fff;
+  border-color: var(--switch-active);
+}
+
+.prompt-btn-confirm:hover {
+  background: #006cbd;
+}
+
+.prompt-btn-cancel {
+  background: var(--bg-button);
+  color: var(--text-secondary);
+}
+
+.prompt-btn-cancel:hover {
+  background: var(--bg-button-hover);
+}

@@ -1019,9 +1019,8 @@ function switchGroup(groupId) {
   renderFiles();
 }
 
-function handleAddGroup() {
-  // 用简易输入框代替 prompt
-  const name = createInlineInput('新分组名称', '');
+async function handleAddGroup() {
+  const name = await createInlineInput('新分组名称', '');
   if (name === null) return;
   const trimmed = name.trim();
   if (!trimmed) return;
@@ -1050,10 +1049,10 @@ function handleDeleteGroup(groupId) {
   renderFiles();
 }
 
-function handleRenameGroup(groupId) {
+async function handleRenameGroup(groupId) {
   const group = groups.find(g => g.id === groupId);
   if (!group) return;
-  const newName = createInlineInput('重命名分组', group.name);
+  const newName = await createInlineInput('重命名分组', group.name);
   if (newName === null) return;
   const trimmed = newName.trim();
   if (!trimmed || trimmed === group.name) return;
@@ -1083,10 +1082,63 @@ function saveGroups() {
   }
 }
 
-// 简易输入对话框（使用 window.prompt 的替代方案）
 function createInlineInput(title, defaultValue) {
-  // 优先用原生 prompt（在 Electron 中可用）
-  return window.prompt(title, defaultValue);
+  return new Promise((resolve) => {
+    const overlay = document.createElement('div');
+    overlay.className = 'prompt-overlay';
+
+    const dialog = document.createElement('div');
+    dialog.className = 'prompt-dialog';
+
+    const titleEl = document.createElement('div');
+    titleEl.className = 'prompt-title';
+    titleEl.textContent = title;
+
+    const input = document.createElement('input');
+    input.type = 'text';
+    input.className = 'prompt-input';
+    input.value = defaultValue;
+
+    const btnRow = document.createElement('div');
+    btnRow.className = 'prompt-buttons';
+
+    const confirmBtn = document.createElement('button');
+    confirmBtn.className = 'prompt-btn prompt-btn-confirm';
+    confirmBtn.textContent = '确定';
+
+    const cancelBtn = document.createElement('button');
+    cancelBtn.className = 'prompt-btn prompt-btn-cancel';
+    cancelBtn.textContent = '取消';
+
+    btnRow.appendChild(confirmBtn);
+    btnRow.appendChild(cancelBtn);
+    dialog.appendChild(titleEl);
+    dialog.appendChild(input);
+    dialog.appendChild(btnRow);
+    overlay.appendChild(dialog);
+    document.body.appendChild(overlay);
+
+    input.focus();
+    input.select();
+
+    let resolved = false;
+    const close = (value) => {
+      if (resolved) return;
+      resolved = true;
+      overlay.remove();
+      resolve(value);
+    };
+
+    confirmBtn.addEventListener('click', () => close(input.value));
+    cancelBtn.addEventListener('click', () => close(null));
+    overlay.addEventListener('click', (e) => {
+      if (e.target === overlay) close(null);
+    });
+    input.addEventListener('keydown', (e) => {
+      if (e.key === 'Enter') { e.preventDefault(); close(input.value); }
+      if (e.key === 'Escape') { e.preventDefault(); close(null); }
+    });
+  });
 }
 
 async function handleFileContextMenu(e, filePath) {
