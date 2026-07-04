@@ -33,9 +33,9 @@ function getSystemIconEmoji(path) {
   return '\u{1F4C1}';
 }
 
-function initializeDesktopAPI(userDataPath) {
+async function initializeDesktopAPI(userDataPath) {
   cacheFile = path.join(userDataPath || __dirname, 'icon-cache.json');
-  loadIconCacheAsync();
+  await loadIconCacheAsync();
 }
 
 async function loadIconCacheAsync() {

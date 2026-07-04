@@ -435,7 +435,6 @@ function animateWindowMove(window, startBounds, endBounds, duration, onComplete)
   function animate() {
     try {
       if (!window || window.isDestroyed()) {
-        window.autoHideState.isAnimating = false;
         return;
       }
       
@@ -473,12 +472,14 @@ function animateWindowMove(window, startBounds, endBounds, duration, onComplete)
         if (onComplete) onComplete();
       }
     } catch (error) {
-      window.autoHideState.isAnimating = false;
-      // 出错时直接设置最终位置
-      try {
-        window.setBounds(end);
-      } catch (e) {
-        // 忽略
+      if (window && !window.isDestroyed()) {
+        window.autoHideState.isAnimating = false;
+        // 出错时直接设置最终位置
+        try {
+          window.setBounds(end);
+        } catch (e) {
+          // 忽略
+        }
       }
       if (onComplete) onComplete();
     }

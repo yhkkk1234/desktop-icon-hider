@@ -686,7 +686,7 @@ function getFilteredFiles() {
     const q = searchQuery.toLowerCase();
     result = result.filter(f => {
       if (f.name && f.name.toLowerCase().includes(q)) return true;
-      if (f.extension && ('.' + f.extension.toLowerCase()).includes(q)) return true;
+      if (f.extension && f.extension.toLowerCase().includes(q)) return true;
       return false;
     });
   }

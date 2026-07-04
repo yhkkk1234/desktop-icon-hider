@@ -778,7 +778,7 @@ app.commandLine.appendSwitch('disable-gpu-compositing');
 
 app.whenReady().then(async () => {
   try {
-    initializeDesktopAPI(app.getPath('userData'));
+    await initializeDesktopAPI(app.getPath('userData'));
   } catch (e) {
     console.error('初始化桌面API失败:', e.message);
   }
