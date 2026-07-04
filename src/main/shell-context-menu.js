@@ -187,6 +187,9 @@ class ContextMenuWindow : Form
 
             _lastShellView = shellView;
 
+            // 将前台窗口设置给 Explorer，避免隐藏 Form 拦截菜单外点击
+            SetForegroundWindow(progman);
+
             POINT pt = new POINT { x = x, y = y };
             ScreenToClient(shellView, ref pt);
 
@@ -198,7 +201,7 @@ class ContextMenuWindow : Form
 
             DateTime startTime = DateTime.Now;
             bool menuActive = true;
-            bool menuWasShown = false;
+            bool menuWasShown = true;
             int idleCount = 0;
             const int MAX_WAIT_MINUTES = 2;
             const string MENU_CLASS = "#32768";
