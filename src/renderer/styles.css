@@ -609,6 +609,23 @@ kbd {
   outline-offset: 1px;
 }
 
+.group-tab.drag-active {
+  border-color: var(--border-context);
+  animation: pulse-border 1.5s infinite;
+}
+
+@keyframes pulse-border {
+  0%, 100% { border-color: var(--border-context); }
+  50% { border-color: transparent; }
+}
+
+.group-tab.drag-active::after {
+  content: '＋拖入';
+  font-size: 9px;
+  opacity: 0.7;
+  margin-left: 2px;
+}
+
 .group-tab .group-name {
   pointer-events: none;
 }

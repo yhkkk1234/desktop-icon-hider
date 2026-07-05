@@ -25,7 +25,7 @@ let opacitySlider, opacityValue;
 let iconSizeSlider, iconSizeValue;
 let autoLaunchToggle;
 let searchBar, searchInput, searchClear, searchCount;
-let groupsList, addGroupBtn;
+let groupsList, addGroupBtn, autoGroupBtn;
 
 // 初始化
 document.addEventListener('DOMContentLoaded', () => {
@@ -52,6 +52,7 @@ document.addEventListener('DOMContentLoaded', () => {
   searchCount = document.getElementById('search-count');
   groupsList = document.getElementById('groups-list');
   addGroupBtn = document.getElementById('add-group-btn');
+  autoGroupBtn = document.getElementById('auto-group-btn');
 
   // 绑定事件
   toggleBtn.addEventListener('click', handleToggleCollapse);
@@ -72,6 +73,7 @@ document.addEventListener('DOMContentLoaded', () => {
 
   // 分组栏事件
   addGroupBtn.addEventListener('click', handleAddGroup);
+  autoGroupBtn.addEventListener('click', handleAutoGroup);
   
   // Ctrl + 滚轮调整图标大小
   document.addEventListener('wheel', handleWheelIconSize, { passive: false });
@@ -881,12 +883,17 @@ function handleDragStart(e) {
   e.dataTransfer.effectAllowed = 'move';
   // 必须设置 data 才能在某些浏览器触发 drop
   try { e.dataTransfer.setData('text/plain', draggedItem.dataset.path); } catch (_err) { /* 某些环境不支持，忽略 */ }
+  // 显示拖拽提示
+  document.querySelectorAll('.group-tab').forEach(el => el.classList.add('drag-active'));
 }
 
 function handleDragEnd() {
   if (draggedItem) draggedItem.classList.remove('dragging');
   // 清理所有 drag-over 标记
   document.querySelectorAll('.file-item.drag-over').forEach(el => el.classList.remove('drag-over'));
+  document.querySelectorAll('.group-tab.drag-active, .group-tab.drop-target').forEach(el => {
+    el.classList.remove('drag-active', 'drop-target');
+  });
   draggedItem = null;
 }
 
@@ -1033,6 +1040,71 @@ async function handleAddGroup() {
   groups.push(newGroup);
   saveGroups();
   currentGroupId = newGroup.id;
+  renderGroups();
+  renderFiles();
+}
+
+const TYPE_CATEGORIES = [
+  { name: '文件夹', test: (f) => f.isDirectory },
+  { name: '文档', test: (f) => ['.txt', '.doc', '.docx', '.pdf', '.rtf', '.odt', '.wps'].includes(f.extension) },
+  { name: '图片', test: (f) => ['.jpg', '.jpeg', '.png', '.gif', '.bmp', '.webp', '.svg', '.ico', '.tiff'].includes(f.extension) },
+  { name: '视频', test: (f) => ['.mp4', '.avi', '.mkv', '.mov', '.wmv', '.flv', '.webm', '.m4v'].includes(f.extension) },
+  { name: '音频', test: (f) => ['.mp3', '.wav', '.flac', '.aac', '.ogg', '.wma', '.m4a'].includes(f.extension) },
+  { name: '压缩包', test: (f) => ['.zip', '.rar', '.7z', '.tar', '.gz', '.bz2'].includes(f.extension) },
+  { name: '程序', test: (f) => ['.exe', '.msi', '.bat', '.cmd', '.ps1', '.app'].includes(f.extension) },
+  { name: '代码', test: (f) => ['.js', '.ts', '.jsx', '.tsx', '.py', '.java', '.c', '.cpp', '.cs', '.html', '.css', '.json', '.xml', '.yaml', '.yml', '.go', '.rs', '.sh'].includes(f.extension) },
+];
+
+function handleAutoGroup() {
+  if (!files || files.length === 0) return;
+
+  const categorized = new Map();
+  const uncategorized = [];
+
+  for (const file of files) {
+    if (file.isSystem) continue;
+    let matched = false;
+    for (const cat of TYPE_CATEGORIES) {
+      if (cat.test(file)) {
+        if (!categorized.has(cat.name)) categorized.set(cat.name, []);
+        categorized.get(cat.name).push(file.path);
+        matched = true;
+        break;
+      }
+    }
+    if (!matched) {
+      uncategorized.push(file.path);
+    }
+  }
+
+  if (uncategorized.length > 0) {
+    categorized.set('其他', uncategorized);
+  }
+
+  if (categorized.size === 0) return;
+
+  const newGroups = [];
+  const ts = Date.now();
+  let i = 0;
+  for (const [name, paths] of categorized) {
+    if (paths.length === 0) continue;
+    newGroups.push({
+      id: 'g_' + ts + '_' + (i++),
+      name: name,
+      paths: paths
+    });
+  }
+
+  if (newGroups.length === 0) return;
+
+  if (groups.length > 0) {
+    if (!confirm('将清除现有分组并按文件类型重新创建，是否继续？')) return;
+    groups = newGroups;
+  } else {
+    groups = newGroups;
+  }
+
+  saveGroups();
   renderGroups();
   renderFiles();
 }
