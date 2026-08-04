@@ -5,6 +5,13 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.3.0] - 2026-08-04
+
+### Added
+
+- Dynamic texture themes: "Topo" (等高线) and "Ocean" (海洋) with slow-drifting SVG
+  contour/wave animation on the title bar (pure CSS, 120s GPU transform loop)
+
 ## [1.2.0] - 2026-08-04
 
 ### Added

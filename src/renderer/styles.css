@@ -1335,3 +1335,119 @@ body.icons-locked .file-item.draggable:active {
   background: var(--bg-button-hover);
   color: var(--text-primary);
 }
+
+/* ============ 动态纹理主题：等高线 / 海洋 ============ */
+:root {
+  --texture-image: none;
+  --texture-size: 800px 40px;
+  --texture-tile: 800px;
+  --texture-anim: none;
+}
+
+/* ---- 主题：等高线 (topo) ---- */
+[data-theme="topo"] {
+  --bg-primary-rgb: 15, 24, 17;
+  --bg-secondary-rgb: 20, 32, 24;
+  --bg-tertiary-rgb: 26, 40, 30;
+  --bg-hover-rgb: 255, 255, 255;
+  --bg-active-rgb: 255, 255, 255;
+  --bg-button-rgb: 255, 255, 255;
+  --bg-button-hover-rgb: 255, 255, 255;
+  --bg-button-active-rgb: 255, 255, 255;
+  --bg-input-rgb: 255, 255, 255;
+  --bg-input-hover-rgb: 255, 255, 255;
+  --bg-context-rgb: 95, 214, 139;
+
+  --border-primary-rgb: 255, 255, 255;
+  --border-secondary-rgb: 255, 255, 255;
+  --border-input-rgb: 255, 255, 255;
+  --border-context-rgb: 95, 214, 139;
+
+  --text-primary-rgb: 233, 241, 234;
+  --text-secondary-rgb: 164, 185, 169;
+  --text-tertiary-rgb: 164, 185, 169;
+  --text-muted-rgb: 96, 116, 101;
+  --text-disabled-rgb: 96, 116, 101;
+
+  --scrollbar-track-rgb: 0, 0, 0;
+  --scrollbar-thumb-rgb: 95, 214, 139;
+  --scrollbar-thumb-hover-rgb: 124, 224, 161;
+
+  --select-option-bg: #142017;
+  --select-option-color: #e9f1ea;
+  --switch-active: #5fd68b;
+
+  --texture-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 800 40' preserveAspectRatio='none'%3E%3Cg fill='none' stroke='%235fd68b' stroke-opacity='0.16' stroke-width='1'%3E%3Cpath d='M0,9 Q40,7 80,9 T160,9 T240,9 T320,9 T400,9 T480,9 T560,9 T640,9 T720,9 T800,9'/%3E%3Cpath d='M0,16 Q40,13 80,16 T160,16 T240,16 T320,16 T400,16 T480,16 T560,16 T640,16 T720,16 T800,16'/%3E%3Cpath d='M0,23 Q40,21 80,23 T160,23 T240,23 T320,23 T400,23 T480,23 T560,23 T640,23 T720,23 T800,23'/%3E%3Cpath d='M0,30 Q40,27 80,30 T160,30 T240,30 T320,30 T400,30 T480,30 T560,30 T640,30 T720,30 T800,30'/%3E%3Cpath d='M0,37 Q40,35 80,37 T160,37 T240,37 T320,37 T400,37 T480,37 T560,37 T640,37 T720,37 T800,37'/%3E%3C/g%3E%3C/svg%3E");
+  --texture-size: 800px 40px;
+  --texture-tile: 800px;
+  --texture-anim: texture-drift 120s linear infinite;
+}
+
+/* ---- 主题：海洋 (ocean) ---- */
+[data-theme="ocean"] {
+  --bg-primary-rgb: 8, 20, 38;
+  --bg-secondary-rgb: 12, 28, 51;
+  --bg-tertiary-rgb: 18, 37, 68;
+  --bg-hover-rgb: 255, 255, 255;
+  --bg-active-rgb: 255, 255, 255;
+  --bg-button-rgb: 255, 255, 255;
+  --bg-button-hover-rgb: 255, 255, 255;
+  --bg-button-active-rgb: 255, 255, 255;
+  --bg-input-rgb: 255, 255, 255;
+  --bg-input-hover-rgb: 255, 255, 255;
+  --bg-context-rgb: 56, 189, 248;
+
+  --border-primary-rgb: 255, 255, 255;
+  --border-secondary-rgb: 255, 255, 255;
+  --border-input-rgb: 255, 255, 255;
+  --border-context-rgb: 56, 189, 248;
+
+  --text-primary-rgb: 230, 240, 253;
+  --text-secondary-rgb: 157, 180, 212;
+  --text-tertiary-rgb: 157, 180, 212;
+  --text-muted-rgb: 88, 109, 140;
+  --text-disabled-rgb: 88, 109, 140;
+
+  --scrollbar-track-rgb: 0, 0, 0;
+  --scrollbar-thumb-rgb: 56, 189, 248;
+  --scrollbar-thumb-hover-rgb: 95, 201, 250;
+
+  --select-option-bg: #0c1c33;
+  --select-option-color: #e6f0fd;
+  --switch-active: #38bdf8;
+
+  --texture-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 400 40' preserveAspectRatio='none'%3E%3Cg fill='none' stroke='%2338bdf8' stroke-opacity='0.17' stroke-width='1.2'%3E%3Cpath d='M0,10 C50,4 100,4 150,10 C200,16 250,16 300,10 C350,4 400,4 400,10'/%3E%3Cpath d='M0,19 C50,13 100,13 150,19 C200,25 250,25 300,19 C350,13 400,13 400,19'/%3E%3Cpath d='M0,28 C50,22 100,22 150,28 C200,34 250,34 300,28 C350,22 400,22 400,28'/%3E%3Cpath d='M0,37 C50,31 100,31 150,37 C200,43 250,43 300,37 C350,31 400,31 400,37'/%3E%3C/g%3E%3C/svg%3E");
+  --texture-size: 400px 40px;
+  --texture-tile: 400px;
+  --texture-anim: texture-drift 120s linear infinite;
+}
+
+/* 标题栏纹理层 */
+.header {
+  position: relative;
+  overflow: hidden;
+}
+
+.header::before {
+  content: '';
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  left: 0;
+  width: calc(100% + var(--texture-tile));
+  background-image: var(--texture-image);
+  background-size: var(--texture-size);
+  background-position: center;
+  background-repeat: repeat-x;
+  pointer-events: none;
+  animation: var(--texture-anim);
+}
+
+@keyframes texture-drift {
+  from {
+    transform: translateX(0);
+  }
+  to {
+    transform: translateX(calc(-1 * var(--texture-tile)));
+  }
+}
