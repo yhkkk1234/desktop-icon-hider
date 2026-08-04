@@ -76,6 +76,12 @@ contextBridge.exposeInMainWorld('api', {
   setEverythingEnabled: (enabled) => ipcRenderer.invoke('set-everything-enabled', enabled),
   openExternal: (url) => ipcRenderer.invoke('open-external', url),
   
+  // 自定义背景图片
+  selectBackgroundImage: () => ipcRenderer.invoke('select-background-image'),
+  setBackgroundSettings: (settings) => ipcRenderer.invoke('set-background-settings', settings),
+  clearBackground: () => ipcRenderer.invoke('clear-background'),
+  getBackgroundData: () => ipcRenderer.invoke('get-background-data'),
+  
   // 监听自动隐藏事件
   onAutoHideChanged: (callback) => ipcRenderer.on('auto-hide-changed', (event, data) => callback(data)),
   onAutoHideStatus: (callback) => ipcRenderer.on('auto-hide-status', (event, data) => callback(data)),

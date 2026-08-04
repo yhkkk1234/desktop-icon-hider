@@ -1534,3 +1534,50 @@ body.icons-locked .file-item.draggable:active {
   object-fit: contain;
   flex-shrink: 0;
 }
+
+/* ============ 自定义背景图片 ============ */
+.bg-layer {
+  position: absolute;
+  inset: 0;
+  z-index: -1;
+  overflow: hidden;
+  border-radius: inherit;
+  pointer-events: none;
+}
+
+.bg-layer img {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  filter: blur(var(--bg-blur, 24px));
+  transform: scale(1.2);
+}
+
+/* 边缘内阴影：压暗模糊图片在窗口边缘的亮色扩散 */
+.bg-layer::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  border-radius: inherit;
+  box-shadow: inset 0 0 32px rgba(0, 0, 0, 0.42);
+  pointer-events: none;
+}
+
+.bg-layer .bg-dim {
+  position: absolute;
+  inset: 0;
+  background: rgba(0, 0, 0, calc(var(--bg-dim, 0.45) / 100));
+}
+
+/* 背景图模式下窗口底色透明，由图片层承担；去掉顶部白边/高光 */
+#app.has-bg {
+  background: transparent;
+  border-color: transparent;
+  box-shadow: 0 8px 32px rgba(0, 0, 0, 0.22);
+}
+
+#app.has-bg .header {
+  box-shadow: 0 1px 4px rgba(0, 0, 0, 0.12);
+}

@@ -36,6 +36,12 @@ const store = new Store({
     startupDelay: 0,
     folderPreviewEnabled: true,
     everythingEnabled: false,
+    backgroundImage: {
+      enabled: false,
+      path: null,
+      blur: 24,
+      dim: 45
+    },
     shortcuts: {
       toggleWindow: 'CommandOrControl+Alt+D',
       refresh: 'CommandOrControl+Alt+R'
@@ -532,7 +538,9 @@ function createWindow() {
           everythingEnabled: store.get('everythingEnabled', false),
           everythingInstalled: !!findEverythingPath(),
           everythingRunAsAdmin: !!findEverythingPath() && isEverythingRunAsAdmin(findEverythingPath()),
-          folderPreviewEnabled: store.get('folderPreviewEnabled', true)
+          folderPreviewEnabled: store.get('folderPreviewEnabled', true),
+          backgroundImage: store.get('backgroundImage', {}),
+          backgroundData: await getBackgroundData()
         });
       } catch (error) {
         console.error('发送初始化数据失败:', error);
@@ -556,7 +564,9 @@ function createWindow() {
           everythingEnabled: store.get('everythingEnabled', false),
           everythingInstalled: false,
           everythingRunAsAdmin: false,
-          folderPreviewEnabled: store.get('folderPreviewEnabled', true)
+          folderPreviewEnabled: store.get('folderPreviewEnabled', true),
+          backgroundImage: store.get('backgroundImage', {}),
+          backgroundData: null
         });
       }
     });
@@ -886,6 +896,125 @@ ipcMain.handle('open-external', async (event, url) => {
     }
   } catch (e) { /* 忽略 */ }
   return false;
+});
+
+// ============ 自定义背景图片 ============
+const BACKGROUND_MAX_DIM = 2560;
+let backgroundDir = null;
+
+function getBackgroundDir() {
+  if (!backgroundDir) {
+    backgroundDir = path.join(app.getPath('userData'), 'backgrounds');
+  }
+  return backgroundDir;
+}
+
+function getBackgroundFilePath() {
+  return path.join(getBackgroundDir(), 'bg.jpg');
+}
+
+async function selectBackgroundImage() {
+  try {
+    const { dialog } = require('electron');
+    const { canceled, filePaths } = await dialog.showOpenDialog(mainWindow, {
+      title: '选择背景图片',
+      filters: [
+        { name: '图片', extensions: ['jpg', 'jpeg', 'png', 'webp', 'bmp', 'gif'] }
+      ],
+      properties: ['openFile']
+    });
+    if (canceled || !filePaths || filePaths.length === 0) {
+      return { success: false, canceled: true };
+    }
+    const srcPath = filePaths[0];
+    const img = nativeImage.createFromPath(srcPath);
+    if (img.isEmpty()) {
+      return { success: false, error: '无法读取该图片' };
+    }
+    const size = img.getSize();
+    let finalImg = img;
+    if (size && size.width && size.height) {
+      const scale = Math.min(1, BACKGROUND_MAX_DIM / Math.max(size.width, size.height));
+      if (scale < 1) {
+        finalImg = img.resize({
+          width: Math.max(1, Math.round(size.width * scale)),
+          height: Math.max(1, Math.round(size.height * scale)),
+          quality: 'best'
+        });
+      }
+    }
+    const jpegData = finalImg.toJPEG(85);
+    if (!jpegData || jpegData.length === 0) {
+      return { success: false, error: '图片编码失败' };
+    }
+    await fs.promises.mkdir(getBackgroundDir(), { recursive: true });
+    await fs.promises.writeFile(getBackgroundFilePath(), jpegData);
+    const config = store.get('backgroundImage', {});
+    config.path = getBackgroundFilePath();
+    config.enabled = true;
+    store.set('backgroundImage', config);
+    return { success: true, config, dataUrl: `data:image/jpeg;base64,${jpegData.toString('base64')}` };
+  } catch (e) {
+    console.error('选择背景图片失败:', e.message);
+    return { success: false, error: e.message };
+  }
+}
+
+async function getBackgroundData() {
+  try {
+    const config = store.get('backgroundImage', {});
+    if (!config || !config.path || !fs.existsSync(config.path)) return null;
+    const data = await fs.promises.readFile(config.path);
+    return `data:image/jpeg;base64,${data.toString('base64')}`;
+  } catch (e) {
+    return null;
+  }
+}
+
+async function clearBackground() {
+  try {
+    const config = store.get('backgroundImage', {});
+    config.enabled = false;
+    config.path = null;
+    store.set('backgroundImage', config);
+    try {
+      if (fs.existsSync(getBackgroundFilePath())) {
+        await fs.promises.unlink(getBackgroundFilePath());
+      }
+    } catch (e) { /* 忽略 */ }
+    return { success: true };
+  } catch (e) {
+    return { success: false, error: e.message };
+  }
+}
+
+ipcMain.handle('select-background-image', async () => {
+  return await selectBackgroundImage();
+});
+
+ipcMain.handle('set-background-settings', async (event, settings) => {
+  try {
+    const config = store.get('backgroundImage', {});
+    if (typeof settings.enabled === 'boolean') config.enabled = settings.enabled;
+    if (Number.isFinite(settings.blur)) {
+      config.blur = Math.max(0, Math.min(60, Math.round(settings.blur)));
+    }
+    if (Number.isFinite(settings.dim)) {
+      config.dim = Math.max(0, Math.min(80, Math.round(settings.dim)));
+    }
+    store.set('backgroundImage', config);
+    return { success: true, config };
+  } catch (e) {
+    return { success: false, error: e.message };
+  }
+});
+
+ipcMain.handle('clear-background', async () => {
+  return await clearBackground();
+});
+
+ipcMain.handle('get-background-data', async () => {
+  return await getBackgroundData();
 });
 
 // 布局导出/导入

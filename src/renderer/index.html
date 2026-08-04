@@ -8,6 +8,12 @@
 </head>
 <body>
   <div id="app">
+    <!-- 自定义背景图层（最底层） -->
+    <div id="bg-layer" class="bg-layer" style="display: none;">
+      <img id="bg-image" alt="" draggable="false">
+      <div id="bg-dim" class="bg-dim"></div>
+    </div>
+    
     <div id="header" class="header">
       <button id="toggle-btn" class="icon-btn" title="折叠">
         <span id="toggle-icon">▼</span>
@@ -143,6 +149,35 @@
         </div>
         <div class="setting-description" data-i18n="settings.folderPreviewDesc">
           鼠标悬停文件夹时弹出内容预览。预览面板支持滚动，鼠标移入面板不会消失。
+        </div>
+      </div>
+      
+      <!-- 背景图片 -->
+      <div class="settings-section">
+        <h3 data-i18n="settings.background">背景图片</h3>
+        <div class="setting-item">
+          <label class="switch">
+            <input type="checkbox" id="background-toggle">
+            <span class="slider"></span>
+          </label>
+          <span class="setting-label" data-i18n="settings.backgroundEnable">启用自定义背景图片</span>
+        </div>
+        <div class="setting-item">
+          <button id="select-bg-btn" class="prompt-btn prompt-btn-confirm" data-i18n="settings.backgroundSelect">选择图片</button>
+          <button id="clear-bg-btn" class="prompt-btn prompt-btn-cancel" data-i18n="settings.backgroundClear">移除背景</button>
+        </div>
+        <div class="setting-item opacity-control">
+          <label for="bg-blur-slider" data-i18n="settings.backgroundBlur">模糊:</label>
+          <input type="range" id="bg-blur-slider" min="0" max="60" step="1" value="24">
+          <span id="bg-blur-value">24px</span>
+        </div>
+        <div class="setting-item opacity-control">
+          <label for="bg-dim-slider" data-i18n="settings.backgroundDim">暗化:</label>
+          <input type="range" id="bg-dim-slider" min="0" max="80" step="5" value="45">
+          <span id="bg-dim-value">45%</span>
+        </div>
+        <div class="setting-description" data-i18n="settings.backgroundDesc">
+          选择一张图片作为窗口背景，模糊和暗化处理可保证图标清晰可读，营造柔和氛围。
         </div>
       </div>
       

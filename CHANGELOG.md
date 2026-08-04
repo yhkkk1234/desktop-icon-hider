@@ -5,6 +5,67 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.5.6] - 2026-08-04
+
+### Changed
+
+- Background image edge shadow deepened (32px / 0.42 alpha) for a cleaner,
+  fully shadowed border in background mode
+
+## [1.5.5] - 2026-08-04
+
+### Fixed
+
+- Background image mode: added an inset edge shadow and increased the image
+  zoom (1.12 -> 1.2) so bright blurred image edges no longer show as a
+  faint light border at the window edge (edge color varied with image)
+
+## [1.5.4] - 2026-08-04
+
+### Fixed
+
+- Background image mode: removed the header's own 1px top inset highlight,
+  which showed as a thin white edge once the window-level highlight was gone
+
+## [1.5.3] - 2026-08-04
+
+### Fixed
+
+- Background image mode: removed the 1px top inset highlight and light border
+  that became visible as a thin white edge on the transparent window
+
+## [1.5.2] - 2026-08-04
+
+### Fixed
+
+- Background image layer now inherits the window's border-radius so the
+  rounded corners stay rounded in background-image mode (no straight-corner
+  bleed)
+
+## [1.5.1] - 2026-08-04
+
+### Fixed
+
+- Background image layer no longer covers icons/text: moved to z-index -1 so
+  content stays above it (previously the absolutely-positioned layer rendered
+  over non-positioned content)
+
+## [1.5.0] - 2026-08-04
+
+### Added
+
+- Custom background image: pick any local image as the window background with
+  blur and dim sliders (default 24px blur / 45% dim) for a soft, readable
+  ambience; stored as compressed JPEG in userData; themes still control text
+  and controls
+
+## [1.4.4] - 2026-08-04
+
+### Fixed
+
+- Multi-select icons can now be dragged into a group in one go (all added,
+  items already in the group are skipped); single drag keeps toggle semantics
+
 ## [1.4.3] - 2026-08-04
 
 ### Performance

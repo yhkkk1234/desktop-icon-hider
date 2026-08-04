@@ -27,6 +27,8 @@ let folderPreviewEnabled = true; // 文件夹悬停预览开关
 let everythingEnabled = false; // Everything 集成开关
 let everythingInstalled = false; // 是否检测到 Everything
 let everythingRunAsAdmin = false; // Everything 是否以管理员运行
+let bgConfig = { enabled: false, blur: 24, dim: 45 }; // 自定义背景图片配置
+let bgData = null; // 背景图片 data URL
 
 // 多选
 let selectedPaths = new Set();
@@ -54,6 +56,7 @@ let shortcutToggleInput, shortcutRefreshInput;
 let exportLayoutBtn, importLayoutBtn, quitAppBtn;
 let everythingBar, everythingInput, everythingGo, everythingToggle, everythingStatus, everythingDownloadBtn, everythingAdminWarn;
 let folderPreviewToggle;
+let bgLayer, bgImage, bgToggle, selectBgBtn, clearBgBtn, bgBlurSlider, bgBlurValue, bgDimSlider, bgDimValue;
 
 // 刷新防抖
 let refreshTimeout = null;
@@ -117,6 +120,15 @@ document.addEventListener('DOMContentLoaded', () => {
   everythingDownloadBtn = document.getElementById('everything-download-btn');
   everythingAdminWarn = document.getElementById('everything-admin-warn');
   folderPreviewToggle = document.getElementById('folder-preview-toggle');
+  bgLayer = document.getElementById('bg-layer');
+  bgImage = document.getElementById('bg-image');
+  bgToggle = document.getElementById('background-toggle');
+  selectBgBtn = document.getElementById('select-bg-btn');
+  clearBgBtn = document.getElementById('clear-bg-btn');
+  bgBlurSlider = document.getElementById('bg-blur-slider');
+  bgBlurValue = document.getElementById('bg-blur-value');
+  bgDimSlider = document.getElementById('bg-dim-slider');
+  bgDimValue = document.getElementById('bg-dim-value');
 
   // 绑定事件
   toggleBtn.addEventListener('click', handleToggleCollapse);
@@ -154,6 +166,13 @@ document.addEventListener('DOMContentLoaded', () => {
 
   // 文件夹预览开关
   folderPreviewToggle.addEventListener('change', handleFolderPreviewToggle);
+
+  // 背景图片
+  bgToggle.addEventListener('change', handleBgToggle);
+  selectBgBtn.addEventListener('click', handleSelectBg);
+  clearBgBtn.addEventListener('click', handleClearBg);
+  bgBlurSlider.addEventListener('input', handleBgBlur);
+  bgDimSlider.addEventListener('input', handleBgDim);
 
   // 快捷键录制
   bindShortcutRecorder(shortcutToggleInput, 'toggleWindow');
@@ -243,6 +262,14 @@ document.addEventListener('DOMContentLoaded', () => {
     everythingEnabled = !!data.everythingEnabled;
     everythingInstalled = !!data.everythingInstalled;
     everythingRunAsAdmin = !!data.everythingRunAsAdmin;
+    if (data.backgroundImage && typeof data.backgroundImage === 'object') {
+      bgConfig = {
+        enabled: !!data.backgroundImage.enabled,
+        blur: Number.isFinite(data.backgroundImage.blur) ? data.backgroundImage.blur : 24,
+        dim: Number.isFinite(data.backgroundImage.dim) ? data.backgroundImage.dim : 45
+      };
+    }
+    bgData = typeof data.backgroundData === 'string' ? data.backgroundData : null;
 
     setLanguage(data.language || 'zh-CN');
 
@@ -258,6 +285,8 @@ document.addEventListener('DOMContentLoaded', () => {
     renderRules();
     updateEverythingUI();
     updateFolderPreviewUI();
+    updateBackgroundUI();
+    applyBackground();
     applyTheme(theme);
     applyOpacity(opacity);
     applyIconSize(iconSize);
@@ -1566,13 +1595,42 @@ function updateDraggable(item, file) {
 }
 
 function handleDragStart(e) {
-  draggedItem = e.currentTarget;
-  draggedItem.classList.add('dragging');
+  const item = e.currentTarget;
+  draggedItem = item;
+  item.classList.add('dragging');
   e.dataTransfer.effectAllowed = 'move';
+  const path = item.dataset.path;
+  // 多选拖拽：拖拽项在选中集合中时携带整个集合；否则改为单选该项
+  let paths;
+  if (selectedPaths.has(path)) {
+    paths = [...selectedPaths];
+  } else {
+    clearSelection();
+    selectedPaths.add(path);
+    updateSelectionUI();
+    updateItemSelectedClass();
+    paths = [path];
+  }
   // 必须设置 data 才能在某些浏览器触发 drop
-  try { e.dataTransfer.setData('text/plain', draggedItem.dataset.path); } catch (_err) { /* 某些环境不支持，忽略 */ }
+  try {
+    e.dataTransfer.setData('text/plain', path);
+    e.dataTransfer.setData('application/x-dih-paths', JSON.stringify(paths));
+  } catch (_err) { /* 某些环境不支持，忽略 */ }
   // 显示拖拽提示
   document.querySelectorAll('.group-tab').forEach(el => el.classList.add('drag-active'));
+}
+
+// 从拖拽事件中解析所有被拖拽的文件路径（支持多选拖拽）
+function getDraggedPaths(e) {
+  try {
+    const raw = e.dataTransfer.getData('application/x-dih-paths');
+    if (raw) {
+      const parsed = JSON.parse(raw);
+      if (Array.isArray(parsed) && parsed.length > 0) return parsed;
+    }
+  } catch (_err) { /* 忽略 */ }
+  const single = e.dataTransfer.getData('text/plain');
+  return single ? [single] : [];
 }
 
 function handleDragEnd() {
@@ -1694,8 +1752,22 @@ function renderGroups() {
       e.preventDefault();
       tab.classList.remove('drop-target');
       if (!draggedItem || iconsLocked) return;
-      const path = draggedItem.dataset.path;
-      addPathToGroup(group.id, path);
+      const paths = getDraggedPaths(e);
+      if (paths.length === 0) return;
+      if (paths.length === 1) {
+        // 单个拖拽保持切换语义（已在组内则移出）
+        addPathToGroup(group.id, paths[0]);
+      } else {
+        // 批量拖入：全部加入（已在组内则跳过）
+        if (!group.paths) group.paths = [];
+        for (const p of paths) {
+          if (!group.paths.includes(p)) group.paths.push(p);
+        }
+        saveGroups();
+        renderGroups();
+      }
+      clearSelection();
+      updateItemSelectedClass();
     });
 
     // 双击重命名
@@ -2066,6 +2138,76 @@ async function handleFolderPreviewToggle() {
 
 function updateFolderPreviewUI() {
   if (folderPreviewToggle) folderPreviewToggle.checked = folderPreviewEnabled;
+}
+
+// ============ 自定义背景图片 ============
+function applyBackground() {
+  const enabled = bgConfig.enabled && bgData;
+  if (bgLayer) bgLayer.style.display = enabled ? 'block' : 'none';
+  if (bgImage && bgData) bgImage.src = bgData;
+  const root = document.documentElement;
+  root.style.setProperty('--bg-blur', bgConfig.blur + 'px');
+  root.style.setProperty('--bg-dim', bgConfig.dim);
+  const app = document.getElementById('app');
+  app.classList.toggle('has-bg', enabled);
+}
+
+function updateBackgroundUI() {
+  if (bgToggle) {
+    bgToggle.checked = bgConfig.enabled;
+    bgToggle.disabled = !bgData;
+  }
+  if (bgBlurSlider) bgBlurSlider.value = String(bgConfig.blur);
+  if (bgBlurValue) bgBlurValue.textContent = bgConfig.blur + 'px';
+  if (bgDimSlider) bgDimSlider.value = String(bgConfig.dim);
+  if (bgDimValue) bgDimValue.textContent = bgConfig.dim + '%';
+}
+
+async function handleBgToggle() {
+  bgConfig.enabled = bgToggle.checked;
+  await window.api.setBackgroundSettings({ enabled: bgConfig.enabled });
+  applyBackground();
+}
+
+async function handleSelectBg() {
+  const result = await window.api.selectBackgroundImage();
+  if (result && result.success) {
+    bgConfig = {
+      enabled: !!result.config.enabled,
+      blur: Number.isFinite(result.config.blur) ? result.config.blur : 24,
+      dim: Number.isFinite(result.config.dim) ? result.config.dim : 45
+    };
+    bgData = result.dataUrl || null;
+    updateBackgroundUI();
+    applyBackground();
+  } else if (result && result.error) {
+    showToast(t('settings.backgroundFail'));
+  }
+}
+
+async function handleClearBg() {
+  const result = await window.api.clearBackground();
+  if (result && result.success) {
+    bgConfig.enabled = false;
+    bgData = null;
+    if (bgImage) bgImage.removeAttribute('src');
+    updateBackgroundUI();
+    applyBackground();
+  }
+}
+
+async function handleBgBlur() {
+  bgConfig.blur = parseInt(bgBlurSlider.value) || 0;
+  bgBlurValue.textContent = bgConfig.blur + 'px';
+  applyBackground();
+  await window.api.setBackgroundSettings({ blur: bgConfig.blur });
+}
+
+async function handleBgDim() {
+  bgConfig.dim = parseInt(bgDimSlider.value) || 0;
+  bgDimValue.textContent = bgConfig.dim + '%';
+  applyBackground();
+  await window.api.setBackgroundSettings({ dim: bgConfig.dim });
 }
 
 // ============ Everything 搜索 ============
