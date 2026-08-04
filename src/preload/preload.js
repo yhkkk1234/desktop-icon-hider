@@ -64,6 +64,12 @@ contextBridge.exposeInMainWorld('api', {
   exportLayout: (extraData) => ipcRenderer.invoke('export-layout', extraData),
   importLayout: (importGroups) => ipcRenderer.invoke('import-layout', importGroups),
   
+  // Everything 搜索集成
+  checkEverything: () => ipcRenderer.invoke('check-everything'),
+  openEverythingSearch: (keyword) => ipcRenderer.invoke('open-everything-search', keyword),
+  setEverythingEnabled: (enabled) => ipcRenderer.invoke('set-everything-enabled', enabled),
+  openExternal: (url) => ipcRenderer.invoke('open-external', url),
+  
   // 监听自动隐藏事件
   onAutoHideChanged: (callback) => ipcRenderer.on('auto-hide-changed', (event, data) => callback(data)),
   onAutoHideStatus: (callback) => ipcRenderer.on('auto-hide-status', (event, data) => callback(data)),

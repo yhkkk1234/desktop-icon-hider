@@ -23,6 +23,8 @@ let shortcuts = {}; // 自定义快捷键
 let startupDelay = 0; // 开机延迟启动
 let iconsVisible = true; // 图标可见性（双击空白切换）
 let clipboard = null; // 剪贴板: { mode: 'copy'|'cut', paths: [] }
+let everythingEnabled = false; // Everything 集成开关
+let everythingInstalled = false; // 是否检测到 Everything
 
 // 多选
 let selectedPaths = new Set();
@@ -46,6 +48,7 @@ let iconsLockToggle, rulesList, addRuleBtn, applyRulesBtn;
 let startupDelayInput, languageSelect;
 let shortcutToggleInput, shortcutRefreshInput;
 let exportLayoutBtn, importLayoutBtn, quitAppBtn;
+let everythingBar, everythingInput, everythingGo, everythingToggle, everythingStatus, everythingDownloadBtn;
 
 // 刷新防抖
 let refreshTimeout = null;
@@ -101,6 +104,12 @@ document.addEventListener('DOMContentLoaded', () => {
   exportLayoutBtn = document.getElementById('export-layout-btn');
   importLayoutBtn = document.getElementById('import-layout-btn');
   quitAppBtn = document.getElementById('quit-app-btn');
+  everythingBar = document.getElementById('everything-bar');
+  everythingInput = document.getElementById('everything-input');
+  everythingGo = document.getElementById('everything-go');
+  everythingToggle = document.getElementById('everything-toggle');
+  everythingStatus = document.getElementById('everything-status');
+  everythingDownloadBtn = document.getElementById('everything-download-btn');
 
   // 绑定事件
   toggleBtn.addEventListener('click', handleToggleCollapse);
@@ -122,6 +131,19 @@ document.addEventListener('DOMContentLoaded', () => {
   exportLayoutBtn.addEventListener('click', handleExportLayout);
   importLayoutBtn.addEventListener('click', handleImportLayout);
   quitAppBtn.addEventListener('click', handleQuit);
+
+  // Everything 搜索
+  everythingToggle.addEventListener('change', handleEverythingToggle);
+  everythingDownloadBtn.addEventListener('click', () => {
+    window.api.openExternal('https://www.voidtools.com/downloads/');
+  });
+  everythingInput.addEventListener('keydown', (e) => {
+    if (e.key === 'Enter') {
+      e.preventDefault();
+      runEverythingSearch();
+    }
+  });
+  everythingGo.addEventListener('click', runEverythingSearch);
 
   // 快捷键录制
   bindShortcutRecorder(shortcutToggleInput, 'toggleWindow');
@@ -186,6 +208,8 @@ document.addEventListener('DOMContentLoaded', () => {
     shortcuts = data.shortcuts || {};
     startupDelay = data.startupDelay || 0;
     iconsVisible = true;
+    everythingEnabled = !!data.everythingEnabled;
+    everythingInstalled = !!data.everythingInstalled;
 
     setLanguage(data.language || 'zh-CN');
 
@@ -199,6 +223,7 @@ document.addEventListener('DOMContentLoaded', () => {
     updateStartupDelayUI();
     updateShortcutInputs();
     renderRules();
+    updateEverythingUI();
     applyTheme(theme);
     applyOpacity(opacity);
     applyIconSize(iconSize);
@@ -1733,15 +1758,16 @@ async function handleFileContextMenu(e, filePath) {
   const item = e.target.closest('.file-item');
   if (item) item.classList.add('context-menu-active');
 
-  window.api.cancelDesktopContextMenu();
+  // 菜单关闭后无需强制刷新：fs.watch 会自动检测文件变化
   window.api.showFileContextMenu(filePath, screenX, screenY).then(() => {
     if (item) item.classList.remove('context-menu-active');
-    debouncedHandleRefresh(500);
+  }).catch(() => {
+    if (item) item.classList.remove('context-menu-active');
   });
 
   contextMenuTimeout = setTimeout(() => {
     contextMenuTimeout = null;
-  }, 500);
+  }, 200);
 }
 
 async function handleDesktopContextMenu(e) {
@@ -1753,14 +1779,11 @@ async function handleDesktopContextMenu(e) {
   const screenX = e.screenX;
   const screenY = e.screenY;
 
-  window.api.cancelDesktopContextMenu();
-  window.api.showDesktopContextMenu(screenX, screenY).then(() => {
-    debouncedHandleRefresh(500);
-  });
+  window.api.showDesktopContextMenu(screenX, screenY);
 
   contextMenuTimeout = setTimeout(() => {
     contextMenuTimeout = null;
-  }, 500);
+  }, 200);
 }
 
 // ============ 自动整理规则 ============
@@ -1870,6 +1893,67 @@ async function applyArrangeRules() {
   renderGroups();
   renderFiles();
   showToast(categorized > 0 ? t('rule.applied', { n: categorized }) : t('rule.noMatch'));
+}
+
+// ============ Everything 搜索 ============
+function updateEverythingUI() {
+  if (everythingToggle) everythingToggle.checked = everythingEnabled;
+  // 搜索栏仅在开启且已安装时显示
+  everythingBar.style.display = (everythingEnabled && everythingInstalled) ? 'flex' : 'none';
+  // 状态显示
+  if (everythingInstalled) {
+    everythingStatus.textContent = t('settings.everythingReady');
+    everythingStatus.className = 'status-enabled';
+    everythingDownloadBtn.style.display = 'none';
+  } else {
+    everythingStatus.textContent = t('settings.everythingMissing');
+    everythingStatus.className = 'status-disabled';
+    everythingDownloadBtn.style.display = everythingEnabled ? 'inline-block' : 'none';
+  }
+}
+
+async function handleEverythingToggle() {
+  const enabled = everythingToggle.checked;
+  if (enabled) {
+    // 开启前重新检测安装状态
+    try {
+      const result = await window.api.checkEverything();
+      everythingInstalled = !!(result && result.installed);
+    } catch (e) {
+      everythingInstalled = false;
+    }
+    if (!everythingInstalled) {
+      showToast(t('settings.everythingMissing'));
+      everythingEnabled = false;
+      everythingToggle.checked = false;
+      updateEverythingUI();
+      return;
+    }
+    everythingEnabled = true;
+    await window.api.setEverythingEnabled(true);
+    updateEverythingUI();
+    everythingInput.focus();
+  } else {
+    everythingEnabled = false;
+    await window.api.setEverythingEnabled(false);
+    updateEverythingUI();
+  }
+}
+
+async function runEverythingSearch() {
+  const keyword = everythingInput.value.trim();
+  if (!keyword) {
+    everythingInput.focus();
+    return;
+  }
+  const result = await window.api.openEverythingSearch(keyword);
+  if (result && !result.installed) {
+    everythingInstalled = false;
+    everythingEnabled = false;
+    await window.api.setEverythingEnabled(false);
+    updateEverythingUI();
+    showToast(t('settings.everythingMissing'));
+  }
 }
 
 // ============ 布局导出/导入 ============

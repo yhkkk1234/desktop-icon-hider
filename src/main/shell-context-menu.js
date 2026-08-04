@@ -1,5 +1,5 @@
 /* eslint-disable quotes */
-const { exec, execSync } = require('child_process');
+const { execSync, spawn } = require('child_process');
 const fs = require('fs');
 const path = require('path');
 const os = require('os');
@@ -649,16 +649,14 @@ function showDesktopContextMenu(x, y) {
   if (!exePath) return Promise.resolve(false);
 
   return new Promise((resolve) => {
-    exec(`"${exePath}" desktop ${x} ${y}`, {
-      timeout: 30000,
-      windowsHide: true
-    }, (error) => {
-      if (!error || (error && error.status === 0)) {
-        resolve(true);
-      } else {
-        resolve(false);
-      }
+    const child = spawn(exePath, ['desktop', String(x), String(y)], {
+      windowsHide: true,
+      stdio: 'ignore'
     });
+    const timer = setTimeout(() => { child.kill(); }, 30000);
+    timer.unref();
+    child.on('error', () => { clearTimeout(timer); resolve(false); });
+    child.on('exit', (code) => { clearTimeout(timer); resolve(code === 0); });
   });
 }
 
@@ -669,18 +667,14 @@ function showFileContextMenu(filePath, x, y) {
   }
 
   return new Promise((resolve) => {
-    const args = `file ${x} ${y}`;
-    const cmd = `"${exePath}" ${args} "${filePath}"`;
-    exec(cmd, {
-      timeout: 30000,
-      windowsHide: true
-    }, (error) => {
-      if (!error || (error && error.status === 0)) {
-        resolve(true);
-      } else {
-        resolve(false);
-      }
+    const child = spawn(exePath, ['file', String(x), String(y), filePath], {
+      windowsHide: true,
+      stdio: 'ignore'
     });
+    const timer = setTimeout(() => { child.kill(); }, 30000);
+    timer.unref();
+    child.on('error', () => { clearTimeout(timer); resolve(false); });
+    child.on('exit', (code) => { clearTimeout(timer); resolve(code === 0); });
   });
 }
 
@@ -689,12 +683,14 @@ function cancelDesktopContextMenu() {
   if (!exePath) return Promise.resolve(false);
 
   return new Promise((resolve) => {
-    exec(`"${exePath}" cancel`, {
-      timeout: 5000,
-      windowsHide: true
-    }, () => {
-      resolve(true);
+    const child = spawn(exePath, ['cancel'], {
+      windowsHide: true,
+      stdio: 'ignore'
     });
+    const timer = setTimeout(() => { child.kill(); }, 5000);
+    timer.unref();
+    child.on('error', () => { clearTimeout(timer); resolve(true); });
+    child.on('exit', () => { clearTimeout(timer); resolve(true); });
   });
 }
 

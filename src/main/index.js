@@ -2,7 +2,7 @@ const { app, BrowserWindow, ipcMain, shell, nativeTheme, globalShortcut } = requ
 const path = require('path');
 const fs = require('fs');
 const os = require('os');
-const { execSync } = require('child_process');
+const { execSync, spawn } = require('child_process');
 const Store = require('electron-store');
 const { getFileIcon, getFileIcons, initializeDesktopAPI, getSystemIconEmoji, cleanupIconCache } = require('./desktop-api');
 const { showDesktopContextMenu, showFileContextMenu, cancelDesktopContextMenu, compileExe } = require('./shell-context-menu');
@@ -34,6 +34,7 @@ const store = new Store({
     iconsLocked: false,
     arrangeRules: [],
     startupDelay: 0,
+    everythingEnabled: false,
     shortcuts: {
       toggleWindow: 'CommandOrControl+Alt+D',
       refresh: 'CommandOrControl+Alt+R'
@@ -486,7 +487,9 @@ function createWindow() {
           arrangeRules: store.get('arrangeRules', []),
           shortcuts: store.get('shortcuts', {}),
           startupDelay: store.get('startupDelay', 0),
-          language: store.get('language', 'zh-CN')
+          language: store.get('language', 'zh-CN'),
+          everythingEnabled: store.get('everythingEnabled', false),
+          everythingInstalled: !!findEverythingPath()
         });
       } catch (error) {
         console.error('发送初始化数据失败:', error);
@@ -506,7 +509,9 @@ function createWindow() {
           arrangeRules: store.get('arrangeRules', []),
           shortcuts: store.get('shortcuts', {}),
           startupDelay: store.get('startupDelay', 0),
-          language: store.get('language', 'zh-CN')
+          language: store.get('language', 'zh-CN'),
+          everythingEnabled: store.get('everythingEnabled', false),
+          everythingInstalled: false
         });
       }
     });
@@ -711,6 +716,98 @@ ipcMain.handle('set-startup-delay', async (event, seconds) => {
   const delay = Number.isFinite(seconds) ? Math.max(0, Math.min(600, Math.round(seconds))) : 0;
   store.set('startupDelay', delay);
   return true;
+});
+
+// ============ Everything 搜索集成 ============
+function getFixedDriveLetters() {
+  const drives = [];
+  for (let code = 65; code <= 90; code++) {
+    const letter = String.fromCharCode(code) + ':\\';
+    if (fs.existsSync(letter)) drives.push(letter);
+  }
+  return drives;
+}
+
+function findEverythingPath() {
+  const candidates = [];
+  // 注册表 App Paths（HKLM / HKCU / WOW6432Node）
+  try {
+    const result = execSync(
+      'reg query "HKLM\\SOFTWARE\\Microsoft\\Windows\\CurrentVersion\\App Paths\\Everything.exe" /ve 2>nul || reg query "HKCU\\SOFTWARE\\Microsoft\\Windows\\CurrentVersion\\App Paths\\Everything.exe" /ve 2>nul || reg query "HKLM\\SOFTWARE\\WOW6432Node\\Microsoft\\Windows\\CurrentVersion\\App Paths\\Everything.exe" /ve 2>nul',
+      { timeout: 3000, encoding: 'utf8' }
+    );
+    const m = result.match(/REG_SZ\s+(\S.+)/);
+    if (m) {
+      const p = m[1].trim();
+      if (fs.existsSync(p)) candidates.push(p);
+    }
+  } catch (e) { /* 未注册 */ }
+  // 遍历所有盘符的常见安装位置（用户可能装在非 C 盘）
+  for (const drive of getFixedDriveLetters()) {
+    candidates.push(path.join(drive, 'Program Files', 'Everything', 'Everything.exe'));
+    candidates.push(path.join(drive, 'Program Files (x86)', 'Everything', 'Everything.exe'));
+    candidates.push(path.join(drive, 'Program Files', 'Everything 1.5a', 'Everything.exe'));
+    candidates.push(path.join(drive, 'Everything', 'Everything.exe'));
+  }
+  // 便携版常见位置
+  candidates.push(path.join(process.env.LOCALAPPDATA || '', 'Everything', 'Everything.exe'));
+  candidates.push(path.join(process.env.USERPROFILE || '', 'Downloads', 'Everything', 'Everything.exe'));
+  candidates.push(path.join(process.env.USERPROFILE || '', 'Desktop', 'Everything', 'Everything.exe'));
+
+  for (const p of candidates) {
+    if (p && fs.existsSync(p)) return p;
+  }
+  // 最后兜底：正在运行的 Everything 进程路径
+  try {
+    const result = execSync(
+      'powershell -NoProfile -Command "(Get-Process -Name Everything -ErrorAction SilentlyContinue | Select-Object -First 1).Path"',
+      { timeout: 4000, encoding: 'utf8' }
+    );
+    const p = (result || '').trim();
+    if (p && fs.existsSync(p)) return p;
+  } catch (e) { /* 忽略 */ }
+  return null;
+}
+
+function openEverythingSearch(keyword) {
+  const exePath = findEverythingPath();
+  if (!exePath) return { ok: false, installed: false };
+  try {
+    const child = spawn(exePath, ['-search', String(keyword)], {
+      windowsHide: true,
+      detached: true,
+      stdio: 'ignore'
+    });
+    child.unref();
+    return { ok: true, installed: true };
+  } catch (e) {
+    console.error('启动 Everything 搜索失败:', e.message);
+    return { ok: false, installed: true, error: e.message };
+  }
+}
+
+ipcMain.handle('check-everything', async () => {
+  const p = findEverythingPath();
+  return { installed: !!p, path: p };
+});
+
+ipcMain.handle('open-everything-search', async (event, keyword) => {
+  return openEverythingSearch(keyword);
+});
+
+ipcMain.handle('set-everything-enabled', async (event, enabled) => {
+  store.set('everythingEnabled', !!enabled);
+  return true;
+});
+
+ipcMain.handle('open-external', async (event, url) => {
+  try {
+    if (typeof url === 'string' && /^https?:\/\//.test(url)) {
+      shell.openExternal(url);
+      return true;
+    }
+  } catch (e) { /* 忽略 */ }
+  return false;
 });
 
 // 布局导出/导入
@@ -1029,19 +1126,29 @@ ipcMain.handle('set-auto-launch', async (event, enabled) => {
   }
 });
 
+// 右键菜单活动状态：仅当菜单确实显示过时才执行 cancel，避免每次右键多启动一个进程
+let contextMenuActive = false;
+
 ipcMain.handle('show-desktop-context-menu', async (event, x, y) => {
   try {
     if (mainWindow && !mainWindow.isDestroyed()) {
       mainWindow.setAlwaysOnTop(false);
     }
     
+    if (contextMenuActive) {
+      await cancelDesktopContextMenu();
+    }
+    contextMenuActive = true;
+    
     const result = await showDesktopContextMenu(Math.round(x), Math.round(y));
+    contextMenuActive = false;
     
     if (mainWindow && !mainWindow.isDestroyed()) {
       mainWindow.setAlwaysOnTop(true, 'floating');
     }
     return result;
   } catch (error) {
+    contextMenuActive = false;
     console.error('显示桌面右键菜单失败:', error);
     if (mainWindow && !mainWindow.isDestroyed()) {
       mainWindow.setAlwaysOnTop(true, 'floating');
@@ -1057,6 +1164,7 @@ ipcMain.handle('cancel-desktop-context-menu', async () => {
       await cancelDesktopContextMenu();
     } catch (e) { /* 忽略错误 */ }
   }
+  contextMenuActive = false;
   return true;
 });
 
@@ -1066,13 +1174,20 @@ ipcMain.handle('show-file-context-menu', async (event, filePath, x, y) => {
       mainWindow.setAlwaysOnTop(false);
     }
     
+    if (contextMenuActive) {
+      await cancelDesktopContextMenu();
+    }
+    contextMenuActive = true;
+    
     const result = await showFileContextMenu(filePath, Math.round(x), Math.round(y));
+    contextMenuActive = false;
     
     if (mainWindow && !mainWindow.isDestroyed()) {
       mainWindow.setAlwaysOnTop(true, 'floating');
     }
     return result;
   } catch (error) {
+    contextMenuActive = false;
     console.error('显示文件右键菜单失败:', error);
     if (mainWindow && !mainWindow.isDestroyed()) {
       mainWindow.setAlwaysOnTop(true, 'floating');

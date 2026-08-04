@@ -5,6 +5,22 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.2.0] - 2026-08-04
+
+### Added
+
+- Everything search integration: settings toggle shows a search bar under the title bar;
+  Enter invokes `Everything.exe -search "keyword"` to open the native Everything window
+- Auto-detects Everything via registry App Paths and common install locations
+- Download prompt with official website link when Everything is not installed
+
+### Performance
+
+- Removed backdrop-filter blur on the main window (major scroll jank fix for transparent windows)
+- Context menu now spawns a single process per right-click (was two: cancel + show)
+- Removed forced list refresh after context menu closes (fs.watch covers it)
+- Replaced exec with spawn for context menu helper process
+
 ## [1.1.2] - 2026-08-04
 
 ### Fixed

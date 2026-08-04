@@ -20,6 +20,13 @@
       </div>
     </div>
     
+    <!-- Everything 搜索栏（标题栏下） -->
+    <div id="everything-bar" class="everything-bar" style="display: none;">
+      <span class="search-icon">🔍</span>
+      <input type="text" id="everything-input" data-i18n-placeholder="everything.placeholder" placeholder="搜索全盘文件... (回车)" autocomplete="off" spellcheck="false">
+      <button id="everything-go" class="search-clear" data-i18n="everything.searchBtn">搜索</button>
+    </div>
+    
     <!-- 设置面板 -->
     <div id="settings-panel" class="settings-panel" style="display: none;">
       <!-- 主题设置 -->
@@ -180,6 +187,26 @@
         </div>
         <div class="setting-description" data-i18n="settings.shortcutsDesc">
           点击输入框后按下新的组合键即可修改。修改后立即生效。
+        </div>
+      </div>
+      
+      <!-- Everything 搜索 -->
+      <div class="settings-section">
+        <h3 data-i18n="settings.everything">Everything 搜索</h3>
+        <div class="setting-item">
+          <label class="switch">
+            <input type="checkbox" id="everything-toggle">
+            <span class="slider"></span>
+          </label>
+          <span class="setting-label" data-i18n="settings.everythingEnable">启用 Everything 搜索栏</span>
+        </div>
+        <div class="setting-item">
+          <span class="setting-label" data-i18n="settings.everythingStatus">状态:</span>
+          <span id="everything-status" class="status-disabled" data-i18n="settings.everythingMissing">未检测到 Everything</span>
+          <button id="everything-download-btn" class="prompt-btn prompt-btn-cancel" style="display:none;" data-i18n="settings.everythingDownload">下载 Everything</button>
+        </div>
+        <div class="setting-description" data-i18n="settings.everythingDesc">
+          启用后标题栏下方显示搜索栏，回车调用 Everything 原生搜索窗口，全盘实时搜索。需要已安装 Everything。
         </div>
       </div>
       

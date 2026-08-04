@@ -129,7 +129,6 @@ html, body {
   background: var(--bg-primary);
   border-radius: 8px;
   overflow: hidden;
-  backdrop-filter: blur(20px);
   border: 1px solid var(--border-primary);
 }
 
@@ -920,7 +919,6 @@ kbd {
 /* ============ UI 质感优化 ============ */
 #app {
   box-shadow: 0 8px 32px rgba(0, 0, 0, 0.22), inset 0 1px 0 rgba(255, 255, 255, 0.06);
-  backdrop-filter: blur(24px) saturate(1.15);
 }
 
 .header {
@@ -1284,4 +1282,56 @@ body.icons-locked .file-item.draggable:active {
 /* 双击空白隐藏全部图标 */
 .content.icons-hidden .files-list {
   display: none;
+}
+
+/* ============ Everything 搜索栏（标题栏下） ============ */
+.everything-bar {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  height: 36px;
+  min-height: 36px;
+  padding: 0 10px;
+  background: var(--bg-input);
+  border-bottom: 1px solid var(--border-secondary);
+  flex-shrink: 0;
+  -webkit-app-region: no-drag;
+}
+
+.everything-bar .search-icon {
+  font-size: 12px;
+  opacity: 0.6;
+  flex-shrink: 0;
+}
+
+.everything-bar #everything-input {
+  flex: 1;
+  background: transparent;
+  border: none;
+  outline: none;
+  color: var(--text-primary);
+  font-size: 13px;
+  padding: 3px 0;
+  min-width: 0;
+}
+
+.everything-bar #everything-input::placeholder {
+  color: var(--text-muted);
+}
+
+.everything-bar #everything-go {
+  padding: 3px 12px;
+  border: 1px solid var(--border-input);
+  background: var(--bg-button);
+  color: var(--text-secondary);
+  border-radius: 12px;
+  font-size: 12px;
+  cursor: pointer;
+  flex-shrink: 0;
+  transition: background 0.15s, color 0.15s;
+}
+
+.everything-bar #everything-go:hover {
+  background: var(--bg-button-hover);
+  color: var(--text-primary);
 }
