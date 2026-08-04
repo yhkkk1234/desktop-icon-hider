@@ -131,6 +131,21 @@
         </div>
       </div>
       
+      <!-- 文件夹预览 -->
+      <div class="settings-section">
+        <h3 data-i18n="settings.folderPreview">文件夹预览</h3>
+        <div class="setting-item">
+          <label class="switch">
+            <input type="checkbox" id="folder-preview-toggle" checked>
+            <span class="slider"></span>
+          </label>
+          <span class="setting-label" data-i18n="settings.folderPreviewEnable">悬停文件夹显示内容预览</span>
+        </div>
+        <div class="setting-description" data-i18n="settings.folderPreviewDesc">
+          鼠标悬停文件夹时弹出内容预览。预览面板支持滚动，鼠标移入面板不会消失。
+        </div>
+      </div>
+      
       <!-- 自动整理规则 -->
       <div class="settings-section">
         <h3 data-i18n="settings.rules">自动整理规则</h3>
@@ -206,6 +221,9 @@
           <span class="setting-label" data-i18n="settings.everythingStatus">状态:</span>
           <span id="everything-status" class="status-disabled" data-i18n="settings.everythingMissing">未检测到 Everything</span>
           <button id="everything-download-btn" class="prompt-btn prompt-btn-cancel" style="display:none;" data-i18n="settings.everythingDownload">下载 Everything</button>
+        </div>
+        <div class="setting-warning" id="everything-admin-warn" style="display:none;" data-i18n="settings.everythingAdminWarn">
+          检测到 Everything 以管理员身份运行，搜索时会弹出 UAC 确认。请关闭：Everything → 工具 → 选项 → 常规 → 取消勾选"以管理员身份运行 Everything"，然后重启 Everything。
         </div>
         <div class="setting-description" data-i18n="settings.everythingDesc">
           启用后标题栏下方显示搜索栏，回车调用 Everything 原生搜索窗口，全盘实时搜索。需要已安装 Everything。

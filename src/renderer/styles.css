@@ -1366,7 +1366,7 @@ body.icons-locked .file-item.draggable:active {
   --text-primary-rgb: 233, 241, 234;
   --text-secondary-rgb: 164, 185, 169;
   --text-tertiary-rgb: 164, 185, 169;
-  --text-muted-rgb: 96, 116, 101;
+  --text-muted-rgb: 158, 178, 163;
   --text-disabled-rgb: 96, 116, 101;
 
   --scrollbar-track-rgb: 0, 0, 0;
@@ -1380,7 +1380,7 @@ body.icons-locked .file-item.draggable:active {
   --texture-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 800 40' preserveAspectRatio='none'%3E%3Cg fill='none' stroke='%235fd68b' stroke-opacity='0.16' stroke-width='1'%3E%3Cpath d='M0,9 Q40,7 80,9 T160,9 T240,9 T320,9 T400,9 T480,9 T560,9 T640,9 T720,9 T800,9'/%3E%3Cpath d='M0,16 Q40,13 80,16 T160,16 T240,16 T320,16 T400,16 T480,16 T560,16 T640,16 T720,16 T800,16'/%3E%3Cpath d='M0,23 Q40,21 80,23 T160,23 T240,23 T320,23 T400,23 T480,23 T560,23 T640,23 T720,23 T800,23'/%3E%3Cpath d='M0,30 Q40,27 80,30 T160,30 T240,30 T320,30 T400,30 T480,30 T560,30 T640,30 T720,30 T800,30'/%3E%3Cpath d='M0,37 Q40,35 80,37 T160,37 T240,37 T320,37 T400,37 T480,37 T560,37 T640,37 T720,37 T800,37'/%3E%3C/g%3E%3C/svg%3E");
   --texture-size: 800px 40px;
   --texture-tile: 800px;
-  --texture-anim: texture-drift 120s linear infinite;
+  --texture-anim: texture-drift 30s linear infinite;
 }
 
 /* ---- 主题：海洋 (ocean) ---- */
@@ -1405,7 +1405,7 @@ body.icons-locked .file-item.draggable:active {
   --text-primary-rgb: 230, 240, 253;
   --text-secondary-rgb: 157, 180, 212;
   --text-tertiary-rgb: 157, 180, 212;
-  --text-muted-rgb: 88, 109, 140;
+  --text-muted-rgb: 148, 168, 198;
   --text-disabled-rgb: 88, 109, 140;
 
   --scrollbar-track-rgb: 0, 0, 0;
@@ -1419,7 +1419,7 @@ body.icons-locked .file-item.draggable:active {
   --texture-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 400 40' preserveAspectRatio='none'%3E%3Cg fill='none' stroke='%2338bdf8' stroke-opacity='0.17' stroke-width='1.2'%3E%3Cpath d='M0,10 C50,4 100,4 150,10 C200,16 250,16 300,10 C350,4 400,4 400,10'/%3E%3Cpath d='M0,19 C50,13 100,13 150,19 C200,25 250,25 300,19 C350,13 400,13 400,19'/%3E%3Cpath d='M0,28 C50,22 100,22 150,28 C200,34 250,34 300,28 C350,22 400,22 400,28'/%3E%3Cpath d='M0,37 C50,31 100,31 150,37 C200,43 250,43 300,37 C350,31 400,31 400,37'/%3E%3C/g%3E%3C/svg%3E");
   --texture-size: 400px 40px;
   --texture-tile: 400px;
-  --texture-anim: texture-drift 120s linear infinite;
+  --texture-anim: texture-drift 30s linear infinite;
 }
 
 /* 标题栏纹理层 */
@@ -1450,4 +1450,50 @@ body.icons-locked .file-item.draggable:active {
   to {
     transform: translateX(calc(-1 * var(--texture-tile)));
   }
+}
+
+/* 预览面板滚动条（与主界面主题一致） */
+.folder-preview::-webkit-scrollbar {
+  width: 8px;
+}
+
+.folder-preview::-webkit-scrollbar-track {
+  background: var(--scrollbar-track);
+  border-radius: 4px;
+}
+
+.folder-preview::-webkit-scrollbar-thumb {
+  background: var(--scrollbar-thumb);
+  border-radius: 4px;
+}
+
+.folder-preview::-webkit-scrollbar-thumb:hover {
+  background: var(--scrollbar-thumb-hover);
+}
+
+.folder-preview {
+  scrollbar-width: thin;
+  scrollbar-color: var(--scrollbar-thumb) var(--scrollbar-track);
+}
+
+/* 设置警告提示 */
+.setting-warning {
+  margin-top: 8px;
+  padding: 8px 10px;
+  background: rgba(255, 180, 60, 0.12);
+  border: 1px solid rgba(255, 180, 60, 0.35);
+  border-radius: 6px;
+  color: #e8b45a;
+  font-size: 11px;
+  line-height: 1.5;
+}
+
+/* 动态主题：低透明度下提升说明文字与搜索占位符的可读性 */
+[data-theme="topo"] .setting-description,
+[data-theme="topo"] .everything-bar #everything-input::placeholder,
+[data-theme="topo"] .search-bar #search-input::placeholder,
+[data-theme="ocean"] .setting-description,
+[data-theme="ocean"] .everything-bar #everything-input::placeholder,
+[data-theme="ocean"] .search-bar #search-input::placeholder {
+  color: var(--text-tertiary);
 }

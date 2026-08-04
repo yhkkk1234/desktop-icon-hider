@@ -48,6 +48,9 @@ contextBridge.exposeInMainWorld('api', {
   // 图标锁定
   setIconsLocked: (locked) => ipcRenderer.invoke('set-icons-locked', locked),
   
+  // 文件夹预览开关
+  setFolderPreviewEnabled: (enabled) => ipcRenderer.invoke('set-folder-preview-enabled', enabled),
+  
   // 自动整理规则
   setArrangeRules: (rules) => ipcRenderer.invoke('set-arrange-rules', rules),
   

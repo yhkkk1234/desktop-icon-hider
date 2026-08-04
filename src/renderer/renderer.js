@@ -23,8 +23,10 @@ let shortcuts = {}; // 自定义快捷键
 let startupDelay = 0; // 开机延迟启动
 let iconsVisible = true; // 图标可见性（双击空白切换）
 let clipboard = null; // 剪贴板: { mode: 'copy'|'cut', paths: [] }
+let folderPreviewEnabled = true; // 文件夹悬停预览开关
 let everythingEnabled = false; // Everything 集成开关
 let everythingInstalled = false; // 是否检测到 Everything
+let everythingRunAsAdmin = false; // Everything 是否以管理员运行
 
 // 多选
 let selectedPaths = new Set();
@@ -33,6 +35,8 @@ let boxSelect = { active: false, startX: 0, startY: 0, moved: false };
 // 文件夹预览
 let previewTimer = null;
 let previewPath = null;
+let previewHideTimer = null;
+let previewSwitchTimer = null;
 
 // DOM 元素
 let contentEl, toggleBtn, toggleIcon, refreshBtn, quitBtn, filesList;
@@ -48,7 +52,8 @@ let iconsLockToggle, rulesList, addRuleBtn, applyRulesBtn;
 let startupDelayInput, languageSelect;
 let shortcutToggleInput, shortcutRefreshInput;
 let exportLayoutBtn, importLayoutBtn, quitAppBtn;
-let everythingBar, everythingInput, everythingGo, everythingToggle, everythingStatus, everythingDownloadBtn;
+let everythingBar, everythingInput, everythingGo, everythingToggle, everythingStatus, everythingDownloadBtn, everythingAdminWarn;
+let folderPreviewToggle;
 
 // 刷新防抖
 let refreshTimeout = null;
@@ -110,6 +115,8 @@ document.addEventListener('DOMContentLoaded', () => {
   everythingToggle = document.getElementById('everything-toggle');
   everythingStatus = document.getElementById('everything-status');
   everythingDownloadBtn = document.getElementById('everything-download-btn');
+  everythingAdminWarn = document.getElementById('everything-admin-warn');
+  folderPreviewToggle = document.getElementById('folder-preview-toggle');
 
   // 绑定事件
   toggleBtn.addEventListener('click', handleToggleCollapse);
@@ -144,6 +151,9 @@ document.addEventListener('DOMContentLoaded', () => {
     }
   });
   everythingGo.addEventListener('click', runEverythingSearch);
+
+  // 文件夹预览开关
+  folderPreviewToggle.addEventListener('change', handleFolderPreviewToggle);
 
   // 快捷键录制
   bindShortcutRecorder(shortcutToggleInput, 'toggleWindow');
@@ -190,6 +200,15 @@ document.addEventListener('DOMContentLoaded', () => {
   document.addEventListener('mousemove', handleBoxSelectMove);
   document.addEventListener('mouseup', handleBoxSelectEnd);
 
+  // 预览面板 hover 保持：移入面板不消失，可滚动查看
+  folderPreview.addEventListener('mouseenter', () => {
+    if (previewHideTimer) {
+      clearTimeout(previewHideTimer);
+      previewHideTimer = null;
+    }
+  });
+  folderPreview.addEventListener('mouseleave', () => scheduleHidePreview());
+
   // 监听初始化数据
   window.api.onInitData((data) => {
     files = data.files || [];
@@ -208,8 +227,10 @@ document.addEventListener('DOMContentLoaded', () => {
     shortcuts = data.shortcuts || {};
     startupDelay = data.startupDelay || 0;
     iconsVisible = true;
+    folderPreviewEnabled = data.folderPreviewEnabled !== false;
     everythingEnabled = !!data.everythingEnabled;
     everythingInstalled = !!data.everythingInstalled;
+    everythingRunAsAdmin = !!data.everythingRunAsAdmin;
 
     setLanguage(data.language || 'zh-CN');
 
@@ -224,6 +245,7 @@ document.addEventListener('DOMContentLoaded', () => {
     updateShortcutInputs();
     renderRules();
     updateEverythingUI();
+    updateFolderPreviewUI();
     applyTheme(theme);
     applyOpacity(opacity);
     applyIconSize(iconSize);
@@ -1137,10 +1159,41 @@ function getFilteredFiles() {
 
 // ============ 文件夹悬停预览 ============
 const FOLDER_PREVIEW_DELAY = 350;
+const FOLDER_PREVIEW_SWITCH_DELAY = 200;
+const FOLDER_PREVIEW_HIDE_DELAY = 250;
 const FOLDER_PREVIEW_MAX = 25;
 
 function schedulePreview(dirPath, item) {
+  // 清除延迟隐藏计时器（鼠标回来了）
+  if (previewHideTimer) {
+    clearTimeout(previewHideTimer);
+    previewHideTimer = null;
+  }
+  // 清除未完成的切换计时器
+  if (previewSwitchTimer) {
+    clearTimeout(previewSwitchTimer);
+    previewSwitchTimer = null;
+  }
+  // 同一文件夹的预览已在显示：保持即可
+  if (previewPath === dirPath && folderPreview.style.display === 'block') {
+    return;
+  }
+  // 另一个文件夹的预览正在显示：鼠标需停留片刻才切换，
+  // 避免鼠标从预览区域移回时路过其他图标而顶掉当前预览
+  if (previewPath && previewPath !== dirPath && folderPreview.style.display === 'block') {
+    previewSwitchTimer = setTimeout(() => {
+      previewSwitchTimer = null;
+      if (previewPath === dirPath) return;
+      cancelPreview();
+      startPreviewTimer(dirPath, item);
+    }, FOLDER_PREVIEW_SWITCH_DELAY);
+    return;
+  }
   cancelPreview();
+  startPreviewTimer(dirPath, item);
+}
+
+function startPreviewTimer(dirPath, item) {
   previewPath = dirPath;
   previewTimer = setTimeout(async () => {
     previewTimer = null;
@@ -1151,11 +1204,28 @@ function schedulePreview(dirPath, item) {
   }, FOLDER_PREVIEW_DELAY);
 }
 
+// 延迟隐藏：鼠标移出图标/预览面板后短暂停留，期间移回则不消失
+function scheduleHidePreview() {
+  if (previewHideTimer) clearTimeout(previewHideTimer);
+  previewHideTimer = setTimeout(() => {
+    previewHideTimer = null;
+    cancelPreview();
+  }, FOLDER_PREVIEW_HIDE_DELAY);
+}
+
 function cancelPreview() {
   previewPath = null;
   if (previewTimer) {
     clearTimeout(previewTimer);
     previewTimer = null;
+  }
+  if (previewHideTimer) {
+    clearTimeout(previewHideTimer);
+    previewHideTimer = null;
+  }
+  if (previewSwitchTimer) {
+    clearTimeout(previewSwitchTimer);
+    previewSwitchTimer = null;
   }
   folderPreview.style.display = 'none';
   folderPreview.innerHTML = '';
@@ -1367,9 +1437,16 @@ function renderFiles() {
       // 文件夹悬停预览绑定
       item.addEventListener('mouseenter', () => {
         const f = filesMap.get(file.path);
-        if (f && f.isDirectory) schedulePreview(file.path, item);
+        if (f && f.isDirectory && folderPreviewEnabled) schedulePreview(file.path, item);
       });
-      item.addEventListener('mouseleave', () => cancelPreview());
+      item.addEventListener('mouseleave', () => {
+        // 鼠标离开了当前悬停的图标：取消未完成的预览切换
+        if (previewSwitchTimer) {
+          clearTimeout(previewSwitchTimer);
+          previewSwitchTimer = null;
+        }
+        scheduleHidePreview();
+      });
 
       fragment.appendChild(item);
       needsIconLoad = true;
@@ -1895,6 +1972,20 @@ async function applyArrangeRules() {
   showToast(categorized > 0 ? t('rule.applied', { n: categorized }) : t('rule.noMatch'));
 }
 
+// ============ 文件夹预览开关 ============
+async function handleFolderPreviewToggle() {
+  folderPreviewEnabled = folderPreviewToggle.checked;
+  await window.api.setFolderPreviewEnabled(folderPreviewEnabled);
+  updateFolderPreviewUI();
+  if (!folderPreviewEnabled) {
+    cancelPreview();
+  }
+}
+
+function updateFolderPreviewUI() {
+  if (folderPreviewToggle) folderPreviewToggle.checked = folderPreviewEnabled;
+}
+
 // ============ Everything 搜索 ============
 function updateEverythingUI() {
   if (everythingToggle) everythingToggle.checked = everythingEnabled;
@@ -1910,6 +2001,10 @@ function updateEverythingUI() {
     everythingStatus.className = 'status-disabled';
     everythingDownloadBtn.style.display = everythingEnabled ? 'inline-block' : 'none';
   }
+  // 管理员模式警告
+  if (everythingAdminWarn) {
+    everythingAdminWarn.style.display = (everythingInstalled && everythingRunAsAdmin) ? 'block' : 'none';
+  }
 }
 
 async function handleEverythingToggle() {
@@ -1919,8 +2014,10 @@ async function handleEverythingToggle() {
     try {
       const result = await window.api.checkEverything();
       everythingInstalled = !!(result && result.installed);
+      everythingRunAsAdmin = !!(result && result.runAsAdmin);
     } catch (e) {
       everythingInstalled = false;
+      everythingRunAsAdmin = false;
     }
     if (!everythingInstalled) {
       showToast(t('settings.everythingMissing'));

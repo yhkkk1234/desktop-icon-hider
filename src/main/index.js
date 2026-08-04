@@ -34,6 +34,7 @@ const store = new Store({
     iconsLocked: false,
     arrangeRules: [],
     startupDelay: 0,
+    folderPreviewEnabled: true,
     everythingEnabled: false,
     shortcuts: {
       toggleWindow: 'CommandOrControl+Alt+D',
@@ -489,7 +490,9 @@ function createWindow() {
           startupDelay: store.get('startupDelay', 0),
           language: store.get('language', 'zh-CN'),
           everythingEnabled: store.get('everythingEnabled', false),
-          everythingInstalled: !!findEverythingPath()
+          everythingInstalled: !!findEverythingPath(),
+          everythingRunAsAdmin: !!findEverythingPath() && isEverythingRunAsAdmin(findEverythingPath()),
+          folderPreviewEnabled: store.get('folderPreviewEnabled', true)
         });
       } catch (error) {
         console.error('发送初始化数据失败:', error);
@@ -511,7 +514,9 @@ function createWindow() {
           startupDelay: store.get('startupDelay', 0),
           language: store.get('language', 'zh-CN'),
           everythingEnabled: store.get('everythingEnabled', false),
-          everythingInstalled: false
+          everythingInstalled: false,
+          everythingRunAsAdmin: false,
+          folderPreviewEnabled: store.get('folderPreviewEnabled', true)
         });
       }
     });
@@ -671,6 +676,11 @@ ipcMain.handle('set-icons-locked', async (event, locked) => {
   return true;
 });
 
+ipcMain.handle('set-folder-preview-enabled', async (event, enabled) => {
+  store.set('folderPreviewEnabled', !!enabled);
+  return true;
+});
+
 ipcMain.handle('set-arrange-rules', async (event, rules) => {
   try {
     if (!Array.isArray(rules)) return false;
@@ -779,16 +789,40 @@ function openEverythingSearch(keyword) {
       stdio: 'ignore'
     });
     child.unref();
-    return { ok: true, installed: true };
+    return { ok: true, installed: true, runAsAdmin: isEverythingRunAsAdmin(exePath) };
   } catch (e) {
     console.error('启动 Everything 搜索失败:', e.message);
     return { ok: false, installed: true, error: e.message };
   }
 }
 
+// 检测 Everything 是否配置为"以管理员身份运行"（run_as_admin=1）
+// 该配置会导致从普通权限应用唤起时触发 UAC 提权确认
+function isEverythingRunAsAdmin(exePath) {
+  try {
+    const candidates = [];
+    if (exePath) {
+      candidates.push(path.join(path.dirname(exePath), 'Everything.ini'));
+    }
+    candidates.push(path.join(process.env.APPDATA || '', 'Everything', 'Everything.ini'));
+    for (const ini of candidates) {
+      if (ini && fs.existsSync(ini)) {
+        const content = fs.readFileSync(ini, 'utf8');
+        const m = content.match(/^run_as_admin\s*=\s*(\d+)/m);
+        if (m && m[1] === '1') return true;
+      }
+    }
+  } catch (e) { /* 忽略 */ }
+  return false;
+}
+
 ipcMain.handle('check-everything', async () => {
   const p = findEverythingPath();
-  return { installed: !!p, path: p };
+  return {
+    installed: !!p,
+    path: p,
+    runAsAdmin: !!p && isEverythingRunAsAdmin(p)
+  };
 });
 
 ipcMain.handle('open-everything-search', async (event, keyword) => {

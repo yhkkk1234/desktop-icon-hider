@@ -5,6 +5,47 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.3.5] - 2026-08-04
+
+### Fixed
+
+- Topo/Ocean themes: brightened muted text colors and gave settings descriptions
+  and search placeholders higher-contrast text so they stay readable at low
+  opacity settings (75-80%)
+
+## [1.3.4] - 2026-08-04
+
+### Changed
+
+- Topo/Ocean theme textures now visibly drift: animation sped up from 120s to
+  30s per loop and texture stroke opacity/width increased (still GPU-composited
+  transform, negligible performance cost)
+
+## [1.3.3] - 2026-08-04
+
+### Fixed
+
+- Everything search no longer surprises with UAC prompts: the app now detects
+  `run_as_admin=1` in Everything.ini and shows a warning in settings with
+  step-by-step instructions to disable admin mode (not needed in service mode)
+
+## [1.3.2] - 2026-08-04
+
+### Fixed
+
+- Folder preview no longer gets knocked out by passing over adjacent folder
+  icons: switching previews now requires hovering the new icon for 200ms
+  (hover-intent), so moving toward a preview window no longer misfires
+
+## [1.3.1] - 2026-08-04
+
+### Added
+
+- Settings toggle for folder hover preview (can disable entirely)
+- Folder preview panel: styled scrollbar matching the theme
+- Folder preview now stays visible while the mouse is over the panel (250ms
+  delayed hide), allowing scrolling through long contents
+
 ## [1.3.0] - 2026-08-04
 
 ### Added

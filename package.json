@@ -1,6 +1,6 @@
 {
   "name": "desktop-icon-hider",
-  "version": "1.3.0",
+  "version": "1.3.5",
   "description": "A desktop icon management tool similar to Fences with simple hide/show functionality",
   "main": "src/main/index.js",
   "scripts": {
