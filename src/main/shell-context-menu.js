@@ -7,7 +7,6 @@ const os = require('os');
 const CSHARP_SOURCE = `using System;
 using System.IO;
 using System.Text;
-using System.Windows.Forms;
 using System.Runtime.InteropServices;
 
 [ComImport, Guid("000214E6-0000-0000-C000-000000000046"), InterfaceType(ComInterfaceType.InterfaceIsIUnknown)]
@@ -125,39 +124,56 @@ struct CMINVOKECOMMANDINFOEX
     public IntPtr hIcon2;
 }
 
-class ContextMenuWindow : Form
+class ContextMenuWindow
 {
     private IContextMenu3 _ctxMenu3;
+    private IntPtr _hwnd;
+    private WndProcDelegate _wndProcDelegate;
 
-    protected override void SetVisibleCore(bool value)
+    public IntPtr Handle { get { return _hwnd; } }
+
+    public ContextMenuWindow()
     {
-        base.SetVisibleCore(false);
+        WNDCLASS wc = new WNDCLASS();
+        wc.style = 0;
+        wc.lpfnWndProc = WndProc;
+        wc.cbClsExtra = 0;
+        wc.cbWndExtra = 0;
+        wc.hInstance = GetModuleHandle(null);
+        wc.hIcon = IntPtr.Zero;
+        wc.hCursor = IntPtr.Zero;
+        wc.hbrBackground = IntPtr.Zero;
+        wc.lpszMenuName = null;
+        wc.lpszClassName = "ShellCtxMenuWnd";
+        _wndProcDelegate = WndProc;
+        if (RegisterClass(ref wc) == 0) return;
+        _hwnd = CreateWindowEx(0, "ShellCtxMenuWnd", "", 0x80000000,
+            0, 0, 0, 0, IntPtr.Zero, IntPtr.Zero, wc.hInstance, IntPtr.Zero);
     }
 
-    protected override void WndProc(ref Message m)
+    private IntPtr WndProc(IntPtr hwnd, uint msg, IntPtr wParam, IntPtr lParam)
     {
         if (_ctxMenu3 != null)
         {
-            switch (m.Msg)
+            switch (msg)
             {
-                case 0x0117:
-                case 0x002C:
-                case 0x002B:
+                case 0x0117: // WM_INITMENUPOPUP
+                case 0x002C: // WM_DRAWITEM
+                case 0x002B: // WM_MEASUREITEM
                     try
                     {
                         IntPtr lResult;
-                        int hr = _ctxMenu3.HandleMenuMsg2((uint)m.Msg, m.WParam, m.LParam, out lResult);
+                        int hr = _ctxMenu3.HandleMenuMsg2(msg, wParam, lParam, out lResult);
                         if (hr >= 0)
                         {
-                            m.Result = lResult;
-                            return;
+                            return lResult;
                         }
                     }
                     catch { }
                     break;
             }
         }
-        base.WndProc(ref m);
+        return DefWindowProc(hwnd, msg, wParam, lParam);
     }
 
     public int ShowDesktopContextMenu(int x, int y)
@@ -278,6 +294,24 @@ class ContextMenuWindow : Form
     {
         public int x;
         public int y;
+    }
+
+    [UnmanagedFunctionPointer(CallingConvention.Winapi)]
+    delegate IntPtr WndProcDelegate(IntPtr hWnd, uint msg, IntPtr wParam, IntPtr lParam);
+
+    [StructLayout(LayoutKind.Sequential, CharSet = CharSet.Unicode)]
+    struct WNDCLASS
+    {
+        public uint style;
+        public WndProcDelegate lpfnWndProc;
+        public int cbClsExtra;
+        public int cbWndExtra;
+        public IntPtr hInstance;
+        public IntPtr hIcon;
+        public IntPtr hCursor;
+        public IntPtr hbrBackground;
+        [MarshalAs(UnmanagedType.LPWStr)] public string lpszMenuName;
+        [MarshalAs(UnmanagedType.LPWStr)] public string lpszClassName;
     }
 
     public int ShowFileContextMenu(string filePath, int x, int y)
@@ -447,7 +481,11 @@ class ContextMenuWindow : Form
 
             string mode = args[0];
             ContextMenuWindow window = new ContextMenuWindow();
-            window.CreateControl();
+            if (window.Handle == IntPtr.Zero)
+            {
+                Environment.Exit(1);
+                return;
+            }
 
             if (mode == "desktop" && args.Length >= 3)
             {
@@ -528,6 +566,20 @@ class ContextMenuWindow : Form
 
     [DllImport("user32.dll", CharSet = CharSet.Unicode)]
     static extern IntPtr FindWindowEx(IntPtr hwndParent, IntPtr hwndChildAfter, string lpszClass, string lpszWindow);
+
+    [DllImport("user32.dll", CharSet = CharSet.Unicode)]
+    static extern ushort RegisterClass(ref WNDCLASS lpWndClass);
+
+    [DllImport("user32.dll", CharSet = CharSet.Unicode)]
+    static extern IntPtr CreateWindowEx(uint dwExStyle, string lpClassName, string lpWindowName,
+        uint dwStyle, int x, int y, int nWidth, int nHeight,
+        IntPtr hWndParent, IntPtr hMenu, IntPtr hInstance, IntPtr lpParam);
+
+    [DllImport("user32.dll")]
+    static extern IntPtr DefWindowProc(IntPtr hWnd, uint msg, IntPtr wParam, IntPtr lParam);
+
+    [DllImport("kernel32.dll", CharSet = CharSet.Unicode)]
+    static extern IntPtr GetModuleHandle(string lpModuleName);
 
     [DllImport("user32.dll")]
     static extern bool ScreenToClient(IntPtr hWnd, ref POINT lpPoint);
@@ -622,7 +674,7 @@ function compileExe() {
   try {
     fs.writeFileSync(csPath, CSHARP_SOURCE, 'utf8');
 
-    const compileCmd = `"${cscPath}" /target:winexe /out:"${exePath}" /r:System.Windows.Forms.dll /r:System.Drawing.dll "${csPath}"`;
+    const compileCmd = `"${cscPath}" /target:winexe /optimize+ /nologo /out:"${exePath}" "${csPath}"`;
     
     execSync(compileCmd, {
       timeout: 30000,
