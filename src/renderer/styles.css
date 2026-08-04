@@ -1526,3 +1526,11 @@ body.icons-locked .file-item.draggable:active {
 .folder-preview[data-is-image="true"]::-webkit-scrollbar {
   display: none;
 }
+
+/* 预览条目真实图标 */
+.folder-preview .fp-icon-img {
+  width: 14px;
+  height: 14px;
+  object-fit: contain;
+  flex-shrink: 0;
+}

@@ -1299,9 +1299,36 @@ function showFolderPreview(item, entries) {
       more.textContent = t('preview.more', { n: entries.length - FOLDER_PREVIEW_MAX });
       folderPreview.appendChild(more);
     }
+    // 异步加载真实图标（复用主列表的图标提取/缓存链路），失败保留 emoji 占位
+    loadPreviewIcons(entries);
   }
 
   positionPreviewPanel(item);
+}
+
+// 为预览面板条目异步加载真实文件图标
+async function loadPreviewIcons(entries) {
+  const valid = entries.filter(e => e && e.path && typeof e.path === 'string');
+  if (valid.length === 0) return;
+  const fileObjects = valid.map(e => ({ path: e.path, isDirectory: !!e.isDirectory }));
+  try {
+    const results = await window.api.getFileIcons(fileObjects);
+    for (const [path, iconData] of Object.entries(results)) {
+      if (!(typeof iconData === 'string' && iconData.startsWith('data:image'))) continue;
+      const row = folderPreview.querySelector(`.fp-item[data-path="${CSS.escape(path)}"]`);
+      if (!row) continue;
+      const emojiEl = row.querySelector('.fp-emoji');
+      if (!emojiEl) continue;
+      const img = document.createElement('img');
+      img.src = iconData;
+      img.alt = 'icon';
+      img.className = 'fp-icon-img';
+      img.draggable = false;
+      emojiEl.replaceWith(img);
+    }
+  } catch (error) {
+    // 提取失败时保留 emoji 占位
+  }
 }
 
 function showImagePreview(item, file, dataUrl) {
