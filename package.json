@@ -1,13 +1,13 @@
 {
   "name": "desktop-icon-hider",
-  "version": "1.0.0",
+  "version": "1.1.2",
   "description": "A desktop icon management tool similar to Fences with simple hide/show functionality",
   "main": "src/main/index.js",
   "scripts": {
     "start": "electron .",
     "dev": "electron . --dev --enable-logging",
-    "build": "node-gyp rebuild && electron-builder",
-    "build:win": "node-gyp rebuild && electron-builder --win",
+    "build": "powershell -ExecutionPolicy Bypass -File build-native.ps1 && electron-builder",
+    "build:win": "powershell -ExecutionPolicy Bypass -File build-native.ps1 && electron-builder --win",
     "rebuild-native": "node-gyp rebuild",
     "lint": "eslint src/**/*.js",
     "test": "jest"

@@ -30,11 +30,19 @@ const store = new Store({
     opacity: 92,
     iconSize: 40,
     manualOrder: [],
-    groups: []
+    groups: [],
+    iconsLocked: false,
+    arrangeRules: [],
+    startupDelay: 0,
+    shortcuts: {
+      toggleWindow: 'CommandOrControl+Alt+D',
+      refresh: 'CommandOrControl+Alt+R'
+    }
   }
 });
 let mainWindow = null;
 let tray = null;
+let fsWatchers = [];
 
 // 获取桌面路径
 function getDesktopPath() {
@@ -54,6 +62,168 @@ function getPublicDesktopPath() {
     // 回退到默认路径
     return path.join(process.env.ProgramData || 'C:\\ProgramData', 'Desktop');
   }
+}
+
+// ============ 桌面文件自动监听 ============
+let desktopWatchDebounce = null;
+
+function sendDesktopChanged() {
+  if (desktopWatchDebounce) clearTimeout(desktopWatchDebounce);
+  desktopWatchDebounce = setTimeout(() => {
+    desktopWatchDebounce = null;
+    if (mainWindow && !mainWindow.isDestroyed() && mainWindow.webContents) {
+      mainWindow.webContents.send('desktop-changed');
+    }
+  }, 400);
+}
+
+function startDesktopWatchers() {
+  stopDesktopWatchers();
+  const dirs = new Set([getDesktopPath(), getPublicDesktopPath()]);
+  for (const dir of dirs) {
+    if (!dir || !fs.existsSync(dir)) continue;
+    try {
+      const watcher = fs.watch(dir, { persistent: false }, (eventType, filename) => {
+        if (!filename) return;
+        const name = String(filename).toLowerCase();
+        if (name === 'desktop.ini') return;
+        if (name.endsWith('.tmp') || name.startsWith('~$')) return;
+        sendDesktopChanged();
+      });
+      watcher.on('error', (e) => console.warn('桌面监听错误:', e.message));
+      fsWatchers.push(watcher);
+    } catch (e) {
+      console.warn('无法监听目录:', dir, e.message);
+    }
+  }
+}
+
+function stopDesktopWatchers() {
+  for (const watcher of fsWatchers) {
+    try { watcher.close(); } catch (e) { /* 忽略 */ }
+  }
+  fsWatchers = [];
+}
+
+// ============ 文件夹预览 ============
+async function listDirectory(dirPath) {
+  if (!dirPath || typeof dirPath !== 'string') return [];
+  // 系统虚拟文件夹（此电脑、回收站等 `::` 路径）用 Shell COM 枚举
+  if (dirPath.startsWith('::')) {
+    return await listSystemFolder(dirPath);
+  }
+  try {
+    const stats = await fs.promises.stat(dirPath);
+    if (!stats.isDirectory()) return [];
+    const entries = await fs.promises.readdir(dirPath, { withFileTypes: true });
+    return entries
+      .filter(e => e.name !== 'desktop.ini')
+      .slice(0, 60)
+      .map(e => ({
+        name: e.name,
+        isDirectory: e.isDirectory()
+      }));
+  } catch (e) {
+    return [];
+  }
+}
+
+async function listSystemFolder(displayPath) {
+  try {
+    const psScript = `$ErrorActionPreference = 'SilentlyContinue'
+[Console]::OutputEncoding = [System.Text.Encoding]::UTF8
+$shell = New-Object -ComObject Shell.Application
+$folder = $shell.Namespace($env:DIH_SYS_PATH)
+if ($null -eq $folder) { Write-Output 'null'; exit 0 }
+$items = @()
+foreach ($item in $folder.Items()) {
+  $items += @{ name = $item.Name; isDirectory = [bool]$item.IsFolder }
+}
+$items | ConvertTo-Json -Depth 2 -Compress`;
+    const tempFile = path.join(os.tmpdir(), 'temp-sysfolder.ps1');
+    fs.writeFileSync(tempFile, psScript, 'utf8');
+    const result = execSync(
+      `powershell -NoProfile -ExecutionPolicy Bypass -File "${tempFile}"`,
+      {
+        timeout: 8000,
+        encoding: 'utf8',
+        maxBuffer: 1024 * 1024,
+        env: { ...process.env, DIH_SYS_PATH: displayPath }
+      }
+    );
+    try { fs.unlinkSync(tempFile); } catch (e) { /* 忽略 */ }
+    if (!result || result.trim() === 'null' || result.trim() === '') return [];
+    const items = JSON.parse(result.trim());
+    if (!Array.isArray(items)) return [];
+    return items.slice(0, 60).map(i => ({
+      name: String(i.name || ''),
+      isDirectory: !!i.isDirectory
+    }));
+  } catch (e) {
+    return [];
+  }
+}
+
+// ============ 剪贴板文件操作 ============
+async function copyPath(src, dest) {
+  const stats = await fs.promises.stat(src);
+  if (stats.isDirectory()) {
+    await fs.promises.cp(src, dest, { recursive: true, errorOnExist: true });
+  } else {
+    await fs.promises.copyFile(src, dest, fs.constants.COPYFILE_EXCL);
+  }
+}
+
+async function movePath(src, dest) {
+  try {
+    await fs.promises.rename(src, dest);
+  } catch (e) {
+    // 跨卷移动时回退到复制+删除
+    await copyPath(src, dest);
+    await fs.promises.rm(src, { recursive: true, force: true });
+  }
+}
+
+async function pasteClipboard({ mode, paths, targetDir }) {
+  if (!Array.isArray(paths) || paths.length === 0 || !targetDir) {
+    return { success: false, error: '无效的粘贴参数' };
+  }
+  if (!fs.existsSync(targetDir)) {
+    return { success: false, error: '目标目录不存在' };
+  }
+  const results = [];
+  let anySuccess = false;
+  for (const src of paths) {
+    const name = path.basename(src);
+    let dest = path.join(targetDir, name);
+    if (src.toLowerCase() === dest.toLowerCase() && path.dirname(src).toLowerCase() === targetDir.toLowerCase()) {
+      dest = src;
+    }
+    try {
+      if (src === dest) {
+        results.push({ name, ok: true, skipped: true });
+        continue;
+      }
+      if (fs.existsSync(dest)) {
+        // 重名冲突：追加 (1)、(2)...
+        const ext = path.extname(name);
+        const base = path.basename(name, ext);
+        let i = 1;
+        while (fs.existsSync(path.join(targetDir, `${base} (${i})${ext}`))) i++;
+        dest = path.join(targetDir, `${base} (${i})${ext}`);
+      }
+      if (mode === 'cut') {
+        await movePath(src, dest);
+      } else {
+        await copyPath(src, dest);
+      }
+      anySuccess = true;
+      results.push({ name: path.basename(dest), ok: true });
+    } catch (e) {
+      results.push({ name, ok: false, error: e.message });
+    }
+  }
+  return { success: anySuccess, results };
 }
 
 // 获取系统图标（此电脑、回收站、网络等）
@@ -311,7 +481,12 @@ function createWindow() {
           iconSize: store.get('iconSize', 40),
           autoLaunch: store.get('autoLaunch', false),
           manualOrder: store.get('manualOrder', []),
-          groups: store.get('groups', [])
+          groups: store.get('groups', []),
+          iconsLocked: store.get('iconsLocked', false),
+          arrangeRules: store.get('arrangeRules', []),
+          shortcuts: store.get('shortcuts', {}),
+          startupDelay: store.get('startupDelay', 0),
+          language: store.get('language', 'zh-CN')
         });
       } catch (error) {
         console.error('发送初始化数据失败:', error);
@@ -326,7 +501,12 @@ function createWindow() {
           iconSize: store.get('iconSize', 40),
           autoLaunch: store.get('autoLaunch', false),
           manualOrder: store.get('manualOrder', []),
-          groups: store.get('groups', [])
+          groups: store.get('groups', []),
+          iconsLocked: store.get('iconsLocked', false),
+          arrangeRules: store.get('arrangeRules', []),
+          shortcuts: store.get('shortcuts', {}),
+          startupDelay: store.get('startupDelay', 0),
+          language: store.get('language', 'zh-CN')
         });
       }
     });
@@ -462,6 +642,135 @@ ipcMain.handle('refresh-files', async () => {
 
 ipcMain.handle('open-file', (event, filePath) => {
   shell.openPath(filePath);
+});
+
+ipcMain.handle('open-in-explorer', (event, filePath) => {
+  try {
+    shell.showItemInFolder(filePath);
+    return true;
+  } catch (e) {
+    return false;
+  }
+});
+
+ipcMain.handle('list-directory', async (event, dirPath) => {
+  return await listDirectory(dirPath);
+});
+
+ipcMain.handle('paste-clipboard', async (event, payload) => {
+  return await pasteClipboard(payload);
+});
+
+ipcMain.handle('set-icons-locked', async (event, locked) => {
+  store.set('iconsLocked', !!locked);
+  return true;
+});
+
+ipcMain.handle('set-arrange-rules', async (event, rules) => {
+  try {
+    if (!Array.isArray(rules)) return false;
+    const sanitized = rules.map(r => ({
+      id: String(r.id || ''),
+      name: String(r.name || ''),
+      keywords: Array.isArray(r.keywords) ? r.keywords.filter(k => typeof k === 'string').slice(0, 50) : [],
+      extensions: Array.isArray(r.extensions) ? r.extensions.filter(e => typeof e === 'string').map(e => e.toLowerCase()).slice(0, 50) : []
+    })).filter(r => r.id);
+    store.set('arrangeRules', sanitized);
+    return true;
+  } catch (error) {
+    return false;
+  }
+});
+
+ipcMain.handle('set-language', async (event, language) => {
+  if (!['zh-CN', 'en-US'].includes(language)) return false;
+  store.set('language', language);
+  if (mainWindow && !mainWindow.isDestroyed()) {
+    mainWindow.webContents.send('language-changed', { language });
+  }
+  return true;
+});
+
+ipcMain.handle('set-shortcuts', async (event, shortcuts) => {
+  try {
+    if (!shortcuts || typeof shortcuts !== 'object') return false;
+    const sanitized = {
+      toggleWindow: String(shortcuts.toggleWindow || 'CommandOrControl+Alt+D'),
+      refresh: String(shortcuts.refresh || 'CommandOrControl+Alt+R')
+    };
+    store.set('shortcuts', sanitized);
+    globalShortcut.unregisterAll();
+    registerGlobalShortcuts();
+    return true;
+  } catch (error) {
+    return false;
+  }
+});
+
+ipcMain.handle('set-startup-delay', async (event, seconds) => {
+  const delay = Number.isFinite(seconds) ? Math.max(0, Math.min(600, Math.round(seconds))) : 0;
+  store.set('startupDelay', delay);
+  return true;
+});
+
+// 布局导出/导入
+ipcMain.handle('export-layout', async (event, extraData) => {
+  try {
+    const { dialog } = require('electron');
+    const { canceled, filePath } = await dialog.showSaveDialog(mainWindow, {
+      title: '导出桌面布局',
+      defaultPath: `desktop-layout-${new Date().toISOString().slice(0, 10)}.json`,
+      filters: [{ name: 'JSON', extensions: ['json'] }]
+    });
+    if (canceled || !filePath) return { success: false, canceled: true };
+    const layout = {
+      version: 1,
+      exportedAt: new Date().toISOString(),
+      groups: store.get('groups', []),
+      manualOrder: store.get('manualOrder', []),
+      sortBy: store.get('sortBy', 'name-asc'),
+      ...(extraData || {})
+    };
+    await fs.promises.writeFile(filePath, JSON.stringify(layout, null, 2), 'utf8');
+    return { success: true, filePath };
+  } catch (error) {
+    return { success: false, error: error.message };
+  }
+});
+
+ipcMain.handle('import-layout', async (event, importGroups) => {
+  try {
+    const { dialog } = require('electron');
+    const { canceled, filePaths } = await dialog.showOpenDialog(mainWindow, {
+      title: '导入桌面布局',
+      filters: [{ name: 'JSON', extensions: ['json'] }],
+      properties: ['openFile']
+    });
+    if (canceled || !filePaths || filePaths.length === 0) return { success: false, canceled: true };
+    const raw = await fs.promises.readFile(filePaths[0], 'utf8');
+    const layout = JSON.parse(raw);
+    const result = {};
+    if (layout.groups && Array.isArray(layout.groups) && importGroups) {
+      const sanitized = layout.groups.map(g => ({
+        id: String(g.id || ''),
+        name: String(g.name || '未命名'),
+        paths: Array.isArray(g.paths) ? g.paths.filter(p => typeof p === 'string') : []
+      })).filter(g => g.id);
+      store.set('groups', sanitized);
+      result.groups = sanitized;
+    }
+    if (layout.manualOrder && Array.isArray(layout.manualOrder)) {
+      store.set('manualOrder', layout.manualOrder);
+      result.manualOrder = layout.manualOrder;
+    }
+    if (layout.sortBy && typeof layout.sortBy === 'string') {
+      store.set('sortBy', layout.sortBy);
+      result.sortBy = layout.sortBy;
+    }
+    return { success: true, ...result };
+  } catch (error) {
+    return { success: false, error: error.message };
+  }
 });
 
 ipcMain.handle('rename-file', async (event, oldPath, newName) => {
@@ -777,47 +1086,62 @@ app.commandLine.appendSwitch('disable-software-rasterizer');
 app.commandLine.appendSwitch('disable-gpu-compositing');
 
 app.whenReady().then(async () => {
-  try {
-    await initializeDesktopAPI(app.getPath('userData'));
-  } catch (e) {
-    console.error('初始化桌面API失败:', e.message);
-  }
+  // 开机延迟启动：延迟初始化窗口，避免开机时抢占焦点
+  const startupDelay = store.get('startupDelay', 0);
   
-  // 预编译右键菜单可执行文件，避免首次右键时的编译延迟
-  try {
-    compileExe();
-  } catch (e) {
-    console.warn('右键菜单组件预编译失败:', e.message);
-  }
-  
-  // 同步实际的开机启动状态
-  try {
-    const actualEnabled = await autoLauncher.isEnabled();
-    const storedEnabled = store.get('autoLaunch', false);
-    if (actualEnabled !== storedEnabled) {
-      store.set('autoLaunch', actualEnabled);
+  const initApp = async () => {
+    try {
+      await initializeDesktopAPI(app.getPath('userData'));
+    } catch (e) {
+      console.error('初始化桌面API失败:', e.message);
     }
-  } catch (e) {
-    console.warn('同步开机启动状态失败:', e.message);
-  }
-  
-  // 先隐藏桌面图标，再创建窗口
-  hideDesktopIcons();
-
-  createWindow();
-  tray = createTray(mainWindow, store);
-
-  // 注册全局快捷键: Ctrl+Alt+D 切换窗口显示/隐藏
-  registerGlobalShortcuts();
-
-  // 监听系统主题变化
-  nativeTheme.on('updated', () => {
-    if (mainWindow && !mainWindow.isDestroyed()) {
-      mainWindow.webContents.send('system-theme-changed', {
-        shouldUseDarkColors: nativeTheme.shouldUseDarkColors
-      });
+    
+    // 预编译右键菜单可执行文件，避免首次右键时的编译延迟
+    try {
+      compileExe();
+    } catch (e) {
+      console.warn('右键菜单组件预编译失败:', e.message);
     }
-  });
+    
+    // 同步实际的开机启动状态
+    try {
+      const actualEnabled = await autoLauncher.isEnabled();
+      const storedEnabled = store.get('autoLaunch', false);
+      if (actualEnabled !== storedEnabled) {
+        store.set('autoLaunch', actualEnabled);
+      }
+    } catch (e) {
+      console.warn('同步开机启动状态失败:', e.message);
+    }
+    
+    // 先隐藏桌面图标，再创建窗口
+    hideDesktopIcons();
+    
+    createWindow();
+    tray = createTray(mainWindow, store);
+    
+    // 监听桌面文件变化，自动刷新
+    startDesktopWatchers();
+    
+    // 注册全局快捷键
+    registerGlobalShortcuts();
+    
+    // 监听系统主题变化
+    nativeTheme.on('updated', () => {
+      if (mainWindow && !mainWindow.isDestroyed()) {
+        mainWindow.webContents.send('system-theme-changed', {
+          shouldUseDarkColors: nativeTheme.shouldUseDarkColors
+        });
+      }
+    });
+  };
+  
+  if (startupDelay > 0) {
+    console.log(`开机延迟启动：${startupDelay} 秒后初始化`);
+    setTimeout(initApp, startupDelay * 1000);
+  } else {
+    await initApp();
+  }
 }).catch((error) => {
   console.error('App 启动失败:', error);
 });
@@ -833,6 +1157,9 @@ app.on('before-quit', () => {
   } catch (error) {
     console.error('退出时显示桌面图标失败:', error);
   }
+
+  // 停止文件监听
+  stopDesktopWatchers();
 
   // 销毁托盘图标
   destroyTray();
@@ -850,14 +1177,18 @@ app.on('will-quit', () => {
 });
 
 // ============ 全局快捷键 ============
-const GLOBAL_SHORTCUTS = {
+const DEFAULT_SHORTCUTS = {
   TOGGLE_WINDOW: 'CommandOrControl+Alt+D',
   REFRESH: 'CommandOrControl+Alt+R'
 };
 
 function registerGlobalShortcuts() {
-  // Ctrl+Alt+D 切换窗口显示/隐藏
-  const reg1 = globalShortcut.register(GLOBAL_SHORTCUTS.TOGGLE_WINDOW, () => {
+  const shortcuts = store.get('shortcuts', {});
+  const toggleKey = shortcuts.toggleWindow || DEFAULT_SHORTCUTS.TOGGLE_WINDOW;
+  const refreshKey = shortcuts.refresh || DEFAULT_SHORTCUTS.REFRESH;
+
+  // 自定义快捷键：显示/隐藏窗口
+  const reg1 = globalShortcut.register(toggleKey, () => {
     if (!mainWindow || mainWindow.isDestroyed()) return;
     if (mainWindow.isVisible() && !mainWindow.isMinimized()) {
       mainWindow.hide();
@@ -868,16 +1199,16 @@ function registerGlobalShortcuts() {
     }
   });
   if (!reg1) {
-    console.warn('全局快捷键注册失败:', GLOBAL_SHORTCUTS.TOGGLE_WINDOW);
+    console.warn('全局快捷键注册失败:', toggleKey);
   }
 
-  // Ctrl+Alt+R 刷新文件列表
-  const reg2 = globalShortcut.register(GLOBAL_SHORTCUTS.REFRESH, () => {
+  // 自定义快捷键：刷新文件列表
+  const reg2 = globalShortcut.register(refreshKey, () => {
     if (mainWindow && !mainWindow.isDestroyed() && mainWindow.webContents) {
       mainWindow.webContents.send('refresh-files');
     }
   });
   if (!reg2) {
-    console.warn('全局快捷键注册失败:', GLOBAL_SHORTCUTS.REFRESH);
+    console.warn('全局快捷键注册失败:', refreshKey);
   }
 }

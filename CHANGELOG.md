@@ -5,6 +5,53 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.1.2] - 2026-08-04
+
+### Fixed
+
+- System icons (This PC, Recycle Bin, Network, Control Panel...) now show real Windows icons:
+  native module resolves `::{CLSID}` paths via SHParseDisplayName + SHGFI_PIDL
+  (previously SHGetFileInfo fell back to a generic folder icon)
+
+### Technical
+
+- Fixed native build on machines with only Windows SDK 10.0.16299:
+  - binding.gyp now pins msvs_windows_target_platform_version
+  - source restores min/max macros after NOMINMAX
+  - new build-native.ps1 patches node-addon-api's gyp and rebuilds reliably
+
+## [1.1.1] - 2026-08-04
+
+### Fixed
+
+- System icons (This PC, Recycle Bin, etc.) now use native Windows icons via icon extractor, emoji used only as fallback
+- Folder hover preview: system virtual folders (This PC/Recycle Bin/Control Panel) now enumerate contents via Shell COM instead of showing empty
+- Folder hover preview position: auto flips to left/top when right side has no space
+- Selection toolbar only appears for multi-selection (2+ items)
+- Click empty area or click a selected item to deselect (toolbar disappears)
+
+## [1.1.0] - 2026-08-04
+
+### Added
+
+- File system auto-watching (fs.watch): desktop changes refresh icons in real time
+- Multi-select icons: Ctrl/Shift click + drag-box selection with batch toolbar
+- Clipboard file operations: Ctrl+C/X/V copy/cut/paste to desktop
+- Folder hover preview popup
+- Icon position lock
+- Auto-arrange rules (keyword/extension based auto categorization into groups)
+- i18n: Simplified Chinese / English
+- Customizable global shortcuts (record mode)
+- Startup delay option
+- Layout export/import (JSON)
+- Double-click empty area to hide/show all icons
+- Toast notifications
+
+### Changed
+
+- Improved UI: glassmorphism shadows, rounded corners, smoother transitions
+- Icon rendering keeps selection state across refreshes (diff rendering)
+
 ## [1.0.0] - 2024-03-31
 
 ### Added

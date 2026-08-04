@@ -9,6 +9,14 @@
       "dependencies": [
         "<!(node -p \"require('node-addon-api').gyp\")"
       ],
+      "configurations": {
+        "Debug": {
+          "msvs_windows_target_platform_version": "10.0.16299.0"
+        },
+        "Release": {
+          "msvs_windows_target_platform_version": "10.0.16299.0"
+        }
+      },
       "msvs_settings": {
         "VCCLCompilerTool": {
           "ExceptionHandling": 1,

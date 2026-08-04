@@ -64,7 +64,6 @@ function saveIconCache() {
 
 async function extractFileIcon(filePath) {
   if (iconCache.has(filePath)) return iconCache.get(filePath);
-  if (filePath && filePath.startsWith('::')) return null;
   if (!iconExtractor) return null;
 
   try {
@@ -101,12 +100,16 @@ async function extractDirectoryIcon(dirPath) {
 
 async function getFileIcon(file) {
   try {
+    // 先尝试原生提取（包括系统虚拟文件夹 `::{CLSID}` 路径）
+    const icon = await extractFileIcon(file.path);
+    if (icon) return icon;
+    // 提取失败时回退
     if (file.path && file.path.startsWith('::')) {
       return getSystemIconEmoji(file.path);
     }
-    const icon = await extractFileIcon(file.path);
-    return icon || (file.isDirectory ? '\u{1F4C1}' : '\u{1F4C4}');
+    return file.isDirectory ? '\u{1F4C1}' : '\u{1F4C4}';
   } catch (error) {
+    if (file.path && file.path.startsWith('::')) return getSystemIconEmoji(file.path);
     return file.isDirectory ? '\u{1F4C1}' : '\u{1F4C4}';
   }
 }
@@ -122,11 +125,7 @@ async function getFileIcons(files) {
         result[file.path] = iconCache.get(file.path);
         continue;
       }
-      if (file.path && file.path.startsWith('::')) {
-        result[file.path] = getSystemIconEmoji(file.path);
-        continue;
-      }
-      if (file.isDirectory) {
+      if (file.isDirectory && !(file.path && file.path.startsWith('::'))) {
         dirsToExtract.push(file);
       } else {
         filesToExtract.push(file);

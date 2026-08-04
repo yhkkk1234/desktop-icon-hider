@@ -12,11 +12,11 @@
       <button id="toggle-btn" class="icon-btn" title="折叠">
         <span id="toggle-icon">▼</span>
       </button>
-      <span class="title">桌面图标</span>
+      <span class="title" data-i18n="header.title">桌面图标</span>
       <div class="header-actions">
-        <button id="settings-btn" class="icon-btn" title="设置">⚙️</button>
-        <button id="refresh-btn" class="icon-btn" title="刷新">🔄</button>
-        <button id="quit-btn" class="icon-btn" title="关闭">×</button>
+        <button id="settings-btn" class="icon-btn" title="设置" data-i18n-title="action.settings">⚙️</button>
+        <button id="refresh-btn" class="icon-btn" title="刷新" data-i18n-title="action.refresh">🔄</button>
+        <button id="quit-btn" class="icon-btn" title="关闭" data-i18n-title="action.quit">×</button>
       </div>
     </div>
     
@@ -24,107 +24,180 @@
     <div id="settings-panel" class="settings-panel" style="display: none;">
       <!-- 主题设置 -->
       <div class="settings-section">
-        <h3>主题设置</h3>
+        <h3 data-i18n="settings.theme">主题设置</h3>
         <div class="setting-item">
-          <label for="theme-select">主题模式:</label>
+          <label for="theme-select" data-i18n="settings.themeMode">主题模式:</label>
           <select id="theme-select">
-            <option value="dark">深色主题</option>
-            <option value="light">浅色主题</option>
-            <option value="system">跟随系统</option>
+            <option value="dark" data-i18n="settings.themeDark">深色主题</option>
+            <option value="light" data-i18n="settings.themeLight">浅色主题</option>
+            <option value="system" data-i18n="settings.themeSystem">跟随系统</option>
           </select>
         </div>
         <div class="setting-item opacity-control">
-          <label for="opacity-slider">界面透明度:</label>
+          <label for="opacity-slider" data-i18n="settings.opacity">界面透明度:</label>
           <input type="range" id="opacity-slider" min="50" max="100" step="5" value="92">
           <span id="opacity-value">92%</span>
         </div>
-        <div class="setting-description">
+        <div class="setting-description" data-i18n="settings.themeDesc">
           选择界面主题风格，调整背景透明度。"跟随系统"将自动匹配操作系统的深色/浅色模式。
         </div>
       </div>
       
       <!-- 图标大小设置 -->
       <div class="settings-section">
-        <h3>图标大小</h3>
+        <h3 data-i18n="settings.iconSize">图标大小</h3>
         <div class="setting-item icon-size-control">
-          <label for="icon-size-slider">图标大小:</label>
+          <label for="icon-size-slider" data-i18n="settings.iconSizeLabel">图标大小:</label>
           <input type="range" id="icon-size-slider" min="24" max="96" step="4" value="40">
           <span id="icon-size-value">40px</span>
         </div>
-        <div class="setting-description">
+        <div class="setting-description" data-i18n="settings.iconSizeDesc">
           调整图标显示大小，也可使用 Ctrl + 鼠标滚轮快速调整。
         </div>
       </div>
       
       <!-- 排序设置 -->
       <div class="settings-section">
-        <h3>图标排序</h3>
+        <h3 data-i18n="settings.sort">图标排序</h3>
         <div class="setting-item">
-          <label for="sort-select">排序方式:</label>
+          <label for="sort-select" data-i18n="settings.sortMode">排序方式:</label>
           <select id="sort-select">
-            <option value="manual">手动排序 (可拖拽)</option>
-            <option value="name-asc">名称 (A-Z)</option>
-            <option value="name-desc">名称 (Z-A)</option>
-            <option value="type">类型</option>
-            <option value="modified-desc">修改时间 (最新)</option>
-            <option value="modified-asc">修改时间 (最早)</option>
-            <option value="size-desc">大小 (大到小)</option>
-            <option value="size-asc">大小 (小到大)</option>
+            <option value="manual" data-i18n="settings.sortManual">手动排序 (可拖拽)</option>
+            <option value="name-asc" data-i18n="settings.sortNameAsc">名称 (A-Z)</option>
+            <option value="name-desc" data-i18n="settings.sortNameDesc">名称 (Z-A)</option>
+            <option value="type" data-i18n="settings.sortType">类型</option>
+            <option value="modified-desc" data-i18n="settings.sortModifiedDesc">修改时间 (最新)</option>
+            <option value="modified-asc" data-i18n="settings.sortModifiedAsc">修改时间 (最早)</option>
+            <option value="size-desc" data-i18n="settings.sortSizeDesc">大小 (大到小)</option>
+            <option value="size-asc" data-i18n="settings.sortSizeAsc">大小 (小到大)</option>
           </select>
         </div>
-        <div class="setting-description">
+        <div class="setting-description" data-i18n="settings.sortDesc">
           选择桌面图标的排序方式，支持按名称、类型、修改时间和大小排序。
+        </div>
+      </div>
+      
+      <!-- 图标锁定 -->
+      <div class="settings-section">
+        <h3 data-i18n="settings.lock">图标保护</h3>
+        <div class="setting-item">
+          <label class="switch">
+            <input type="checkbox" id="icons-lock-toggle">
+            <span class="slider"></span>
+          </label>
+          <span class="setting-label" data-i18n="settings.lockIcons">锁定图标位置（禁止拖拽）</span>
+        </div>
+        <div class="setting-description" data-i18n="settings.lockDesc">
+          开启后图标无法被拖拽移动或拖入分组，防止误操作。
         </div>
       </div>
       
       <!-- 边缘自动隐藏设置 -->
       <div class="settings-section">
-        <h3>边缘自动隐藏</h3>
+        <h3 data-i18n="settings.autoHide">边缘自动隐藏</h3>
         <div class="setting-item">
           <label class="switch">
             <input type="checkbox" id="auto-hide-toggle">
             <span class="slider"></span>
           </label>
-          <span class="setting-label">启用边缘自动隐藏</span>
+          <span class="setting-label" data-i18n="settings.autoHideEnable">启用边缘自动隐藏</span>
         </div>
         <div class="setting-item">
-          <label for="edge-select">吸附边缘:</label>
+          <label for="edge-select" data-i18n="settings.autoHideEdge">吸附边缘:</label>
           <select id="edge-select" disabled>
-            <option value="none">未设置</option>
-            <option value="top">顶部</option>
-            <option value="bottom">底部</option>
-            <option value="left">左侧</option>
-            <option value="right">右侧</option>
+            <option value="none" data-i18n="settings.edgeNone">未设置</option>
+            <option value="top" data-i18n="settings.edgeTop">顶部</option>
+            <option value="bottom" data-i18n="settings.edgeBottom">底部</option>
+            <option value="left" data-i18n="settings.edgeLeft">左侧</option>
+            <option value="right" data-i18n="settings.edgeRight">右侧</option>
           </select>
         </div>
         <div class="setting-item">
-          <span class="setting-label">状态:</span>
-          <span id="auto-hide-status" class="status-disabled">未启用</span>
-          <div id="auto-hide-indicator" class="indicator visible" title="窗口可见"></div>
+          <span class="setting-label" data-i18n="settings.autoHideStatus">状态:</span>
+          <span id="auto-hide-status" class="status-disabled" data-i18n="settings.autoHideOff">未启用</span>
+          <div id="auto-hide-indicator" class="indicator visible" data-i18n-title="settings.autoHideVisible" title="窗口可见"></div>
         </div>
-        <div class="setting-description">
-          启用后，窗口将吸附到指定边缘，鼠标移开时自动隐藏，鼠标移到边缘时自动显示。
+        <div class="setting-description" data-i18n="settings.autoHideDesc">
+          启用后，窗口将吸附到指定边缘，鼠标移开时自动隐藏，鼠标移到边缘时自动显示，全程不干扰其他窗口工作。
+        </div>
+      </div>
+      
+      <!-- 自动整理规则 -->
+      <div class="settings-section">
+        <h3 data-i18n="settings.rules">自动整理规则</h3>
+        <div id="rules-list" class="rules-list"></div>
+        <div class="setting-item">
+          <button id="add-rule-btn" class="prompt-btn prompt-btn-confirm" data-i18n="settings.addRule">添加规则</button>
+          <button id="apply-rules-btn" class="prompt-btn prompt-btn-cancel" data-i18n="settings.applyRules">立即按规则整理</button>
+        </div>
+        <div class="setting-description" data-i18n="settings.rulesDesc">
+          按文件名关键词或扩展名自动将图标归类到分组（自动创建分组）。
         </div>
       </div>
       
       <!-- 开机启动设置 -->
       <div class="settings-section">
-        <h3>开机启动</h3>
+        <h3 data-i18n="settings.startup">开机启动</h3>
         <div class="setting-item">
           <label class="switch">
             <input type="checkbox" id="auto-launch-toggle">
             <span class="slider"></span>
           </label>
-          <span class="setting-label">开机自动启动</span>
+          <span class="setting-label" data-i18n="settings.autoLaunch">开机自动启动</span>
         </div>
-        <div class="setting-description">
-          启用后，系统开机时将自动运行此程序，桌面图标管理将自动生效。
+        <div class="setting-item">
+          <label for="startup-delay-input" data-i18n="settings.startupDelay">延迟启动:</label>
+          <input type="number" id="startup-delay-input" min="0" max="600" value="0" class="number-input">
+          <span class="setting-label" data-i18n="settings.seconds">秒</span>
+        </div>
+        <div class="setting-description" data-i18n="settings.startupDesc">
+          延迟启动可避免开机时窗口抢占焦点；延迟期间原生桌面图标保持可见。
         </div>
       </div>
-
+      
+      <!-- 语言设置 -->
+      <div class="settings-section">
+        <h3 data-i18n="settings.language">语言</h3>
+        <div class="setting-item">
+          <label for="language-select" data-i18n="settings.languageMode">界面语言:</label>
+          <select id="language-select">
+            <option value="zh-CN">简体中文</option>
+            <option value="en-US">English</option>
+          </select>
+        </div>
+      </div>
+      
+      <!-- 快捷键自定义 -->
+      <div class="settings-section">
+        <h3 data-i18n="settings.shortcuts">快捷键</h3>
+        <div class="setting-item">
+          <label for="shortcut-toggle-input" data-i18n="settings.shortcutToggle">显示/隐藏窗口:</label>
+          <input type="text" id="shortcut-toggle-input" class="shortcut-input" placeholder="Ctrl+Alt+D">
+        </div>
+        <div class="setting-item">
+          <label for="shortcut-refresh-input" data-i18n="settings.shortcutRefresh">刷新文件:</label>
+          <input type="text" id="shortcut-refresh-input" class="shortcut-input" placeholder="Ctrl+Alt+R">
+        </div>
+        <div class="setting-description" data-i18n="settings.shortcutsDesc">
+          点击输入框后按下新的组合键即可修改。修改后立即生效。
+        </div>
+      </div>
+      
+      <!-- 布局管理 -->
+      <div class="settings-section">
+        <h3 data-i18n="settings.layout">布局管理</h3>
+        <div class="setting-item">
+          <button id="export-layout-btn" class="prompt-btn prompt-btn-confirm" data-i18n="settings.exportLayout">导出布局</button>
+          <button id="import-layout-btn" class="prompt-btn prompt-btn-cancel" data-i18n="settings.importLayout">导入布局</button>
+        </div>
+        <div class="setting-description" data-i18n="settings.layoutDesc">
+          将分组和排序等布局配置导出为 JSON 文件，可随时导入恢复。
+        </div>
+      </div>
+      
       <!-- 快捷键说明 -->
       <div class="settings-section">
-        <h3>快捷键</h3>
+        <h3 data-i18n="settings.about">快捷键说明</h3>
         <div class="setting-item"><kbd>Ctrl + F</kbd><span class="setting-label">搜索文件</span></div>
         <div class="setting-item"><kbd>Ctrl + Alt + D</kbd><span class="setting-label">显示/隐藏窗口</span></div>
         <div class="setting-item"><kbd>Ctrl + Alt + R</kbd><span class="setting-label">刷新文件列表</span></div>
@@ -132,8 +205,19 @@
         <div class="setting-item"><kbd>Del</kbd><span class="setting-label">移至回收站</span></div>
         <div class="setting-item"><kbd>Shift + Del</kbd><span class="setting-label">永久删除</span></div>
         <div class="setting-item"><kbd>F5</kbd><span class="setting-label">刷新</span></div>
+        <div class="setting-item"><kbd>Ctrl + A</kbd><span class="setting-label">全选</span></div>
+        <div class="setting-item"><kbd>Ctrl + C / X / V</kbd><span class="setting-label">复制 / 剪切 / 粘贴</span></div>
+        <div class="setting-item"><kbd>双击空白</kbd><span class="setting-label">隐藏/显示全部图标</span></div>
         <div class="setting-description">
           全局快捷键在任何应用下都可用，其他快捷键仅在窗口激活时有效。
+        </div>
+      </div>
+      
+      <!-- 关于 -->
+      <div class="settings-section">
+        <h3>关于</h3>
+        <div class="setting-item">
+          <button id="quit-app-btn" class="prompt-btn prompt-btn-cancel" data-i18n="settings.quitApp">退出应用</button>
         </div>
       </div>
     </div>
@@ -141,8 +225,8 @@
     <div id="content" class="content">
       <div id="search-bar" class="search-bar" style="display: none;">
         <span class="search-icon">🔍</span>
-        <input type="text" id="search-input" placeholder="搜索文件名或扩展名..." autocomplete="off" spellcheck="false">
-        <button id="search-clear" class="search-clear" title="清空 (Esc)">×</button>
+        <input type="text" id="search-input" data-i18n-placeholder="search.placeholder" placeholder="搜索文件名或扩展名..." autocomplete="off" spellcheck="false">
+        <button id="search-clear" class="search-clear" data-i18n-title="search.clear" title="清空 (Esc)">×</button>
         <span id="search-count" class="search-count"></span>
       </div>
       <div id="groups-bar" class="groups-bar">
@@ -152,7 +236,25 @@
       </div>
       <div id="files-list" class="files-list"></div>
     </div>
+    
+    <!-- 批量操作工具栏（多选时出现） -->
+    <div id="selection-toolbar" class="selection-toolbar" style="display: none;">
+      <span id="selection-count" class="selection-count"></span>
+      <button id="sel-open-btn" class="sel-btn" data-i18n="action.open">打开</button>
+      <button id="sel-copy-btn" class="sel-btn" data-i18n="action.copy">复制</button>
+      <button id="sel-cut-btn" class="sel-btn" data-i18n="action.cut">剪切</button>
+      <button id="sel-paste-btn" class="sel-btn" data-i18n="action.paste">粘贴</button>
+      <button id="sel-delete-btn" class="sel-btn sel-danger" data-i18n="action.delete">删除</button>
+      <button id="sel-clear-btn" class="sel-btn" data-i18n="action.deselect">取消选择</button>
+    </div>
+    
+    <!-- 文件夹悬停预览 -->
+    <div id="folder-preview" class="folder-preview" style="display: none;"></div>
+    
+    <!-- 框选矩形 -->
+    <div id="box-select" class="box-select" style="display: none;"></div>
   </div>
+  <script src="i18n.js"></script>
   <script src="renderer.js"></script>
 </body>
 </html>

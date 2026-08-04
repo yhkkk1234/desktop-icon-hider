@@ -10,6 +10,13 @@
   "parserOptions": {
     "ecmaVersion": "latest"
   },
+  "globals": {
+    "t": "readonly",
+    "setLanguage": "readonly",
+    "applyI18n": "readonly",
+    "I18N_DICTS": "readonly",
+    "currentLanguage": "readonly"
+  },
   "rules": {
     "indent": ["error", 2],
     "linebreak-style": "off",

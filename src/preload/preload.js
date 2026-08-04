@@ -6,6 +6,7 @@ contextBridge.exposeInMainWorld('api', {
   quitApp: () => ipcRenderer.invoke('quit-app'),
   refreshFiles: () => ipcRenderer.invoke('refresh-files'),
   openFile: (filePath) => ipcRenderer.invoke('open-file', filePath),
+  openInExplorer: (filePath) => ipcRenderer.invoke('open-in-explorer', filePath),
   moveWindow: (newX, newY) => ipcRenderer.invoke('move-window', newX, newY),
   getFileIcon: (filePath) => ipcRenderer.invoke('get-file-icon', filePath),
   getFileIcons: (files) => ipcRenderer.invoke('get-file-icons', files),
@@ -38,6 +39,31 @@ contextBridge.exposeInMainWorld('api', {
   getAutoLaunch: () => ipcRenderer.invoke('get-auto-launch'),
   setAutoLaunch: (enabled) => ipcRenderer.invoke('set-auto-launch', enabled),
   
+  // 文件夹预览
+  listDirectory: (dirPath) => ipcRenderer.invoke('list-directory', dirPath),
+  
+  // 剪贴板文件操作
+  pasteClipboard: (payload) => ipcRenderer.invoke('paste-clipboard', payload),
+  
+  // 图标锁定
+  setIconsLocked: (locked) => ipcRenderer.invoke('set-icons-locked', locked),
+  
+  // 自动整理规则
+  setArrangeRules: (rules) => ipcRenderer.invoke('set-arrange-rules', rules),
+  
+  // 语言
+  setLanguage: (language) => ipcRenderer.invoke('set-language', language),
+  
+  // 自定义快捷键
+  setShortcuts: (shortcuts) => ipcRenderer.invoke('set-shortcuts', shortcuts),
+  
+  // 开机延迟启动
+  setStartupDelay: (seconds) => ipcRenderer.invoke('set-startup-delay', seconds),
+  
+  // 布局导出/导入
+  exportLayout: (extraData) => ipcRenderer.invoke('export-layout', extraData),
+  importLayout: (importGroups) => ipcRenderer.invoke('import-layout', importGroups),
+  
   // 监听自动隐藏事件
   onAutoHideChanged: (callback) => ipcRenderer.on('auto-hide-changed', (event, data) => callback(data)),
   onAutoHideStatus: (callback) => ipcRenderer.on('auto-hide-status', (event, data) => callback(data)),
@@ -51,15 +77,21 @@ contextBridge.exposeInMainWorld('api', {
   
   // 监听打开设置事件(从托盘)
   onOpenSettings: (callback) => ipcRenderer.on('open-settings', () => callback()),
-
+  
   // 监听全局快捷键触发的刷新
   onRefreshFiles: (callback) => ipcRenderer.on('refresh-files', () => callback()),
-
+  
+  // 监听桌面文件变化
+  onDesktopChanged: (callback) => ipcRenderer.on('desktop-changed', () => callback()),
+  
+  // 监听语言变化
+  onLanguageChanged: (callback) => ipcRenderer.on('language-changed', (event, data) => callback(data)),
+  
   // 右键菜单 API
   showDesktopContextMenu: (x, y) => ipcRenderer.invoke('show-desktop-context-menu', x, y),
   showFileContextMenu: (filePath, x, y) => ipcRenderer.invoke('show-file-context-menu', filePath, x, y),
   cancelDesktopContextMenu: () => ipcRenderer.invoke('cancel-desktop-context-menu'),
-
+  
   renameFile: (oldPath, newName) => ipcRenderer.invoke('rename-file', oldPath, newName),
   deleteFile: (filePath, permanent) => ipcRenderer.invoke('delete-file', filePath, permanent)
 });

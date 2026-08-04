@@ -916,3 +916,372 @@ kbd {
 .prompt-btn-cancel:hover {
   background: var(--bg-button-hover);
 }
+
+/* ============ UI 质感优化 ============ */
+#app {
+  box-shadow: 0 8px 32px rgba(0, 0, 0, 0.22), inset 0 1px 0 rgba(255, 255, 255, 0.06);
+  backdrop-filter: blur(24px) saturate(1.15);
+}
+
+.header {
+  background: linear-gradient(180deg, var(--bg-secondary), rgba(var(--bg-secondary-rgb), calc(var(--opacity-bg-header) - 0.06)));
+  box-shadow: 0 1px 0 rgba(255, 255, 255, 0.04) inset, 0 1px 4px rgba(0, 0, 0, 0.12);
+}
+
+.icon-btn {
+  border-radius: 6px;
+  transition: background 0.15s, transform 0.12s, color 0.15s;
+}
+
+.icon-btn:hover {
+  transform: translateY(-1px);
+}
+
+.icon-btn:active {
+  transform: scale(0.92);
+}
+
+.file-item {
+  border-radius: 8px;
+  transition: background 0.15s, transform 0.12s, box-shadow 0.15s;
+}
+
+.file-item:hover {
+  transform: translateY(-1px);
+}
+
+.file-item.selected {
+  background: var(--bg-context);
+  box-shadow: 0 0 0 1px var(--border-context) inset;
+}
+
+.file-item.multi-selected {
+  outline: 1px solid var(--border-context);
+  outline-offset: -1px;
+}
+
+.file-item.in-box-select {
+  background: var(--bg-active);
+  outline: 1px solid var(--border-context);
+  outline-offset: -1px;
+}
+
+.file-item.dragging {
+  opacity: 0.45;
+  transform: scale(0.92);
+}
+
+.group-tab {
+  border-radius: 14px;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.1);
+  transition: background 0.15s, color 0.15s, transform 0.12s, box-shadow 0.15s;
+}
+
+.group-tab:hover {
+  transform: translateY(-1px);
+}
+
+.group-tab.drop-target {
+  outline: 2px dashed var(--border-context);
+  outline-offset: 1px;
+  background: var(--bg-active);
+}
+
+/* 折叠动画优化 */
+#content {
+  transition: opacity 0.18s ease, transform 0.18s ease;
+}
+
+/* ============ 批量操作工具栏 ============ */
+.selection-toolbar {
+  position: fixed;
+  bottom: 16px;
+  left: 50%;
+  transform: translateX(-50%);
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 8px 14px;
+  background: var(--bg-secondary);
+  border: 1px solid var(--border-primary);
+  border-radius: 24px;
+  box-shadow: 0 8px 28px rgba(0, 0, 0, 0.35);
+  z-index: 9500;
+  backdrop-filter: blur(18px);
+  animation: toolbarIn 0.2s ease;
+}
+
+@keyframes toolbarIn {
+  from {
+    opacity: 0;
+    transform: translateX(-50%) translateY(8px);
+  }
+  to {
+    opacity: 1;
+    transform: translateX(-50%) translateY(0);
+  }
+}
+
+.selection-count {
+  color: var(--text-primary);
+  font-size: 12px;
+  margin-right: 6px;
+  white-space: nowrap;
+}
+
+.sel-btn {
+  padding: 5px 12px;
+  border: 1px solid var(--border-input);
+  background: var(--bg-button);
+  color: var(--text-secondary);
+  border-radius: 16px;
+  font-size: 12px;
+  cursor: pointer;
+  transition: background 0.15s, color 0.15s, transform 0.12s;
+}
+
+.sel-btn:hover {
+  background: var(--bg-button-hover);
+  color: var(--text-primary);
+  transform: translateY(-1px);
+}
+
+.sel-btn.sel-danger:hover {
+  background: rgba(255, 100, 100, 0.22);
+  color: #ff6666;
+  border-color: rgba(255, 100, 100, 0.4);
+}
+
+/* ============ 框选矩形 ============ */
+.box-select {
+  position: fixed;
+  border: 1px solid var(--border-context);
+  background: var(--bg-context);
+  z-index: 9000;
+  pointer-events: none;
+  border-radius: 2px;
+}
+
+/* ============ 文件夹悬停预览 ============ */
+.folder-preview {
+  position: fixed;
+  min-width: 180px;
+  max-width: 320px;
+  max-height: 280px;
+  overflow-y: auto;
+  background: var(--bg-tertiary);
+  border: 1px solid var(--border-primary);
+  border-radius: 10px;
+  padding: 8px;
+  box-shadow: 0 10px 32px rgba(0, 0, 0, 0.42);
+  z-index: 9600;
+  backdrop-filter: blur(18px);
+  animation: previewIn 0.15s ease;
+}
+
+@keyframes previewIn {
+  from {
+    opacity: 0;
+    transform: translateY(4px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+.folder-preview .fp-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--text-primary);
+  padding: 2px 2px 6px;
+  border-bottom: 1px solid var(--border-secondary);
+  margin-bottom: 6px;
+}
+
+.folder-preview .fp-item {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 3px 4px;
+  border-radius: 4px;
+  font-size: 11px;
+  color: var(--text-secondary);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  cursor: default;
+}
+
+.folder-preview .fp-item:hover {
+  background: var(--bg-hover);
+}
+
+.folder-preview .fp-item .fp-emoji {
+  flex-shrink: 0;
+  font-size: 13px;
+}
+
+.folder-preview .fp-more {
+  font-size: 10px;
+  color: var(--text-muted);
+  padding: 3px 4px;
+}
+
+.folder-preview .fp-empty {
+  font-size: 11px;
+  color: var(--text-muted);
+  padding: 8px 4px;
+  text-align: center;
+}
+
+/* ============ 自动整理规则列表 ============ */
+.rules-list {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  margin-bottom: 10px;
+  max-height: 200px;
+  overflow-y: auto;
+}
+
+.rule-item {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 6px 8px;
+  background: var(--bg-input);
+  border: 1px solid var(--border-input);
+  border-radius: 6px;
+  font-size: 12px;
+  color: var(--text-secondary);
+}
+
+.rule-item .rule-name {
+  flex: 1;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.rule-item .rule-detail {
+  font-size: 10px;
+  color: var(--text-muted);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  max-width: 120px;
+}
+
+.rule-item .rule-actions {
+  display: flex;
+  gap: 2px;
+  flex-shrink: 0;
+}
+
+.rule-item .rule-actions button {
+  width: 20px;
+  height: 20px;
+  border: none;
+  background: transparent;
+  color: var(--text-muted);
+  border-radius: 4px;
+  cursor: pointer;
+  font-size: 11px;
+  transition: background 0.15s, color 0.15s;
+}
+
+.rule-item .rule-actions button:hover {
+  background: var(--bg-button-hover);
+  color: var(--text-primary);
+}
+
+.rule-item .rule-actions button.danger:hover {
+  background: rgba(255, 100, 100, 0.25);
+  color: #ff6666;
+}
+
+/* ============ 输入控件 ============ */
+.number-input {
+  width: 70px;
+  background: var(--bg-input);
+  border: 1px solid var(--border-input);
+  border-radius: 4px;
+  color: var(--text-secondary);
+  font-size: 12px;
+  padding: 4px 8px;
+  outline: none;
+}
+
+.number-input:focus {
+  border-color: var(--switch-active);
+}
+
+.shortcut-input {
+  flex: 1;
+  min-width: 100px;
+  background: var(--bg-input);
+  border: 1px solid var(--border-input);
+  border-radius: 4px;
+  color: var(--text-secondary);
+  font-size: 12px;
+  padding: 4px 8px;
+  outline: none;
+}
+
+.shortcut-input:focus {
+  border-color: var(--switch-active);
+}
+
+.shortcut-input.recording {
+  border-color: var(--switch-active);
+  color: var(--switch-active);
+}
+
+/* ============ Toast 提示 ============ */
+#toast {
+  position: fixed;
+  bottom: 64px;
+  left: 50%;
+  transform: translateX(-50%);
+  background: var(--bg-tertiary);
+  color: var(--text-primary);
+  border: 1px solid var(--border-primary);
+  border-radius: 18px;
+  padding: 8px 18px;
+  font-size: 12px;
+  box-shadow: 0 6px 24px rgba(0, 0, 0, 0.35);
+  z-index: 10000;
+  backdrop-filter: blur(16px);
+  transition: opacity 0.3s;
+  pointer-events: none;
+  white-space: nowrap;
+  max-width: 80vw;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+/* ============ 图标锁定 ============ */
+body.icons-locked .file-item.draggable,
+body.icons-locked .file-item.draggable:active {
+  cursor: default;
+}
+
+/* 拖动分组高亮提示 */
+.group-tab.drag-active {
+  border-color: var(--border-context);
+  animation: pulse-border 1.5s infinite;
+}
+
+.group-tab.drag-active::after {
+  content: '' !important;
+}
+
+/* 双击空白隐藏全部图标 */
+.content.icons-hidden .files-list {
+  display: none;
+}

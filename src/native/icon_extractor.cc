@@ -4,6 +4,12 @@
 #ifndef SHGFI_JUMBOICON
 #define SHGFI_JUMBOICON 0x00040000
 #endif
+// node-gyp defines NOMINMAX by default; the old Windows SDK (10.0.16299)
+// GDI+ headers require the min/max macros, so restore them before windows.h.
+// NOTE: never use bare min()/max() in this file afterwards (use explicit comparisons).
+#ifdef NOMINMAX
+#undef NOMINMAX
+#endif
 #include <napi.h>
 #include <windows.h>
 #include <shellapi.h>
@@ -36,7 +42,7 @@ public:
     HRESULT STDMETHODCALLTYPE Read(void* pv, ULONG cb, ULONG* pcbRead) override {
         if (pcbRead) *pcbRead = 0;
         if (position >= data.size()) return S_FALSE;
-        ULONG t = std::min(cb, (ULONG)(data.size() - position));
+        ULONG t = (cb < (ULONG)(data.size() - position)) ? cb : (ULONG)(data.size() - position);
         memcpy(pv, data.data() + position, t); position += t;
         if (pcbRead) *pcbRead = t; return S_OK;
     }
@@ -106,7 +112,7 @@ std::string iconToPng(HICON hIcon) {
     }
     if (w == 0) { DestroyIcon(hIcon); return ""; }
     
-    int size = std::max(w, h);
+    int size = (w > h) ? w : h;
     w = size;
     h = size;
     
@@ -163,11 +169,28 @@ HICON GetIconForPath(LPCWSTR path, bool isClsid) {
     UINT flags = SHGFI_ICON | SHGFI_JUMBOICON;
     
     if (isClsid) {
+        // System virtual folder: resolve to PIDL via SHParseDisplayName first.
+        // Passing `::{CLSID}` string directly makes SHGetFileInfo fall back to generic folder icon
+        LPITEMIDLIST pidl = nullptr;
+        SFGAOF attrs = 0;
+        if (SUCCEEDED(SHParseDisplayName(path, nullptr, &pidl, 0, &attrs)) && pidl) {
+            ZeroMemory(&shfi, sizeof(shfi));
+            if (SHGetFileInfoW((LPCWSTR)pidl, 0, &shfi, sizeof(shfi), flags | SHGFI_PIDL)) {
+                return shfi.hIcon;
+            }
+            ZeroMemory(&shfi, sizeof(shfi));
+            if (SHGetFileInfoW((LPCWSTR)pidl, 0, &shfi, sizeof(shfi), SHGFI_ICON | SHGFI_PIDL)) {
+                return shfi.hIcon;
+            }
+        }
+        // Fallback: extract directly from the string
+        ZeroMemory(&shfi, sizeof(shfi));
         if (SHGetFileInfoW(path, 0, &shfi, sizeof(shfi), flags) == 0) {
             if (SHGetFileInfoW(path, FILE_ATTRIBUTE_DIRECTORY, &shfi, sizeof(shfi), flags | SHGFI_USEFILEATTRIBUTES) == 0) {
                 return nullptr;
             }
         }
+        return shfi.hIcon;
     } else {
         if (SHGetFileInfoW(path, 0, &shfi, sizeof(shfi), flags) == 0) {
             DWORD a = GetFileAttributesW(path);
