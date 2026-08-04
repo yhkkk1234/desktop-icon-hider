@@ -42,6 +42,9 @@ contextBridge.exposeInMainWorld('api', {
   // 文件夹预览
   listDirectory: (dirPath) => ipcRenderer.invoke('list-directory', dirPath),
   
+  // 图片预览
+  getImagePreview: (filePath) => ipcRenderer.invoke('get-image-preview', filePath),
+  
   // 剪贴板文件操作
   pasteClipboard: (payload) => ipcRenderer.invoke('paste-clipboard', payload),
   

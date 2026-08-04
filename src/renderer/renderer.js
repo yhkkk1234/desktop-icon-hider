@@ -209,6 +209,18 @@ document.addEventListener('DOMContentLoaded', () => {
   });
   folderPreview.addEventListener('mouseleave', () => scheduleHidePreview());
 
+  // 预览面板双击：打开条目/图片原文件
+  folderPreview.addEventListener('dblclick', (e) => {
+    const row = e.target.closest('.fp-item');
+    if (row && row.dataset.path) {
+      window.api.openFile(row.dataset.path);
+      return;
+    }
+    if (folderPreview.dataset.isImage === 'true' && previewPath) {
+      window.api.openFile(previewPath);
+    }
+  });
+
   // 监听初始化数据
   window.api.onInitData((data) => {
     files = data.files || [];
@@ -1157,13 +1169,22 @@ function getFilteredFiles() {
   return result;
 }
 
-// ============ 文件夹悬停预览 ============
+// ============ 悬停预览（文件夹列表 / 图片） ============
 const FOLDER_PREVIEW_DELAY = 350;
 const FOLDER_PREVIEW_SWITCH_DELAY = 200;
 const FOLDER_PREVIEW_HIDE_DELAY = 250;
 const FOLDER_PREVIEW_MAX = 25;
 
-function schedulePreview(dirPath, item) {
+const IMAGE_EXTENSIONS = new Set(['.jpg', '.jpeg', '.png', '.gif', '.bmp', '.webp', '.svg', '.ico', '.tiff']);
+
+function isPreviewableFile(file) {
+  if (!file) return false;
+  if (file.isDirectory) return true;
+  return file.extension && IMAGE_EXTENSIONS.has(file.extension.toLowerCase());
+}
+
+function schedulePreview(file, item) {
+  const dirPath = file.path;
   // 清除延迟隐藏计时器（鼠标回来了）
   if (previewHideTimer) {
     clearTimeout(previewHideTimer);
@@ -1174,33 +1195,41 @@ function schedulePreview(dirPath, item) {
     clearTimeout(previewSwitchTimer);
     previewSwitchTimer = null;
   }
-  // 同一文件夹的预览已在显示：保持即可
+  // 同一文件的预览已在显示：保持即可
   if (previewPath === dirPath && folderPreview.style.display === 'block') {
     return;
   }
-  // 另一个文件夹的预览正在显示：鼠标需停留片刻才切换，
+  // 另一个预览正在显示：鼠标需停留片刻才切换，
   // 避免鼠标从预览区域移回时路过其他图标而顶掉当前预览
   if (previewPath && previewPath !== dirPath && folderPreview.style.display === 'block') {
     previewSwitchTimer = setTimeout(() => {
       previewSwitchTimer = null;
       if (previewPath === dirPath) return;
       cancelPreview();
-      startPreviewTimer(dirPath, item);
+      startPreviewTimer(file, item);
     }, FOLDER_PREVIEW_SWITCH_DELAY);
     return;
   }
   cancelPreview();
-  startPreviewTimer(dirPath, item);
+  startPreviewTimer(file, item);
 }
 
-function startPreviewTimer(dirPath, item) {
-  previewPath = dirPath;
+function startPreviewTimer(file, item) {
+  previewPath = file.path;
   previewTimer = setTimeout(async () => {
     previewTimer = null;
-    if (previewPath !== dirPath) return;
-    const entries = await window.api.listDirectory(dirPath);
-    if (previewPath !== dirPath) return;
-    showPreview(dirPath, entries, item);
+    if (previewPath !== file.path) return;
+    if (file.isDirectory) {
+      const entries = await window.api.listDirectory(file.path);
+      if (previewPath !== file.path) return;
+      showFolderPreview(item, entries || []);
+    } else {
+      const dataUrl = await window.api.getImagePreview(file.path);
+      if (previewPath !== file.path) return;
+      if (typeof dataUrl === 'string' && dataUrl.startsWith('data:image')) {
+        showImagePreview(item, file, dataUrl);
+      }
+    }
   }, FOLDER_PREVIEW_DELAY);
 }
 
@@ -1231,16 +1260,19 @@ function cancelPreview() {
   folderPreview.innerHTML = '';
 }
 
-function showPreview(dirPath, entries, item) {
-  const rect = item.getBoundingClientRect();
-  folderPreview.innerHTML = '';
-
+function buildPreviewHeader(item) {
   const header = document.createElement('div');
   header.className = 'fp-header';
   const title = document.createElement('span');
   title.textContent = item.querySelector('.file-name').textContent;
   header.appendChild(title);
-  folderPreview.appendChild(header);
+  return header;
+}
+
+function showFolderPreview(item, entries) {
+  folderPreview.dataset.isImage = 'false';
+  folderPreview.innerHTML = '';
+  folderPreview.appendChild(buildPreviewHeader(item));
 
   if (entries.length === 0) {
     const empty = document.createElement('div');
@@ -1251,6 +1283,7 @@ function showPreview(dirPath, entries, item) {
     for (const entry of entries.slice(0, FOLDER_PREVIEW_MAX)) {
       const row = document.createElement('div');
       row.className = 'fp-item';
+      if (entry.path) row.dataset.path = entry.path;
       const emoji = document.createElement('span');
       emoji.className = 'fp-emoji';
       emoji.textContent = entry.isDirectory ? '\u{1F4C1}' : '\u{1F4C4}';
@@ -1268,7 +1301,29 @@ function showPreview(dirPath, entries, item) {
     }
   }
 
-  // 先渲染再测量，智能定位（优先右侧，空间不足时切换方向）
+  positionPreviewPanel(item);
+}
+
+function showImagePreview(item, file, dataUrl) {
+  folderPreview.dataset.isImage = 'true';
+  folderPreview.innerHTML = '';
+  folderPreview.appendChild(buildPreviewHeader(item));
+
+  const img = document.createElement('img');
+  img.className = 'fp-image';
+  img.src = dataUrl;
+  img.alt = file.name;
+  img.draggable = false;
+  folderPreview.appendChild(img);
+
+  positionPreviewPanel(item);
+  // 图片解码完成后重新定位，避免按未加载尺寸放置偏移
+  img.onload = () => positionPreviewPanel(item);
+}
+
+// 先渲染再测量，智能定位（优先右侧，空间不足时切换方向）
+function positionPreviewPanel(item) {
+  const rect = item.getBoundingClientRect();
   folderPreview.style.display = 'block';
   folderPreview.style.visibility = 'hidden';
   folderPreview.style.left = '0px';
@@ -1434,10 +1489,10 @@ function renderFiles() {
       updateDraggable(item, file);
       item.classList.toggle('selected', selectedPaths.has(file.path));
 
-      // 文件夹悬停预览绑定
+      // 悬停预览绑定（文件夹列表 / 图片）
       item.addEventListener('mouseenter', () => {
         const f = filesMap.get(file.path);
-        if (f && f.isDirectory && folderPreviewEnabled) schedulePreview(file.path, item);
+        if (f && folderPreviewEnabled && isPreviewableFile(f)) schedulePreview(f, item);
       });
       item.addEventListener('mouseleave', () => {
         // 鼠标离开了当前悬停的图标：取消未完成的预览切换

@@ -1497,3 +1497,32 @@ body.icons-locked .file-item.draggable:active {
 [data-theme="ocean"] .search-bar #search-input::placeholder {
   color: var(--text-tertiary);
 }
+
+/* 图片悬停预览 */
+.folder-preview .fp-image {
+  display: block;
+  max-width: 460px;
+  max-height: 320px;
+  width: auto;
+  height: auto;
+  margin: 4px auto;
+  border-radius: 6px;
+  object-fit: contain;
+  cursor: pointer;
+}
+
+/* 滚动条角落：避免默认白色方块 */
+.folder-preview::-webkit-scrollbar-corner {
+  background: transparent;
+}
+
+/* 图片预览模式：放宽面板、隐藏滚动条（图片等比显示，无需滚动） */
+.folder-preview[data-is-image="true"] {
+  max-width: 480px;
+  max-height: 360px;
+  overflow: hidden;
+}
+
+.folder-preview[data-is-image="true"]::-webkit-scrollbar {
+  display: none;
+}

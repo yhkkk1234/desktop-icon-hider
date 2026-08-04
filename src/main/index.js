@@ -1,4 +1,4 @@
-const { app, BrowserWindow, ipcMain, shell, nativeTheme, globalShortcut } = require('electron');
+const { app, BrowserWindow, ipcMain, shell, nativeTheme, globalShortcut, nativeImage } = require('electron');
 const path = require('path');
 const fs = require('fs');
 const os = require('os');
@@ -123,7 +123,8 @@ async function listDirectory(dirPath) {
       .slice(0, 60)
       .map(e => ({
         name: e.name,
-        isDirectory: e.isDirectory()
+        isDirectory: e.isDirectory(),
+        path: path.join(dirPath, e.name)
       }));
   } catch (e) {
     return [];
@@ -139,7 +140,9 @@ $folder = $shell.Namespace($env:DIH_SYS_PATH)
 if ($null -eq $folder) { Write-Output 'null'; exit 0 }
 $items = @()
 foreach ($item in $folder.Items()) {
-  $items += @{ name = $item.Name; isDirectory = [bool]$item.IsFolder }
+  $p = ''
+  try { $p = $item.Path } catch { }
+  $items += @{ name = $item.Name; isDirectory = [bool]$item.IsFolder; path = $p }
 }
 $items | ConvertTo-Json -Depth 2 -Compress`;
     const tempFile = path.join(os.tmpdir(), 'temp-sysfolder.ps1');
@@ -159,10 +162,47 @@ $items | ConvertTo-Json -Depth 2 -Compress`;
     if (!Array.isArray(items)) return [];
     return items.slice(0, 60).map(i => ({
       name: String(i.name || ''),
-      isDirectory: !!i.isDirectory
+      isDirectory: !!i.isDirectory,
+      path: typeof i.path === 'string' && i.path ? i.path : null
     }));
   } catch (e) {
     return [];
+  }
+}
+
+// ============ 图片悬停预览 ============
+const IMAGE_PREVIEW_MAX_SIZE = 25 * 1024 * 1024; // 25MB
+const IMAGE_PREVIEW_MAX_DIM = 480;
+
+async function getImagePreview(filePath) {
+  if (!filePath || typeof filePath !== 'string') return null;
+  try {
+    const stats = await fs.promises.stat(filePath);
+    if (!stats.isFile()) return null;
+    if (stats.size > IMAGE_PREVIEW_MAX_SIZE) return null;
+    const ext = path.extname(filePath).toLowerCase();
+    // SVG：nativeImage 不支持，读文本转 data URL
+    if (ext === '.svg') {
+      const text = await fs.promises.readFile(filePath, 'utf8');
+      const base64 = Buffer.from(text, 'utf8').toString('base64');
+      return `data:image/svg+xml;base64,${base64}`;
+    }
+    const img = nativeImage.createFromPath(filePath);
+    if (img.isEmpty()) return null;
+    const size = img.getSize();
+    if (!size || !size.width || !size.height) return null;
+    let finalImg = img;
+    const scale = Math.min(1, IMAGE_PREVIEW_MAX_DIM / Math.max(size.width, size.height));
+    if (scale < 1) {
+      finalImg = img.resize({
+        width: Math.max(1, Math.round(size.width * scale)),
+        height: Math.max(1, Math.round(size.height * scale)),
+        quality: 'best'
+      });
+    }
+    return finalImg.toDataURL();
+  } catch (e) {
+    return null;
   }
 }
 
@@ -665,6 +705,10 @@ ipcMain.handle('open-in-explorer', (event, filePath) => {
 
 ipcMain.handle('list-directory', async (event, dirPath) => {
   return await listDirectory(dirPath);
+});
+
+ipcMain.handle('get-image-preview', async (event, filePath) => {
+  return await getImagePreview(filePath);
 });
 
 ipcMain.handle('paste-clipboard', async (event, payload) => {
