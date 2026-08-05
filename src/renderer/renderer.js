@@ -32,11 +32,13 @@ let everythingInstalled = false; // 是否检测到 Everything
 let everythingRunAsAdmin = false; // Everything 是否以管理员运行
 let bgConfig = { enabled: false, blur: 24, dim: 45 }; // 自定义背景图片配置
 let bgData = null; // 背景图片 data URL
-let widgets = []; // 小组件: [{ id, type: 'clock'|'calendar', x, y }] 坐标为百分比
+let widgets = []; // 小组件: [{ id, type: 'clock'|'calendar'|'weather', x, y }] 坐标为百分比
 let showWidgets = true; // 小组件显示开关
 let widgetDrag = null; // 组件拖拽状态
 let widgetSaveTimer = null;
 let clockTimer = null;
+let weatherTimer = null;
+let weatherCity = null; // 天气城市配置 { name, lat, lon }
 
 // 多选
 let selectedPaths = new Set();
@@ -312,6 +314,7 @@ document.addEventListener('DOMContentLoaded', () => {
     bgData = typeof data.backgroundData === 'string' ? data.backgroundData : null;
     widgets = Array.isArray(data.widgets) ? data.widgets : [];
     showWidgets = data.showWidgets !== false;
+    weatherCity = data.weatherCity || null;
 
     setLanguage(data.language || 'zh-CN');
 
@@ -2614,6 +2617,25 @@ function renderWidgets() {
       }
     }, 1000);
   }
+
+  // 天气组件：立即刷新 + 30 分钟定时刷新
+  if (weatherTimer) {
+    clearInterval(weatherTimer);
+    weatherTimer = null;
+  }
+  if (widgets.some(w => w.type === 'weather')) {
+    refreshAllWeatherWidgets();
+    weatherTimer = setInterval(refreshAllWeatherWidgets, 30 * 60 * 1000);
+  }
+}
+
+// 刷新所有天气组件
+function refreshAllWeatherWidgets() {
+  for (const w of widgets) {
+    if (w.type !== 'weather') continue;
+    const node = widgetsLayer.querySelector(`[data-widget-id="${CSS.escape(w.id)}"]`);
+    if (node) updateWeatherNode(node);
+  }
 }
 
 function syncWidgetElement(node, widget) {
@@ -2645,6 +2667,12 @@ function createWidgetElement(widget) {
     `;
     node.dataset.monthOffset = '0';
     updateCalendarNode(node);
+  } else if (widget.type === 'weather') {
+    node.innerHTML = `
+      <div class="widget-weather-body">${t('widget.weatherLoading')}</div>
+      <button class="widget-close" title="${t('widget.delete')}">×</button>
+    `;
+    updateWeatherNode(node);
   }
 
   // 删除
@@ -2768,6 +2796,67 @@ function updateCalendarNode(node) {
 
 function updateWidgetsUI() {
   if (showWidgetsToggle) showWidgetsToggle.checked = showWidgets;
+}
+
+// 天气组件内容更新
+async function updateWeatherNode(node) {
+  const body = node.querySelector('.widget-weather-body');
+  if (!body) return;
+
+  if (!weatherCity) {
+    body.innerHTML = `<button class="weather-config-btn">${t('widget.weatherConfig')}</button>`;
+    body.querySelector('.weather-config-btn').addEventListener('click', async () => {
+      const name = await createInlineInput(t('widget.weatherCityPrompt'), '');
+      if (name === null) return;
+      const trimmed = name.trim();
+      if (!trimmed) return;
+      const result = await window.api.searchCity(trimmed);
+      if (result && result.success) {
+        weatherCity = result.city;
+        await window.api.setWeatherCity(weatherCity);
+        updateWeatherNode(node);
+      } else {
+        showToast(result && result.error ? result.error : t('widget.weatherNotFound'));
+      }
+    });
+    return;
+  }
+
+  body.innerHTML = `<div class="weather-loading">${t('widget.weatherLoading')}</div>`;
+  const result = await window.api.getWeather();
+  if (!node.isConnected) return; // 组件已被删除
+  if (result && result.success) {
+    body.innerHTML = `
+      <div class="weather-main">
+        <span class="weather-emoji">${result.emoji}</span>
+        <span class="weather-temp">${result.temp}°C</span>
+      </div>
+      <div class="weather-detail">${result.text} · ${result.city}</div>
+      <div class="weather-sub">${t('widget.weatherHumidity')} ${result.humidity}% · ${t('widget.weatherWind')} ${result.wind} km/h</div>
+    `;
+  } else if (result && result.needCity) {
+    body.innerHTML = `<button class="weather-config-btn">${t('widget.weatherConfig')}</button>`;
+    body.querySelector('.weather-config-btn').addEventListener('click', async () => {
+      const name = await createInlineInput(t('widget.weatherCityPrompt'), '');
+      if (name === null) return;
+      const trimmed = name.trim();
+      if (!trimmed) return;
+      const res = await window.api.searchCity(trimmed);
+      if (res && res.success) {
+        weatherCity = res.city;
+        await window.api.setWeatherCity(weatherCity);
+        updateWeatherNode(node);
+      } else {
+        showToast(res && res.error ? res.error : t('widget.weatherNotFound'));
+      }
+    });
+  } else {
+    body.innerHTML = `
+      <div class="weather-error">${t('widget.weatherFail')}</div>
+      <button class="weather-config-btn">${t('widget.weatherRetry')}</button>
+    `;
+    body.querySelector('.weather-config-btn').addEventListener('click', () => updateWeatherNode(node));
+  }
 }
 
 async function handleShowWidgetsToggle() {

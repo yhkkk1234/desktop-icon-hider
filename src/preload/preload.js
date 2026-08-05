@@ -45,6 +45,11 @@ contextBridge.exposeInMainWorld('api', {
   setWidgets: (widgets) => ipcRenderer.invoke('set-widgets', widgets),
   setShowWidgets: (enabled) => ipcRenderer.invoke('set-show-widgets', enabled),
   
+  // 天气组件
+  searchCity: (name) => ipcRenderer.invoke('search-city', name),
+  getWeather: () => ipcRenderer.invoke('get-weather'),
+  setWeatherCity: (city) => ipcRenderer.invoke('set-weather-city', city),
+  
   // 开机启动功能API
   getAutoLaunch: () => ipcRenderer.invoke('get-auto-launch'),
   setAutoLaunch: (enabled) => ipcRenderer.invoke('set-auto-launch', enabled),

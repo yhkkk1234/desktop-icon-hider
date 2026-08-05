@@ -46,6 +46,7 @@ const store = new Store({
     },
     widgets: [],
     showWidgets: true,
+    weatherCity: null, // { name, lat, lon }
     shortcuts: {
       toggleWindow: 'CommandOrControl+Alt+D',
       refresh: 'CommandOrControl+Alt+R'
@@ -548,7 +549,8 @@ function createWindow() {
           backgroundImage: store.get('backgroundImage', {}),
           backgroundData: await getBackgroundData(),
           widgets: store.get('widgets', []),
-          showWidgets: store.get('showWidgets', true)
+          showWidgets: store.get('showWidgets', true),
+          weatherCity: store.get('weatherCity', null)
         });
       } catch (error) {
         console.error('发送初始化数据失败:', error);
@@ -578,7 +580,8 @@ function createWindow() {
           backgroundImage: store.get('backgroundImage', {}),
           backgroundData: null,
           widgets: store.get('widgets', []),
-          showWidgets: store.get('showWidgets', true)
+          showWidgets: store.get('showWidgets', true),
+          weatherCity: store.get('weatherCity', null)
         });
       }
     });
@@ -774,6 +777,102 @@ ipcMain.handle('set-widgets', async (event, widgets) => {
 ipcMain.handle('set-show-widgets', async (event, enabled) => {
   store.set('showWidgets', !!enabled);
   return true;
+});
+
+// ============ 天气组件（Open-Meteo，免费无需 key） ============
+let weatherCache = null; // { data, fetchedAt }
+const WEATHER_CACHE_TTL = 10 * 60 * 1000; // 10 分钟
+
+async function searchCity(name) {
+  try {
+    const url = `https://geocoding-api.open-meteo.com/v1/search?name=${encodeURIComponent(name)}&count=1&language=zh&format=json`;
+    const res = await fetch(url, { signal: AbortSignal.timeout(8000) });
+    if (!res.ok) return { success: false, error: `HTTP ${res.status}` };
+    const json = await res.json();
+    const result = json.results && json.results[0];
+    if (!result) return { success: false, error: '未找到该城市' };
+    return {
+      success: true,
+      city: {
+        name: result.name,
+        lat: result.latitude,
+        lon: result.longitude
+      }
+    };
+  } catch (e) {
+    return { success: false, error: e.message || '网络请求失败' };
+  }
+}
+
+// WMO 天气码 → { emoji, text }
+function mapWeatherCode(code) {
+  if (code === 0) return { emoji: '\u{2600}\uFE0F', text: '晴' };
+  if (code === 1) return { emoji: '\u{1F324}\uFE0F', text: '基本晴朗' };
+  if (code === 2) return { emoji: '\u{26C5}', text: '多云' };
+  if (code === 3) return { emoji: '\u{2601}\uFE0F', text: '阴' };
+  if (code === 45 || code === 48) return { emoji: '\u{1F32B}\uFE0F', text: '雾' };
+  if (code >= 51 && code <= 57) return { emoji: '\u{1F326}\uFE0F', text: '毛毛雨' };
+  if (code >= 61 && code <= 67) return { emoji: '\u{1F327}\uFE0F', text: '雨' };
+  if (code >= 71 && code <= 77) return { emoji: '\u{2744}\uFE0F', text: '雪' };
+  if (code >= 80 && code <= 82) return { emoji: '\u{1F326}\uFE0F', text: '阵雨' };
+  if (code >= 85 && code <= 86) return { emoji: '\u{1F328}\uFE0F', text: '阵雪' };
+  if (code === 95) return { emoji: '\u{26C8}\uFE0F', text: '雷暴' };
+  if (code === 96 || code === 99) return { emoji: '\u{26C8}\uFE0F', text: '雷暴冰雹' };
+  return { emoji: '\u{1F30C}', text: String(code) };
+}
+
+async function getWeather() {
+  const city = store.get('weatherCity', null);
+  if (!city || !city.lat || !city.lon) {
+    return { success: false, needCity: true };
+  }
+  // 缓存命中
+  if (weatherCache && (Date.now() - weatherCache.fetchedAt) < WEATHER_CACHE_TTL) {
+    return { success: true, ...weatherCache.data };
+  }
+  try {
+    const url = `https://api.open-meteo.com/v1/forecast?latitude=${city.lat}&longitude=${city.lon}&current=temperature_2m,relative_humidity_2m,weather_code,wind_speed_10m&timezone=auto`;
+    const res = await fetch(url, { signal: AbortSignal.timeout(8000) });
+    if (!res.ok) return { success: false, error: `HTTP ${res.status}` };
+    const json = await res.json();
+    const current = json.current;
+    if (!current) return { success: false, error: '天气数据格式异常' };
+    const wmo = mapWeatherCode(current.weather_code);
+    const data = {
+      city: city.name,
+      temp: Math.round(current.temperature_2m),
+      humidity: current.relative_humidity_2m,
+      wind: current.wind_speed_10m,
+      emoji: wmo.emoji,
+      text: wmo.text,
+      updatedAt: Date.now()
+    };
+    weatherCache = { data, fetchedAt: Date.now() };
+    return { success: true, ...data };
+  } catch (e) {
+    return { success: false, error: e.message || '网络请求失败' };
+  }
+}
+
+ipcMain.handle('search-city', async (event, name) => {
+  return await searchCity(name);
+});
+
+ipcMain.handle('get-weather', async () => {
+  return await getWeather();
+});
+
+ipcMain.handle('set-weather-city', async (event, city) => {
+  try {
+    if (!city || typeof city.name !== 'string' || !Number.isFinite(city.lat) || !Number.isFinite(city.lon)) {
+      return false;
+    }
+    weatherCache = null; // 城市变更后清除缓存
+    store.set('weatherCity', { name: city.name, lat: city.lat, lon: city.lon });
+    return true;
+  } catch (e) {
+    return false;
+  }
 });
 
 ipcMain.handle('set-folder-preview-enabled', async (event, enabled) => {
