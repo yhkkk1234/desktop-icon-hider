@@ -31,6 +31,7 @@ const store = new Store({
     iconSize: 40,
     manualOrder: [],
     groups: [],
+    groupDisplayMode: 'folder',
     iconsLocked: false,
     arrangeRules: [],
     startupDelay: 0,
@@ -530,6 +531,7 @@ function createWindow() {
           autoLaunch: store.get('autoLaunch', false),
           manualOrder: store.get('manualOrder', []),
           groups: store.get('groups', []),
+          groupDisplayMode: store.get('groupDisplayMode', 'folder'),
           iconsLocked: store.get('iconsLocked', false),
           arrangeRules: store.get('arrangeRules', []),
           shortcuts: store.get('shortcuts', {}),
@@ -556,6 +558,7 @@ function createWindow() {
           autoLaunch: store.get('autoLaunch', false),
           manualOrder: store.get('manualOrder', []),
           groups: store.get('groups', []),
+          groupDisplayMode: store.get('groupDisplayMode', 'folder'),
           iconsLocked: store.get('iconsLocked', false),
           arrangeRules: store.get('arrangeRules', []),
           shortcuts: store.get('shortcuts', {}),
@@ -727,6 +730,12 @@ ipcMain.handle('paste-clipboard', async (event, payload) => {
 
 ipcMain.handle('set-icons-locked', async (event, locked) => {
   store.set('iconsLocked', !!locked);
+  return true;
+});
+
+ipcMain.handle('set-group-display-mode', async (event, mode) => {
+  if (!['tab', 'folder'].includes(mode)) return false;
+  store.set('groupDisplayMode', mode);
   return true;
 });
 

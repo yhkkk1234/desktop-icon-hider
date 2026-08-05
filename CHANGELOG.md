@@ -5,6 +5,27 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.6.1] - 2026-08-04
+
+### Fixed
+
+- Switching back to tab mode now properly re-renders the group tabs
+- Folder mode main view hides icons already stored in groups (system icons
+  stay visible), like phone desktops
+- Group folder icon is now a rounded square with a 2x2 grid of the group's
+  first four file thumbnails (type emojis) plus a count badge
+
+## [1.6.0] - 2026-08-04
+
+### Added
+
+- Folder-style groups (phone-desktop style): groups render as openable folder
+  icons in the grid with count badges; click to open (return bar + group
+  contents), drag icons onto a folder to add (auto-named by file type when
+  the group has a default name), drag out of the group view to remove
+- Setting to switch between "Folder" mode and the classic "Top tabs" mode
+  (same groups data, both modes share everything)
+
 ## [1.5.7] - 2026-08-04
 
 ### Fixed

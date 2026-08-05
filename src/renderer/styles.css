@@ -1583,3 +1583,124 @@ body.icons-locked .file-item.draggable:active {
 #app.has-bg .header {
   box-shadow: 0 1px 4px rgba(0, 0, 0, 0.12);
 }
+
+/* ============ 文件夹模式分组 ============ */
+.group-return-bar {
+  grid-column: 1 / -1;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 6px 10px;
+  margin-bottom: 6px;
+  background: var(--bg-input);
+  border: 1px solid var(--border-input);
+  border-radius: 8px;
+}
+
+.group-back-btn {
+  border: none;
+  background: transparent;
+  color: var(--switch-active);
+  font-size: 13px;
+  font-weight: 600;
+  cursor: pointer;
+  padding: 3px 8px;
+  border-radius: 6px;
+  transition: background 0.15s;
+}
+
+.group-back-btn:hover {
+  background: var(--bg-button-hover);
+}
+
+.group-return-count {
+  font-size: 11px;
+  color: var(--text-muted);
+}
+
+/* 分组文件夹图标（网格元素） */
+.group-folder {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  padding: 8px 4px;
+  border-radius: 8px;
+  cursor: pointer;
+  transition: background 0.15s, transform 0.12s;
+  min-width: 0;
+}
+
+.group-folder:hover {
+  background: var(--bg-hover);
+  transform: translateY(-1px);
+}
+
+.group-folder.drop-target {
+  background: var(--bg-active);
+  outline: 2px dashed var(--border-context);
+  outline-offset: -2px;
+}
+
+.gf-icon {
+  position: relative;
+  width: calc(var(--icon-size) * 1.18);
+  height: calc(var(--icon-size) * 1.18);
+  display: grid;
+  grid-template-columns: repeat(2, 1fr);
+  grid-template-rows: repeat(2, 1fr);
+  gap: 2px;
+  padding: 3px;
+  margin-bottom: 4px;
+  pointer-events: none;
+  background: var(--bg-input);
+  border: 1px solid var(--border-input);
+  border-radius: 10px;
+  box-shadow: 0 2px 6px rgba(0, 0, 0, 0.2);
+}
+
+.gf-cell {
+  border-radius: 4px;
+  background: var(--bg-button);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: calc(var(--icon-size) * 0.34);
+  line-height: 1;
+  overflow: hidden;
+}
+
+.gf-cell-empty {
+  background: transparent;
+}
+
+.gf-badge {
+  position: absolute;
+  right: -4px;
+  bottom: -2px;
+  min-width: 16px;
+  height: 16px;
+  padding: 0 4px;
+  background: var(--switch-active);
+  color: #fff;
+  font-size: 10px;
+  font-weight: 600;
+  border-radius: 8px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.35);
+}
+
+.gf-name {
+  font-size: 11px;
+  color: var(--text-secondary);
+  text-align: center;
+  word-break: break-all;
+  line-height: 1.3;
+  max-height: 2.6em;
+  overflow: hidden;
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+  pointer-events: none;
+}

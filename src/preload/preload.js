@@ -35,6 +35,9 @@ contextBridge.exposeInMainWorld('api', {
   setManualOrder: (order) => ipcRenderer.invoke('set-manual-order', order),
   setGroups: (groups) => ipcRenderer.invoke('set-groups', groups),
   
+  // 分组显示模式
+  setGroupDisplayMode: (mode) => ipcRenderer.invoke('set-group-display-mode', mode),
+  
   // 开机启动功能API
   getAutoLaunch: () => ipcRenderer.invoke('get-auto-launch'),
   setAutoLaunch: (enabled) => ipcRenderer.invoke('set-auto-launch', enabled),
