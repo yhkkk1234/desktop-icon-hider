@@ -1553,6 +1553,8 @@ body.icons-locked .file-item.draggable:active {
   object-fit: cover;
   filter: blur(var(--bg-blur, 24px));
   transform: scale(1.2);
+  /* 跟随"界面透明度"设置：与主题模式行为一致 */
+  opacity: var(--opacity-bg, 0.92);
 }
 
 /* 边缘内阴影：压暗模糊图片在窗口边缘的亮色扩散 */
