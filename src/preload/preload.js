@@ -38,6 +38,9 @@ contextBridge.exposeInMainWorld('api', {
   // 分组显示模式
   setGroupDisplayMode: (mode) => ipcRenderer.invoke('set-group-display-mode', mode),
   
+  // 分组缩略图样式
+  setGroupThumbStyle: (style) => ipcRenderer.invoke('set-group-thumb-style', style),
+  
   // 开机启动功能API
   getAutoLaunch: () => ipcRenderer.invoke('get-auto-launch'),
   setAutoLaunch: (enabled) => ipcRenderer.invoke('set-auto-launch', enabled),

@@ -1704,3 +1704,10 @@ body.icons-locked .file-item.draggable:active {
   -webkit-box-orient: vertical;
   pointer-events: none;
 }
+
+/* 分组方块真实图标缩略 */
+.gf-cell img {
+  width: calc(var(--icon-size) * 0.4);
+  height: calc(var(--icon-size) * 0.4);
+  object-fit: contain;
+}

@@ -18,6 +18,7 @@ let draggedItem = null; // 正在拖拽的元素
 let groups = []; // 分组列表: [{ id, name, paths: [] }]
 let currentGroupId = null; // 当前选中的分组 ID, null 表示"全部"
 let groupDisplayMode = 'folder'; // 分组显示方式: 'tab' 顶部标签 | 'folder' 文件夹
+let groupThumbStyle = 'real'; // 分组缩略图样式: 'real' 真实图标 | 'emoji' 类型表情
 let openGroupId = null; // 文件夹模式下当前打开的组 ID, null 表示主视图
 let iconsLocked = false; // 图标锁定
 let arrangeRules = []; // 自动整理规则
@@ -56,7 +57,7 @@ let iconsLockToggle, rulesList, addRuleBtn, applyRulesBtn;
 let startupDelayInput, languageSelect;
 let shortcutToggleInput, shortcutRefreshInput;
 let exportLayoutBtn, importLayoutBtn, quitAppBtn;
-let groupModeSelect, groupsBar;
+let groupModeSelect, groupsBar, thumbStyleSelect;
 let everythingBar, everythingInput, everythingGo, everythingToggle, everythingStatus, everythingDownloadBtn, everythingAdminWarn;
 let folderPreviewToggle;
 let bgLayer, bgImage, bgToggle, selectBgBtn, clearBgBtn, bgBlurSlider, bgBlurValue, bgDimSlider, bgDimValue;
@@ -117,6 +118,7 @@ document.addEventListener('DOMContentLoaded', () => {
   quitAppBtn = document.getElementById('quit-app-btn');
   groupModeSelect = document.getElementById('group-mode-select');
   groupsBar = document.getElementById('groups-bar');
+  thumbStyleSelect = document.getElementById('thumb-style-select');
   everythingBar = document.getElementById('everything-bar');
   everythingInput = document.getElementById('everything-input');
   everythingGo = document.getElementById('everything-go');
@@ -191,6 +193,7 @@ document.addEventListener('DOMContentLoaded', () => {
   addGroupBtn.addEventListener('click', handleAddGroup);
   autoGroupBtn.addEventListener('click', handleAutoGroup);
   groupModeSelect.addEventListener('change', handleGroupModeChange);
+  thumbStyleSelect.addEventListener('change', handleThumbStyleChange);
 
   // 批量操作
   selOpenBtn.addEventListener('click', openSelected);
@@ -260,6 +263,7 @@ document.addEventListener('DOMContentLoaded', () => {
     manualOrder = Array.isArray(data.manualOrder) ? data.manualOrder : [];
     groups = Array.isArray(data.groups) ? data.groups : [];
     groupDisplayMode = data.groupDisplayMode === 'tab' ? 'tab' : 'folder';
+    groupThumbStyle = data.groupThumbStyle === 'emoji' ? 'emoji' : 'real';
     openGroupId = null;
     iconsLocked = !!data.iconsLocked;
     arrangeRules = Array.isArray(data.arrangeRules) ? data.arrangeRules : [];
@@ -1689,8 +1693,45 @@ function renderFilesFolderMode() {
     for (const group of groups) {
       filesList.appendChild(createGroupFolderElement(group));
     }
+    if (groupThumbStyle === 'real') {
+      loadGroupThumbs();
+    }
   } else if (returnBar) {
     filesList.prepend(returnBar);
+  }
+}
+
+// 为分组方块异步加载真实文件图标（复用主列表图标提取/缓存链路）
+async function loadGroupThumbs() {
+  const cells = filesList.querySelectorAll('.gf-cell[data-thumb-path]');
+  if (cells.length === 0) return;
+  const fileObjects = [];
+  const pathToCellMap = new Map();
+  for (const cell of cells) {
+    const p = cell.dataset.thumbPath;
+    if (!p) continue;
+    const f = filesMap.get(p);
+    fileObjects.push({ path: p, isDirectory: f ? f.isDirectory : false });
+    pathToCellMap.set(p, cell);
+  }
+  if (fileObjects.length === 0) return;
+  try {
+    const results = await window.api.getFileIcons(fileObjects);
+    for (const [p, iconData] of Object.entries(results)) {
+      const cell = pathToCellMap.get(p);
+      if (!cell) continue;
+      if (typeof iconData === 'string' && iconData.startsWith('data:image')) {
+        const img = document.createElement('img');
+        img.src = iconData;
+        img.alt = 'icon';
+        img.draggable = false;
+        cell.innerHTML = '';
+        cell.appendChild(img);
+        delete cell.dataset.thumbPath;
+      }
+    }
+  } catch (error) {
+    // 提取失败保留 emoji 占位
   }
 }
 
@@ -1699,7 +1740,7 @@ function createGroupFolderElement(group) {
   el.className = 'group-folder';
   el.dataset.groupId = group.id;
 
-  // 方块图标：2x2 网格显示组内前 4 个文件的缩略 emoji（手机桌面风格）
+  // 方块图标：2x2 网格显示组内前 4 个文件缩略图（真实图标或类型 emoji）
   const cellFiles = (group.paths || []).slice(0, 4)
     .map(p => filesMap.get(p))
     .filter(f => f);
@@ -1707,7 +1748,12 @@ function createGroupFolderElement(group) {
   for (let i = 0; i < 4; i++) {
     const f = cellFiles[i];
     if (f) {
-      cells.push(`<span class="gf-cell">${getTypeEmoji(f)}</span>`);
+      if (groupThumbStyle === 'real') {
+        // 真实图标：先用 emoji 占位，异步提取后替换
+        cells.push(`<span class="gf-cell" data-thumb-path="${escapeHtml(f.path)}">${getTypeEmoji(f)}</span>`);
+      } else {
+        cells.push(`<span class="gf-cell">${getTypeEmoji(f)}</span>`);
+      }
     } else {
       cells.push('<span class="gf-cell gf-cell-empty"></span>');
     }
@@ -1804,10 +1850,20 @@ async function handleGroupModeChange() {
 
 function updateGroupModeUI() {
   if (groupModeSelect) groupModeSelect.value = groupDisplayMode;
+  if (thumbStyleSelect) thumbStyleSelect.value = groupThumbStyle;
   // 分组栏始终显示（folder 模式仅保留"新建/自动整理"按钮，tab 在 renderGroups 中按模式渲染）
   if (groupsBar) {
     groupsBar.style.display = 'flex';
   }
+}
+
+// 分组缩略图样式设置
+async function handleThumbStyleChange() {
+  groupThumbStyle = thumbStyleSelect.value === 'emoji' ? 'emoji' : 'real';
+  try {
+    await window.api.setGroupThumbStyle(groupThumbStyle);
+  } catch (e) { /* 忽略 */ }
+  renderFiles();
 }
 
 // ============ 拖拽排序 ============

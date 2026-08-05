@@ -32,6 +32,7 @@ const store = new Store({
     manualOrder: [],
     groups: [],
     groupDisplayMode: 'folder',
+    groupThumbStyle: 'real',
     iconsLocked: false,
     arrangeRules: [],
     startupDelay: 0,
@@ -532,6 +533,7 @@ function createWindow() {
           manualOrder: store.get('manualOrder', []),
           groups: store.get('groups', []),
           groupDisplayMode: store.get('groupDisplayMode', 'folder'),
+          groupThumbStyle: store.get('groupThumbStyle', 'real'),
           iconsLocked: store.get('iconsLocked', false),
           arrangeRules: store.get('arrangeRules', []),
           shortcuts: store.get('shortcuts', {}),
@@ -559,6 +561,7 @@ function createWindow() {
           manualOrder: store.get('manualOrder', []),
           groups: store.get('groups', []),
           groupDisplayMode: store.get('groupDisplayMode', 'folder'),
+          groupThumbStyle: store.get('groupThumbStyle', 'real'),
           iconsLocked: store.get('iconsLocked', false),
           arrangeRules: store.get('arrangeRules', []),
           shortcuts: store.get('shortcuts', {}),
@@ -736,6 +739,12 @@ ipcMain.handle('set-icons-locked', async (event, locked) => {
 ipcMain.handle('set-group-display-mode', async (event, mode) => {
   if (!['tab', 'folder'].includes(mode)) return false;
   store.set('groupDisplayMode', mode);
+  return true;
+});
+
+ipcMain.handle('set-group-thumb-style', async (event, style) => {
+  if (!['real', 'emoji'].includes(style)) return false;
+  store.set('groupThumbStyle', style);
   return true;
 });
 
