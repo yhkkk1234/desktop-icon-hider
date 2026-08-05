@@ -203,6 +203,21 @@
         </div>
       </div>
       
+      <!-- 小组件 -->
+      <div class="settings-section">
+        <h3 data-i18n="widget.settings">小组件</h3>
+        <div class="setting-item">
+          <label class="switch">
+            <input type="checkbox" id="show-widgets-toggle" checked>
+            <span class="slider"></span>
+          </label>
+          <span class="setting-label" data-i18n="widget.showToggle">显示小组件（时钟 / 日历）</span>
+        </div>
+        <div class="setting-description" data-i18n="widget.settingsDesc">
+          在分组栏点击 🧩 添加时钟或日历组件，拖动可自由摆放位置。
+        </div>
+      </div>
+      
       <!-- 自动整理规则 -->
       <div class="settings-section">
         <h3 data-i18n="settings.rules">自动整理规则</h3>
@@ -337,9 +352,17 @@
         <div id="groups-list" class="groups-list"></div>
         <button id="add-group-btn" class="add-group-btn" title="新建分组">＋</button>
         <button id="auto-group-btn" class="add-group-btn" title="按文件类型自动分组">⚙</button>
+        <button id="add-widget-btn" class="add-group-btn" title="添加小组件" data-i18n-title="widget.add">🧩</button>
+        <div id="widget-menu" class="widget-menu" style="display:none;">
+          <div class="widget-menu-item" data-widget-type="clock" data-i18n="widget.clock">时钟</div>
+          <div class="widget-menu-item" data-widget-type="calendar" data-i18n="widget.calendar">日历</div>
+        </div>
       </div>
       <div id="files-list" class="files-list"></div>
     </div>
+    
+    <!-- 小组件层（固定于内容视口，图标之上） -->
+    <div id="widgets-layer" class="widgets-layer"></div>
     
     <!-- 批量操作工具栏（多选时出现） -->
     <div id="selection-toolbar" class="selection-toolbar" style="display: none;">

@@ -41,6 +41,10 @@ contextBridge.exposeInMainWorld('api', {
   // 分组缩略图样式
   setGroupThumbStyle: (style) => ipcRenderer.invoke('set-group-thumb-style', style),
   
+  // 小组件
+  setWidgets: (widgets) => ipcRenderer.invoke('set-widgets', widgets),
+  setShowWidgets: (enabled) => ipcRenderer.invoke('set-show-widgets', enabled),
+  
   // 开机启动功能API
   getAutoLaunch: () => ipcRenderer.invoke('get-auto-launch'),
   setAutoLaunch: (enabled) => ipcRenderer.invoke('set-auto-launch', enabled),

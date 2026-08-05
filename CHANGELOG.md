@@ -5,6 +5,41 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.7.3] - 2026-08-04
+
+### Fixed
+
+- Widget drag tracking at high speed: setPointerCapture could throw
+  ("No active pointer") on rapid clicks, aborting the drag setup. The
+  window-level mouse fallback listeners are now attached BEFORE
+  setPointerCapture, and capture failures are caught and ignored, so the
+  widget always follows the cursor within the window
+
+## [1.7.2] - 2026-08-04
+
+### Fixed
+
+- Widget dragging no longer stutters: backdrop-filter is disabled while
+  dragging (was recalculating the blur every frame), with a stronger shadow
+  as visual feedback; added pointercancel / document pointerup / window blur
+  fallbacks so the drag can never get stuck
+
+## [1.7.1] - 2026-08-04
+
+### Fixed
+
+- Widget add menu (🧩) now opens correctly: groups-bar is the positioning
+  context for the absolute-positioned menu (previously it rendered off-position)
+
+## [1.7.0] - 2026-08-04
+
+### Added
+
+- Widgets (phase 2): clock (live seconds) and calendar (month navigation)
+  widgets rendered in a fixed layer above the icon grid; drag to reposition
+  (percentage coords, persisted); add via 🧩 in the group bar, remove via
+  hover ×; show/hide toggle in settings; hidden while window is collapsed
+
 ## [1.6.2] - 2026-08-04
 
 ### Added

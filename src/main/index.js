@@ -44,6 +44,8 @@ const store = new Store({
       blur: 24,
       dim: 45
     },
+    widgets: [],
+    showWidgets: true,
     shortcuts: {
       toggleWindow: 'CommandOrControl+Alt+D',
       refresh: 'CommandOrControl+Alt+R'
@@ -544,7 +546,9 @@ function createWindow() {
           everythingRunAsAdmin: !!findEverythingPath() && isEverythingRunAsAdmin(findEverythingPath()),
           folderPreviewEnabled: store.get('folderPreviewEnabled', true),
           backgroundImage: store.get('backgroundImage', {}),
-          backgroundData: await getBackgroundData()
+          backgroundData: await getBackgroundData(),
+          widgets: store.get('widgets', []),
+          showWidgets: store.get('showWidgets', true)
         });
       } catch (error) {
         console.error('发送初始化数据失败:', error);
@@ -572,7 +576,9 @@ function createWindow() {
           everythingRunAsAdmin: false,
           folderPreviewEnabled: store.get('folderPreviewEnabled', true),
           backgroundImage: store.get('backgroundImage', {}),
-          backgroundData: null
+          backgroundData: null,
+          widgets: store.get('widgets', []),
+          showWidgets: store.get('showWidgets', true)
         });
       }
     });
@@ -745,6 +751,28 @@ ipcMain.handle('set-group-display-mode', async (event, mode) => {
 ipcMain.handle('set-group-thumb-style', async (event, style) => {
   if (!['real', 'emoji'].includes(style)) return false;
   store.set('groupThumbStyle', style);
+  return true;
+});
+
+// ============ 小组件 ============
+ipcMain.handle('set-widgets', async (event, widgets) => {
+  try {
+    if (!Array.isArray(widgets)) return false;
+    const sanitized = widgets.map(w => ({
+      id: String(w.id || ''),
+      type: ['clock', 'calendar'].includes(w.type) ? w.type : 'clock',
+      x: Number.isFinite(w.x) ? Math.max(0, Math.min(95, w.x)) : 2,
+      y: Number.isFinite(w.y) ? Math.max(0, Math.min(90, w.y)) : 2
+    })).filter(w => w.id);
+    store.set('widgets', sanitized);
+    return true;
+  } catch (error) {
+    return false;
+  }
+});
+
+ipcMain.handle('set-show-widgets', async (event, enabled) => {
+  store.set('showWidgets', !!enabled);
   return true;
 });
 

@@ -32,6 +32,11 @@ let everythingInstalled = false; // 是否检测到 Everything
 let everythingRunAsAdmin = false; // Everything 是否以管理员运行
 let bgConfig = { enabled: false, blur: 24, dim: 45 }; // 自定义背景图片配置
 let bgData = null; // 背景图片 data URL
+let widgets = []; // 小组件: [{ id, type: 'clock'|'calendar', x, y }] 坐标为百分比
+let showWidgets = true; // 小组件显示开关
+let widgetDrag = null; // 组件拖拽状态
+let widgetSaveTimer = null;
+let clockTimer = null;
 
 // 多选
 let selectedPaths = new Set();
@@ -58,6 +63,7 @@ let startupDelayInput, languageSelect;
 let shortcutToggleInput, shortcutRefreshInput;
 let exportLayoutBtn, importLayoutBtn, quitAppBtn;
 let groupModeSelect, groupsBar, thumbStyleSelect;
+let widgetsLayer, addWidgetBtn, widgetMenu, showWidgetsToggle;
 let everythingBar, everythingInput, everythingGo, everythingToggle, everythingStatus, everythingDownloadBtn, everythingAdminWarn;
 let folderPreviewToggle;
 let bgLayer, bgImage, bgToggle, selectBgBtn, clearBgBtn, bgBlurSlider, bgBlurValue, bgDimSlider, bgDimValue;
@@ -119,6 +125,10 @@ document.addEventListener('DOMContentLoaded', () => {
   groupModeSelect = document.getElementById('group-mode-select');
   groupsBar = document.getElementById('groups-bar');
   thumbStyleSelect = document.getElementById('thumb-style-select');
+  widgetsLayer = document.getElementById('widgets-layer');
+  addWidgetBtn = document.getElementById('add-widget-btn');
+  widgetMenu = document.getElementById('widget-menu');
+  showWidgetsToggle = document.getElementById('show-widgets-toggle');
   everythingBar = document.getElementById('everything-bar');
   everythingInput = document.getElementById('everything-input');
   everythingGo = document.getElementById('everything-go');
@@ -194,6 +204,24 @@ document.addEventListener('DOMContentLoaded', () => {
   autoGroupBtn.addEventListener('click', handleAutoGroup);
   groupModeSelect.addEventListener('change', handleGroupModeChange);
   thumbStyleSelect.addEventListener('change', handleThumbStyleChange);
+
+  // 小组件
+  addWidgetBtn.addEventListener('click', toggleWidgetMenu);
+  widgetMenu.addEventListener('click', (e) => {
+    const item = e.target.closest('.widget-menu-item');
+    if (!item) return;
+    addWidget(item.dataset.widgetType);
+    widgetMenu.style.display = 'none';
+  });
+  showWidgetsToggle.addEventListener('change', handleShowWidgetsToggle);
+  document.addEventListener('click', (e) => {
+    if (!e.target.closest('.widget-menu') && !e.target.closest('#add-widget-btn')) {
+      widgetMenu.style.display = 'none';
+    }
+  });
+  // 组件拖拽兜底：事件丢失/窗口失焦时清理拖拽状态，避免跟丢
+  document.addEventListener('pointerup', handleWidgetDragEnd);
+  window.addEventListener('blur', handleWidgetDragEnd);
 
   // 批量操作
   selOpenBtn.addEventListener('click', openSelected);
@@ -282,6 +310,8 @@ document.addEventListener('DOMContentLoaded', () => {
       };
     }
     bgData = typeof data.backgroundData === 'string' ? data.backgroundData : null;
+    widgets = Array.isArray(data.widgets) ? data.widgets : [];
+    showWidgets = data.showWidgets !== false;
 
     setLanguage(data.language || 'zh-CN');
 
@@ -292,6 +322,8 @@ document.addEventListener('DOMContentLoaded', () => {
     updateAutoLaunchUI();
     updateSortUI();
     updateGroupModeUI();
+    updateWidgetsUI();
+    renderWidgets();
     updateIconsLockUI();
     updateStartupDelayUI();
     updateShortcutInputs();
@@ -376,6 +408,10 @@ function updateCollapseState() {
     contentEl.style.display = 'block';
     toggleIcon.textContent = '▼';
     toggleBtn.title = '折叠';
+  }
+  // 折叠时隐藏小组件层
+  if (widgetsLayer) {
+    widgetsLayer.style.display = (isCollapsed || !showWidgets) ? 'none' : 'block';
   }
 }
 
@@ -2511,6 +2547,233 @@ async function handleBgDim() {
   bgDimValue.textContent = bgConfig.dim + '%';
   applyBackground();
   await window.api.setBackgroundSettings({ dim: bgConfig.dim });
+}
+
+// ============ 小组件（时钟 / 日历） ============
+function toggleWidgetMenu() {
+  widgetMenu.style.display = widgetMenu.style.display === 'none' ? 'block' : 'none';
+}
+
+function addWidget(type) {
+  // 错开默认位置
+  const offset = widgets.length * 4;
+  const widget = {
+    id: 'w_' + Date.now() + '_' + Math.random().toString(36).slice(2, 8),
+    type,
+    x: Math.min(10 + offset, 60),
+    y: Math.min(10 + offset, 60)
+  };
+  widgets.push(widget);
+  saveWidgets();
+  renderWidgets();
+}
+
+function saveWidgets() {
+  if (widgetSaveTimer) clearTimeout(widgetSaveTimer);
+  widgetSaveTimer = setTimeout(() => {
+    widgetSaveTimer = null;
+    window.api.setWidgets(widgets);
+  }, 300);
+}
+
+function renderWidgets() {
+  if (!widgetsLayer) return;
+  const visible = showWidgets && !isCollapsed;
+  widgetsLayer.style.display = visible ? 'block' : 'none';
+  if (!visible) return;
+
+  const existing = new Map();
+  for (const child of widgetsLayer.children) {
+    existing.set(child.dataset.widgetId, child);
+  }
+  const newIds = new Set(widgets.map(w => w.id));
+  for (const [id, node] of existing) {
+    if (!newIds.has(id)) node.remove();
+  }
+
+  for (const widget of widgets) {
+    let node = existing.get(widget.id);
+    if (!node) {
+      node = createWidgetElement(widget);
+      widgetsLayer.appendChild(node);
+    }
+    syncWidgetElement(node, widget);
+  }
+
+  // 时钟组件定时更新
+  if (clockTimer) {
+    clearInterval(clockTimer);
+    clockTimer = null;
+  }
+  if (widgets.some(w => w.type === 'clock')) {
+    clockTimer = setInterval(() => {
+      for (const w of widgets) {
+        if (w.type !== 'clock') continue;
+        const node = widgetsLayer.querySelector(`[data-widget-id="${CSS.escape(w.id)}"]`);
+        if (node) updateClockNode(node);
+      }
+    }, 1000);
+  }
+}
+
+function syncWidgetElement(node, widget) {
+  node.style.left = widget.x + '%';
+  node.style.top = widget.y + '%';
+}
+
+function createWidgetElement(widget) {
+  const node = document.createElement('div');
+  node.className = 'widget-item widget-' + widget.type;
+  node.dataset.widgetId = widget.id;
+
+  if (widget.type === 'clock') {
+    node.innerHTML = `
+      <div class="widget-time"></div>
+      <div class="widget-date"></div>
+      <button class="widget-close" title="${t('widget.delete')}">×</button>
+    `;
+    updateClockNode(node);
+  } else if (widget.type === 'calendar') {
+    node.innerHTML = `
+      <div class="widget-cal-header">
+        <button class="widget-cal-nav" data-dir="-1">‹</button>
+        <span class="widget-cal-title"></span>
+        <button class="widget-cal-nav" data-dir="1">›</button>
+      </div>
+      <div class="widget-cal-grid"></div>
+      <button class="widget-close" title="${t('widget.delete')}">×</button>
+    `;
+    node.dataset.monthOffset = '0';
+    updateCalendarNode(node);
+  }
+
+  // 删除
+  node.querySelector('.widget-close').addEventListener('click', (e) => {
+    e.stopPropagation();
+    widgets = widgets.filter(w => w.id !== widget.id);
+    saveWidgets();
+    renderWidgets();
+  });
+
+  // 日历月份切换
+  const navs = node.querySelectorAll('.widget-cal-nav');
+  if (navs) {
+    navs.forEach(btn => btn.addEventListener('click', (e) => {
+      e.stopPropagation();
+      const offset = (parseInt(node.dataset.monthOffset) || 0) + parseInt(btn.dataset.dir);
+      node.dataset.monthOffset = String(offset);
+      updateCalendarNode(node);
+    }));
+  }
+
+  // 拖拽移动
+  node.addEventListener('mousedown', (e) => {
+    if (e.button !== 0) return;
+    if (e.target.closest('.widget-close') || e.target.closest('.widget-cal-nav')) return;
+    e.preventDefault();
+    widgetDrag = {
+      widget,
+      node,
+      startX: e.clientX,
+      startY: e.clientY,
+      startLeft: widget.x,
+      startTop: widget.y
+    };
+    // 拖动期间禁用 backdrop-filter，避免每帧模糊重算导致卡顿
+    node.classList.add('widget-dragging');
+    // 先挂备用 mouse 监听：Electron 透明窗口下 pointer capture 快速移动时可能失效/抛错，
+    // window 级 mousemove 不依赖 capture，保证跟手（必须先于 setPointerCapture 挂载）
+    window.addEventListener('mousemove', handleWidgetDragMove);
+    window.addEventListener('mouseup', handleWidgetDragEnd);
+    try {
+      node.setPointerCapture(e.pointerId);
+    } catch (err) {
+      // 快速连点/合成事件时 pointerId 可能已无效，忽略即可（mouse 监听兜底）
+    }
+  });
+  node.addEventListener('pointermove', handleWidgetDragMove);
+  node.addEventListener('pointerup', handleWidgetDragEnd);
+  node.addEventListener('pointercancel', handleWidgetDragEnd);
+
+  return node;
+}
+
+function handleWidgetDragMove(e) {
+  if (!widgetDrag) return;
+  const vw = window.innerWidth;
+  const vh = window.innerHeight;
+  widgetDrag.widget.x = Math.max(0, Math.min(95, widgetDrag.startLeft + (e.clientX - widgetDrag.startX) / vw * 100));
+  widgetDrag.widget.y = Math.max(0, Math.min(90, widgetDrag.startTop + (e.clientY - widgetDrag.startY) / vh * 100));
+  const node = widgetDrag.node;
+  if (node) {
+    node.style.left = widgetDrag.widget.x + '%';
+    node.style.top = widgetDrag.widget.y + '%';
+  }
+  saveWidgets();
+}
+
+function handleWidgetDragEnd() {
+  if (!widgetDrag) return;
+  window.removeEventListener('mousemove', handleWidgetDragMove);
+  window.removeEventListener('mouseup', handleWidgetDragEnd);
+  const node = widgetDrag.node;
+  if (node) node.classList.remove('widget-dragging');
+  widgetDrag = null;
+}
+
+// 时钟内容更新
+function updateClockNode(node) {
+  const now = new Date();
+  const hh = String(now.getHours()).padStart(2, '0');
+  const mm = String(now.getMinutes()).padStart(2, '0');
+  const ss = String(now.getSeconds()).padStart(2, '0');
+  const timeEl = node.querySelector('.widget-time');
+  const dateEl = node.querySelector('.widget-date');
+  if (timeEl) timeEl.textContent = `${hh}:${mm}:${ss}`;
+  if (dateEl) {
+    const weekdays = [t('widget.sun'), t('widget.mon'), t('widget.tue'), t('widget.wed'), t('widget.thu'), t('widget.fri'), t('widget.sat')];
+    dateEl.textContent = `${now.getFullYear()}年${now.getMonth() + 1}月${now.getDate()}日 ${weekdays[now.getDay()]}`;
+  }
+}
+
+// 日历内容更新
+function updateCalendarNode(node) {
+  const now = new Date();
+  const offset = parseInt(node.dataset.monthOffset) || 0;
+  const year = now.getFullYear();
+  const month = now.getMonth() + offset;
+  const y = month < 0 ? year - 1 : (month > 11 ? year + 1 : year);
+  const m = ((month % 12) + 12) % 12;
+  const today = (offset === 0) ? now.getDate() : -1;
+
+  const titleEl = node.querySelector('.widget-cal-title');
+  if (titleEl) titleEl.textContent = `${y}年${m + 1}月`;
+
+  const grid = node.querySelector('.widget-cal-grid');
+  if (!grid) return;
+  const weekdays = [t('widget.sunS'), t('widget.monS'), t('widget.tueS'), t('widget.wedS'), t('widget.thuS'), t('widget.friS'), t('widget.satS')];
+  const firstDay = new Date(y, m, 1).getDay();
+  const daysInMonth = new Date(y, m + 1, 0).getDate();
+
+  let html = weekdays.map(d => `<span class="wc-dow">${d}</span>`).join('');
+  for (let i = 0; i < firstDay; i++) {
+    html += '<span class="wc-day wc-day-empty"></span>';
+  }
+  for (let d = 1; d <= daysInMonth; d++) {
+    const cls = (d === today) ? 'wc-day wc-day-today' : 'wc-day';
+    html += `<span class="${cls}">${d}</span>`;
+  }
+  grid.innerHTML = html;
+}
+
+function updateWidgetsUI() {
+  if (showWidgetsToggle) showWidgetsToggle.checked = showWidgets;
+}
+
+async function handleShowWidgetsToggle() {
+  showWidgets = showWidgetsToggle.checked;
+  await window.api.setShowWidgets(showWidgets);
+  renderWidgets();
 }
 
 // ============ Everything 搜索 ============
