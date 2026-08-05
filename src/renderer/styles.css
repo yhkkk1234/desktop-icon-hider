@@ -1966,3 +1966,67 @@ body.icons-locked .file-item.draggable:active {
   color: var(--text-muted);
   padding: 4px;
 }
+
+/* 设置面板与规则列表滚动条（主题适配） */
+.settings-panel::-webkit-scrollbar,
+.rules-list::-webkit-scrollbar {
+  width: 8px;
+}
+
+.settings-panel::-webkit-scrollbar-track,
+.rules-list::-webkit-scrollbar-track {
+  background: var(--scrollbar-track);
+  border-radius: 4px;
+}
+
+.settings-panel::-webkit-scrollbar-thumb,
+.rules-list::-webkit-scrollbar-thumb {
+  background: var(--scrollbar-thumb);
+  border-radius: 4px;
+}
+
+.settings-panel::-webkit-scrollbar-thumb:hover,
+.rules-list::-webkit-scrollbar-thumb:hover {
+  background: var(--scrollbar-thumb-hover);
+}
+
+.settings-panel,
+.rules-list {
+  scrollbar-width: thin;
+  scrollbar-color: var(--scrollbar-thumb) var(--scrollbar-track);
+}
+
+/* 天气：今日温度范围 */
+.weather-today {
+  font-size: 10px;
+  color: var(--text-muted);
+  margin-top: 1px;
+}
+
+/* 天气：改城市按钮（悬停显示） */
+.weather-edit-btn {
+  position: absolute;
+  top: 4px;
+  right: 26px;
+  width: 20px;
+  height: 20px;
+  border: none;
+  background: transparent;
+  color: var(--text-muted);
+  border-radius: 50%;
+  cursor: pointer;
+  font-size: 12px;
+  line-height: 1;
+  display: none;
+  align-items: center;
+  justify-content: center;
+}
+
+.widget-item:hover .weather-edit-btn {
+  display: flex;
+}
+
+.weather-edit-btn:hover {
+  background: var(--bg-button-hover);
+  color: var(--text-primary);
+}

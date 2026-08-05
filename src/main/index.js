@@ -763,7 +763,7 @@ ipcMain.handle('set-widgets', async (event, widgets) => {
     if (!Array.isArray(widgets)) return false;
     const sanitized = widgets.map(w => ({
       id: String(w.id || ''),
-      type: ['clock', 'calendar'].includes(w.type) ? w.type : 'clock',
+      type: ['clock', 'calendar', 'weather'].includes(w.type) ? w.type : 'clock',
       x: Number.isFinite(w.x) ? Math.max(0, Math.min(95, w.x)) : 2,
       y: Number.isFinite(w.y) ? Math.max(0, Math.min(90, w.y)) : 2
     })).filter(w => w.id);
@@ -831,13 +831,14 @@ async function getWeather() {
     return { success: true, ...weatherCache.data };
   }
   try {
-    const url = `https://api.open-meteo.com/v1/forecast?latitude=${city.lat}&longitude=${city.lon}&current=temperature_2m,relative_humidity_2m,weather_code,wind_speed_10m&timezone=auto`;
+    const url = `https://api.open-meteo.com/v1/forecast?latitude=${city.lat}&longitude=${city.lon}&current=temperature_2m,relative_humidity_2m,weather_code,wind_speed_10m&daily=temperature_2m_max,temperature_2m_min&timezone=auto`;
     const res = await fetch(url, { signal: AbortSignal.timeout(8000) });
     if (!res.ok) return { success: false, error: `HTTP ${res.status}` };
     const json = await res.json();
     const current = json.current;
     if (!current) return { success: false, error: '天气数据格式异常' };
     const wmo = mapWeatherCode(current.weather_code);
+    const daily = json.daily;
     const data = {
       city: city.name,
       temp: Math.round(current.temperature_2m),
@@ -845,6 +846,8 @@ async function getWeather() {
       wind: current.wind_speed_10m,
       emoji: wmo.emoji,
       text: wmo.text,
+      todayMax: daily && Number.isFinite(daily.temperature_2m_max[0]) ? Math.round(daily.temperature_2m_max[0]) : null,
+      todayMin: daily && Number.isFinite(daily.temperature_2m_min[0]) ? Math.round(daily.temperature_2m_min[0]) : null,
       updatedAt: Date.now()
     };
     weatherCache = { data, fetchedAt: Date.now() };

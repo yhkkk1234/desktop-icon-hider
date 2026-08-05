@@ -5,6 +5,31 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.8.3] - 2026-08-04
+
+### Added
+
+- Weather widget shows today's high/low range (small line under the live
+  temperature, e.g. "今日 ↑38° ↓27°")
+- Weather widget can re-configure the city anytime via a hover "⚙" button
+  (was only configurable on first setup); city search supports districts
+  (e.g. 通州/Tongzhou)
+
+## [1.8.2] - 2026-08-04
+
+### Fixed
+
+- Weather widget no longer turns into a clock after restart: the widget
+  type whitelist in set-widgets was missing 'weather' and coerced it to
+  'clock' when persisting
+
+## [1.8.1] - 2026-08-04
+
+### Fixed
+
+- Settings panel and rules list scrollbars now use the themed style
+  (were the default Windows scrollbars)
+
 ## [1.8.0] - 2026-08-04
 
 ### Added

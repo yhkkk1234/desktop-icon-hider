@@ -2671,6 +2671,7 @@ function createWidgetElement(widget) {
     node.innerHTML = `
       <div class="widget-weather-body">${t('widget.weatherLoading')}</div>
       <button class="widget-close" title="${t('widget.delete')}">×</button>
+      <button class="weather-edit-btn" title="${t('widget.editCity')}">⚙</button>
     `;
     updateWeatherNode(node);
   }
@@ -2803,21 +2804,19 @@ async function updateWeatherNode(node) {
   const body = node.querySelector('.widget-weather-body');
   if (!body) return;
 
+  // 改城市按钮（悬停显示）
+  const editBtn = node.querySelector('.weather-edit-btn');
+  if (editBtn) {
+    editBtn.addEventListener('click', async (e) => {
+      e.stopPropagation();
+      await promptSetCity(node);
+    });
+  }
+
   if (!weatherCity) {
     body.innerHTML = `<button class="weather-config-btn">${t('widget.weatherConfig')}</button>`;
     body.querySelector('.weather-config-btn').addEventListener('click', async () => {
-      const name = await createInlineInput(t('widget.weatherCityPrompt'), '');
-      if (name === null) return;
-      const trimmed = name.trim();
-      if (!trimmed) return;
-      const result = await window.api.searchCity(trimmed);
-      if (result && result.success) {
-        weatherCity = result.city;
-        await window.api.setWeatherCity(weatherCity);
-        updateWeatherNode(node);
-      } else {
-        showToast(result && result.error ? result.error : t('widget.weatherNotFound'));
-      }
+      await promptSetCity(node);
     });
     return;
   }
@@ -2826,29 +2825,22 @@ async function updateWeatherNode(node) {
   const result = await window.api.getWeather();
   if (!node.isConnected) return; // 组件已被删除
   if (result && result.success) {
+    const todayLine = (result.todayMax !== null && result.todayMin !== null)
+      ? `<div class="weather-today">${t('widget.today')} ↑${result.todayMax}° ↓${result.todayMin}°</div>`
+      : '';
     body.innerHTML = `
       <div class="weather-main">
         <span class="weather-emoji">${result.emoji}</span>
         <span class="weather-temp">${result.temp}°C</span>
       </div>
+      ${todayLine}
       <div class="weather-detail">${result.text} · ${result.city}</div>
       <div class="weather-sub">${t('widget.weatherHumidity')} ${result.humidity}% · ${t('widget.weatherWind')} ${result.wind} km/h</div>
     `;
   } else if (result && result.needCity) {
     body.innerHTML = `<button class="weather-config-btn">${t('widget.weatherConfig')}</button>`;
     body.querySelector('.weather-config-btn').addEventListener('click', async () => {
-      const name = await createInlineInput(t('widget.weatherCityPrompt'), '');
-      if (name === null) return;
-      const trimmed = name.trim();
-      if (!trimmed) return;
-      const res = await window.api.searchCity(trimmed);
-      if (res && res.success) {
-        weatherCity = res.city;
-        await window.api.setWeatherCity(weatherCity);
-        updateWeatherNode(node);
-      } else {
-        showToast(res && res.error ? res.error : t('widget.weatherNotFound'));
-      }
+      await promptSetCity(node);
     });
   } else {
     body.innerHTML = `
@@ -2856,6 +2848,22 @@ async function updateWeatherNode(node) {
       <button class="weather-config-btn">${t('widget.weatherRetry')}</button>
     `;
     body.querySelector('.weather-config-btn').addEventListener('click', () => updateWeatherNode(node));
+  }
+}
+
+// 配置/更换城市（可精确到区县，如：通州）
+async function promptSetCity(node) {
+  const name = await createInlineInput(t('widget.weatherCityPrompt'), weatherCity ? weatherCity.name : '');
+  if (name === null) return;
+  const trimmed = name.trim();
+  if (!trimmed) return;
+  const result = await window.api.searchCity(trimmed);
+  if (result && result.success) {
+    weatherCity = result.city;
+    await window.api.setWeatherCity(weatherCity);
+    updateWeatherNode(node);
+  } else {
+    showToast(result && result.error ? result.error : t('widget.weatherNotFound'));
   }
 }
 
