@@ -5,6 +5,14 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.8.4] - 2026-08-06
+
+### Fixed
+
+- Calendar widget now rolls over at midnight: a 60s timer detects date
+  changes and re-renders the calendar (previously it stayed on the old date
+  until the widget was recreated)
+
 ## [1.8.3] - 2026-08-04
 
 ### Added

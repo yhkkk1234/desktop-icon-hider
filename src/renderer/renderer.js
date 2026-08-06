@@ -37,6 +37,7 @@ let showWidgets = true; // 小组件显示开关
 let widgetDrag = null; // 组件拖拽状态
 let widgetSaveTimer = null;
 let clockTimer = null;
+let calendarTimer = null;
 let weatherTimer = null;
 let weatherCity = null; // 天气城市配置 { name, lat, lon }
 
@@ -52,7 +53,7 @@ let previewSwitchTimer = null;
 
 // DOM 元素
 let contentEl, toggleBtn, toggleIcon, refreshBtn, quitBtn, filesList;
-let settingsBtn, settingsPanel, autoHideToggle, edgeSelect, sortSelect, themeSelect;
+let settingsBtn, settingsPanel, autoHideToggle, edgeSelect, sortSelect, themeSelect, themeGallery;
 let opacitySlider, opacityValue;
 let iconSizeSlider, iconSizeValue;
 let autoLaunchToggle;
@@ -91,6 +92,7 @@ document.addEventListener('DOMContentLoaded', () => {
   edgeSelect = document.getElementById('edge-select');
   sortSelect = document.getElementById('sort-select');
   themeSelect = document.getElementById('theme-select');
+  themeGallery = document.getElementById('theme-gallery');
   opacitySlider = document.getElementById('opacity-slider');
   opacityValue = document.getElementById('opacity-value');
   iconSizeSlider = document.getElementById('icon-size-slider');
@@ -158,6 +160,12 @@ document.addEventListener('DOMContentLoaded', () => {
   edgeSelect.addEventListener('change', handleEdgeChange);
   sortSelect.addEventListener('change', handleSortChange);
   themeSelect.addEventListener('change', handleThemeChange);
+  themeGallery.addEventListener('click', (event) => {
+    const card = event.target.closest('[data-theme-option]');
+    if (!card) return;
+    themeSelect.value = card.dataset.themeOption;
+    handleThemeChange();
+  });
   opacitySlider.addEventListener('input', handleOpacityChange);
   iconSizeSlider.addEventListener('input', handleIconSizeChange);
   autoLaunchToggle.addEventListener('change', handleAutoLaunchToggle);
@@ -510,18 +518,29 @@ async function handleThemeChange() {
 // 应用主题
 function applyTheme(themeMode) {
   const html = document.documentElement;
+  const supportedThemes = new Set([
+    'dark', 'light', 'system', 'topo', 'ocean', 'forest', 'cream', 'sakura', 'mist', 'cyber', 'terminal', 'sunset'
+  ]);
+  const normalizedTheme = supportedThemes.has(themeMode) ? themeMode : 'dark';
 
-  if (themeMode === 'system') {
+  if (normalizedTheme === 'system') {
     // 跟随系统主题
     const prefersDark = window.matchMedia('(prefers-color-scheme: dark)').matches;
     html.setAttribute('data-theme', prefersDark ? 'dark' : 'light');
   } else {
-    html.setAttribute('data-theme', themeMode);
+    html.setAttribute('data-theme', normalizedTheme);
   }
 
   // 更新下拉菜单选中状态
   if (themeSelect) {
-    themeSelect.value = themeMode;
+    themeSelect.value = normalizedTheme;
+  }
+  if (themeGallery) {
+    themeGallery.querySelectorAll('[data-theme-option]').forEach((card) => {
+      const isActive = card.dataset.themeOption === normalizedTheme;
+      card.classList.toggle('active', isActive);
+      card.setAttribute('aria-pressed', String(isActive));
+    });
   }
 }
 
@@ -2618,6 +2637,25 @@ function renderWidgets() {
     }, 1000);
   }
 
+  // 日历组件：60 秒检测日期变化（跨午夜后自动刷新）
+  if (calendarTimer) {
+    clearInterval(calendarTimer);
+    calendarTimer = null;
+  }
+  if (widgets.some(w => w.type === 'calendar')) {
+    calendarTimer = setInterval(() => {
+      const todayStr = new Date().toDateString();
+      for (const w of widgets) {
+        if (w.type !== 'calendar') continue;
+        const node = widgetsLayer.querySelector(`[data-widget-id="${CSS.escape(w.id)}"]`);
+        if (!node) continue;
+        if (node.dataset.renderedDate !== todayStr) {
+          updateCalendarNode(node);
+        }
+      }
+    }, 60 * 1000);
+  }
+
   // 天气组件：立即刷新 + 30 分钟定时刷新
   if (weatherTimer) {
     clearInterval(weatherTimer);
@@ -2793,6 +2831,8 @@ function updateCalendarNode(node) {
     html += `<span class="${cls}">${d}</span>`;
   }
   grid.innerHTML = html;
+  // 记录渲染时的日期，供定时器检测跨天
+  node.dataset.renderedDate = now.toDateString();
 }
 
 function updateWidgetsUI() {

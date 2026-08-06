@@ -2030,3 +2030,504 @@ body.icons-locked .file-item.draggable:active {
   background: var(--bg-button-hover);
   color: var(--text-primary);
 }
+
+/* ============ 主题皮肤套装 ============ */
+:root {
+  --skin-pattern: none;
+  --skin-pattern-size: auto;
+  --skin-app-radius: 8px;
+  --skin-control-radius: 6px;
+  --skin-card-radius: 8px;
+  --skin-panel-radius: 10px;
+  --skin-pill-radius: 999px;
+  --skin-line: var(--border-secondary);
+  --skin-shadow: 0 8px 32px rgba(0, 0, 0, 0.22), inset 0 1px 0 rgba(255, 255, 255, 0.06);
+  --skin-header-fill: linear-gradient(180deg, var(--bg-secondary), rgba(var(--bg-secondary-rgb), 0.9));
+  --skin-font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', 'Microsoft YaHei UI', sans-serif;
+}
+
+/* 森林：深色苔藓底色搭配嫩芽绿，适合长时间使用 */
+[data-theme="forest"] {
+  --bg-primary-rgb: 17, 29, 22;
+  --bg-secondary-rgb: 26, 43, 32;
+  --bg-tertiary-rgb: 32, 50, 37;
+  --bg-hover-rgb: 203, 232, 174;
+  --bg-active-rgb: 203, 232, 174;
+  --bg-button-rgb: 207, 232, 181;
+  --bg-button-hover-rgb: 207, 232, 181;
+  --bg-button-active-rgb: 207, 232, 181;
+  --bg-input-rgb: 207, 232, 181;
+  --bg-input-hover-rgb: 207, 232, 181;
+  --bg-context-rgb: 166, 215, 111;
+  --border-primary-rgb: 191, 221, 162;
+  --border-secondary-rgb: 191, 221, 162;
+  --border-input-rgb: 191, 221, 162;
+  --border-context-rgb: 166, 215, 111;
+  --text-primary-rgb: 239, 247, 231;
+  --text-secondary-rgb: 194, 214, 182;
+  --text-tertiary-rgb: 181, 204, 171;
+  --text-muted-rgb: 139, 165, 137;
+  --text-disabled-rgb: 100, 126, 103;
+  --scrollbar-track-rgb: 0, 0, 0;
+  --scrollbar-thumb-rgb: 166, 215, 111;
+  --scrollbar-thumb-hover-rgb: 194, 230, 143;
+  --select-option-bg: #1a2b20;
+  --select-option-color: #eff7e7;
+  --switch-active: #a6d76f;
+  --texture-image: repeating-linear-gradient(90deg, transparent 0 55px, rgba(166, 215, 111, 0.09) 55px 56px, transparent 56px 112px);
+  --texture-size: 100% 100%;
+  --texture-tile: 100%;
+  --texture-anim: none;
+  --skin-pattern: radial-gradient(circle at 18% 24%, rgba(166, 215, 111, 0.08) 0 1px, transparent 1.5px),
+    radial-gradient(circle at 80% 72%, rgba(194, 230, 143, 0.06) 0 1px, transparent 1.5px);
+  --skin-pattern-size: 34px 34px, 52px 52px;
+  --skin-app-radius: 12px;
+  --skin-control-radius: 8px;
+  --skin-card-radius: 10px;
+  --skin-panel-radius: 14px;
+  --skin-header-fill: linear-gradient(180deg, rgba(35, 57, 42, 0.98), rgba(26, 43, 32, 0.96));
+  --skin-shadow: 0 12px 36px rgba(3, 12, 7, 0.42), inset 0 1px 0 rgba(222, 246, 199, 0.08);
+}
+
+/* 奶油：暖纸色与陶土色强调，轻盈但不刺眼 */
+[data-theme="cream"] {
+  --bg-primary-rgb: 250, 245, 236;
+  --bg-secondary-rgb: 244, 234, 218;
+  --bg-tertiary-rgb: 255, 250, 241;
+  --bg-hover-rgb: 99, 70, 47;
+  --bg-active-rgb: 99, 70, 47;
+  --bg-button-rgb: 112, 79, 52;
+  --bg-button-hover-rgb: 112, 79, 52;
+  --bg-button-active-rgb: 112, 79, 52;
+  --bg-input-rgb: 112, 79, 52;
+  --bg-input-hover-rgb: 112, 79, 52;
+  --bg-context-rgb: 188, 105, 70;
+  --border-primary-rgb: 112, 79, 52;
+  --border-secondary-rgb: 112, 79, 52;
+  --border-input-rgb: 112, 79, 52;
+  --border-context-rgb: 188, 105, 70;
+  --text-primary-rgb: 52, 39, 30;
+  --text-secondary-rgb: 78, 60, 45;
+  --text-tertiary-rgb: 92, 70, 52;
+  --text-muted-rgb: 131, 105, 82;
+  --text-disabled-rgb: 153, 127, 102;
+  --scrollbar-track-rgb: 112, 79, 52;
+  --scrollbar-thumb-rgb: 188, 105, 70;
+  --scrollbar-thumb-hover-rgb: 211, 128, 91;
+  --select-option-bg: #fffaf1;
+  --select-option-color: #34271e;
+  --switch-active: #bc6946;
+  --texture-image: repeating-linear-gradient(90deg, rgba(188, 105, 70, 0.08) 0 1px, transparent 1px 58px);
+  --texture-size: 100% 100%;
+  --texture-tile: 100%;
+  --texture-anim: none;
+  --skin-pattern: radial-gradient(rgba(112, 79, 52, 0.08) 0 0.7px, transparent 0.8px);
+  --skin-pattern-size: 18px 18px;
+  --skin-app-radius: 16px;
+  --skin-control-radius: 10px;
+  --skin-card-radius: 12px;
+  --skin-panel-radius: 16px;
+  --skin-header-fill: linear-gradient(180deg, rgba(249, 239, 223, 0.98), rgba(244, 234, 218, 0.96));
+  --skin-shadow: 0 12px 34px rgba(93, 63, 39, 0.2), inset 0 1px 0 rgba(255, 255, 255, 0.75);
+}
+
+/* 樱粉：柔和的粉白底色搭配莓果色，保留足够的文字对比 */
+[data-theme="sakura"] {
+  --bg-primary-rgb: 253, 246, 249;
+  --bg-secondary-rgb: 248, 226, 234;
+  --bg-tertiary-rgb: 255, 241, 246;
+  --bg-hover-rgb: 100, 53, 70;
+  --bg-active-rgb: 100, 53, 70;
+  --bg-button-rgb: 110, 56, 76;
+  --bg-button-hover-rgb: 110, 56, 76;
+  --bg-button-active-rgb: 110, 56, 76;
+  --bg-input-rgb: 110, 56, 76;
+  --bg-input-hover-rgb: 110, 56, 76;
+  --bg-context-rgb: 203, 101, 139;
+  --border-primary-rgb: 110, 56, 76;
+  --border-secondary-rgb: 110, 56, 76;
+  --border-input-rgb: 110, 56, 76;
+  --border-context-rgb: 203, 101, 139;
+  --text-primary-rgb: 57, 34, 44;
+  --text-secondary-rgb: 84, 52, 64;
+  --text-tertiary-rgb: 101, 65, 78;
+  --text-muted-rgb: 143, 104, 118;
+  --text-disabled-rgb: 172, 134, 147;
+  --scrollbar-track-rgb: 110, 56, 76;
+  --scrollbar-thumb-rgb: 203, 101, 139;
+  --scrollbar-thumb-hover-rgb: 224, 133, 163;
+  --select-option-bg: #fff1f6;
+  --select-option-color: #39222c;
+  --switch-active: #cb658b;
+  --texture-image: radial-gradient(circle at 16px 20px, rgba(203, 101, 139, 0.14) 0 1px, transparent 1.5px),
+    radial-gradient(circle at 45px 8px, rgba(203, 101, 139, 0.09) 0 1px, transparent 1.5px);
+  --texture-size: 64px 36px;
+  --texture-tile: 64px;
+  --texture-anim: none;
+  --skin-pattern: radial-gradient(circle at 14% 20%, rgba(203, 101, 139, 0.08) 0 1.5px, transparent 2px),
+    radial-gradient(circle at 78% 70%, rgba(203, 101, 139, 0.06) 0 1px, transparent 1.5px);
+  --skin-pattern-size: 42px 42px, 58px 58px;
+  --skin-app-radius: 18px;
+  --skin-control-radius: 11px;
+  --skin-card-radius: 14px;
+  --skin-panel-radius: 18px;
+  --skin-header-fill: linear-gradient(180deg, rgba(251, 232, 239, 0.98), rgba(248, 226, 234, 0.96));
+  --skin-shadow: 0 12px 36px rgba(123, 54, 83, 0.18), inset 0 1px 0 rgba(255, 255, 255, 0.8);
+}
+
+/* 薰衣草：雾紫背景配靛蓝强调，像一张安静的夜间便签 */
+[data-theme="mist"] {
+  --bg-primary-rgb: 246, 244, 251;
+  --bg-secondary-rgb: 235, 230, 246;
+  --bg-tertiary-rgb: 251, 249, 255;
+  --bg-hover-rgb: 58, 49, 91;
+  --bg-active-rgb: 58, 49, 91;
+  --bg-button-rgb: 73, 60, 112;
+  --bg-button-hover-rgb: 73, 60, 112;
+  --bg-button-active-rgb: 73, 60, 112;
+  --bg-input-rgb: 73, 60, 112;
+  --bg-input-hover-rgb: 73, 60, 112;
+  --bg-context-rgb: 119, 101, 193;
+  --border-primary-rgb: 73, 60, 112;
+  --border-secondary-rgb: 73, 60, 112;
+  --border-input-rgb: 73, 60, 112;
+  --border-context-rgb: 119, 101, 193;
+  --text-primary-rgb: 43, 37, 65;
+  --text-secondary-rgb: 68, 59, 96;
+  --text-tertiary-rgb: 84, 73, 113;
+  --text-muted-rgb: 126, 113, 155;
+  --text-disabled-rgb: 157, 145, 181;
+  --scrollbar-track-rgb: 73, 60, 112;
+  --scrollbar-thumb-rgb: 119, 101, 193;
+  --scrollbar-thumb-hover-rgb: 145, 128, 211;
+  --select-option-bg: #fbf9ff;
+  --select-option-color: #2b2541;
+  --switch-active: #7765c1;
+  --texture-image: linear-gradient(135deg, rgba(119, 101, 193, 0.1) 25%, transparent 25% 50%, rgba(119, 101, 193, 0.06) 50% 75%, transparent 75%);
+  --texture-size: 32px 32px;
+  --texture-tile: 32px;
+  --texture-anim: none;
+  --skin-pattern: linear-gradient(135deg, rgba(119, 101, 193, 0.045) 25%, transparent 25% 50%, rgba(119, 101, 193, 0.03) 50% 75%, transparent 75%);
+  --skin-pattern-size: 52px 52px;
+  --skin-app-radius: 14px;
+  --skin-control-radius: 9px;
+  --skin-card-radius: 11px;
+  --skin-panel-radius: 15px;
+  --skin-header-fill: linear-gradient(180deg, rgba(241, 236, 249, 0.98), rgba(235, 230, 246, 0.96));
+  --skin-shadow: 0 12px 36px rgba(79, 63, 125, 0.18), inset 0 1px 0 rgba(255, 255, 255, 0.78);
+}
+
+/* 霓虹：炭黑底色配琥珀色操作反馈，强调信息密度与边界 */
+[data-theme="cyber"] {
+  --bg-primary-rgb: 13, 16, 21;
+  --bg-secondary-rgb: 21, 25, 31;
+  --bg-tertiary-rgb: 27, 32, 39;
+  --bg-hover-rgb: 255, 193, 82;
+  --bg-active-rgb: 255, 193, 82;
+  --bg-button-rgb: 255, 193, 82;
+  --bg-button-hover-rgb: 255, 193, 82;
+  --bg-button-active-rgb: 255, 193, 82;
+  --bg-input-rgb: 255, 193, 82;
+  --bg-input-hover-rgb: 255, 193, 82;
+  --bg-context-rgb: 255, 177, 58;
+  --border-primary-rgb: 255, 193, 82;
+  --border-secondary-rgb: 255, 193, 82;
+  --border-input-rgb: 255, 193, 82;
+  --border-context-rgb: 255, 177, 58;
+  --text-primary-rgb: 247, 241, 225;
+  --text-secondary-rgb: 213, 207, 193;
+  --text-tertiary-rgb: 192, 187, 177;
+  --text-muted-rgb: 137, 143, 151;
+  --text-disabled-rgb: 95, 102, 112;
+  --scrollbar-track-rgb: 0, 0, 0;
+  --scrollbar-thumb-rgb: 255, 177, 58;
+  --scrollbar-thumb-hover-rgb: 255, 204, 102;
+  --select-option-bg: #15191f;
+  --select-option-color: #f7f1e1;
+  --switch-active: #ffb13a;
+  --texture-image: repeating-linear-gradient(90deg, transparent 0 31px, rgba(255, 177, 58, 0.12) 31px 32px),
+    repeating-linear-gradient(0deg, transparent 0 15px, rgba(255, 177, 58, 0.06) 15px 16px);
+  --texture-size: 64px 32px;
+  --texture-tile: 64px;
+  --texture-anim: texture-drift 24s linear infinite;
+  --skin-pattern: repeating-linear-gradient(90deg, transparent 0 39px, rgba(255, 177, 58, 0.045) 39px 40px),
+    repeating-linear-gradient(0deg, transparent 0 23px, rgba(255, 177, 58, 0.035) 23px 24px);
+  --skin-pattern-size: 80px 48px;
+  --skin-app-radius: 6px;
+  --skin-control-radius: 4px;
+  --skin-card-radius: 5px;
+  --skin-panel-radius: 7px;
+  --skin-pill-radius: 5px;
+  --skin-font-family: 'Cascadia Mono', Consolas, monospace;
+  --skin-header-fill: linear-gradient(180deg, rgba(28, 33, 40, 0.99), rgba(21, 25, 31, 0.98));
+  --skin-shadow: 0 12px 34px rgba(0, 0, 0, 0.5), inset 0 1px 0 rgba(255, 193, 82, 0.1);
+}
+
+/* 终端：磷光绿与扫描线，保留复古终端的节奏感 */
+[data-theme="terminal"] {
+  --bg-primary-rgb: 8, 18, 13;
+  --bg-secondary-rgb: 13, 29, 20;
+  --bg-tertiary-rgb: 17, 37, 25;
+  --bg-hover-rgb: 137, 230, 143;
+  --bg-active-rgb: 137, 230, 143;
+  --bg-button-rgb: 137, 230, 143;
+  --bg-button-hover-rgb: 137, 230, 143;
+  --bg-button-active-rgb: 137, 230, 143;
+  --bg-input-rgb: 137, 230, 143;
+  --bg-input-hover-rgb: 137, 230, 143;
+  --bg-context-rgb: 126, 219, 133;
+  --border-primary-rgb: 137, 230, 143;
+  --border-secondary-rgb: 137, 230, 143;
+  --border-input-rgb: 137, 230, 143;
+  --border-context-rgb: 126, 219, 133;
+  --text-primary-rgb: 214, 247, 217;
+  --text-secondary-rgb: 164, 216, 171;
+  --text-tertiary-rgb: 143, 194, 151;
+  --text-muted-rgb: 102, 155, 111;
+  --text-disabled-rgb: 70, 115, 78;
+  --scrollbar-track-rgb: 0, 0, 0;
+  --scrollbar-thumb-rgb: 126, 219, 133;
+  --scrollbar-thumb-hover-rgb: 167, 239, 170;
+  --select-option-bg: #0d1d14;
+  --select-option-color: #d6f7d9;
+  --switch-active: #7edb85;
+  --texture-image: repeating-linear-gradient(0deg, transparent 0 4px, rgba(126, 219, 133, 0.08) 4px 5px);
+  --texture-size: 100% 10px;
+  --texture-tile: 100%;
+  --texture-anim: texture-drift 40s linear infinite;
+  --skin-pattern: repeating-linear-gradient(0deg, transparent 0 3px, rgba(126, 219, 133, 0.035) 3px 4px);
+  --skin-pattern-size: 100% 8px;
+  --skin-app-radius: 3px;
+  --skin-control-radius: 2px;
+  --skin-card-radius: 3px;
+  --skin-panel-radius: 4px;
+  --skin-pill-radius: 3px;
+  --skin-font-family: 'Cascadia Mono', Consolas, monospace;
+  --skin-header-fill: linear-gradient(180deg, rgba(16, 36, 24, 0.99), rgba(13, 29, 20, 0.98));
+  --skin-shadow: 0 12px 34px rgba(0, 0, 0, 0.52), inset 0 1px 0 rgba(137, 230, 143, 0.1);
+}
+
+/* 暮色：深蓝紫底色搭配夕阳橙，适合想要更有氛围感的桌面 */
+[data-theme="sunset"] {
+  --bg-primary-rgb: 30, 24, 29;
+  --bg-secondary-rgb: 49, 34, 37;
+  --bg-tertiary-rgb: 63, 42, 41;
+  --bg-hover-rgb: 246, 166, 103;
+  --bg-active-rgb: 246, 166, 103;
+  --bg-button-rgb: 246, 166, 103;
+  --bg-button-hover-rgb: 246, 166, 103;
+  --bg-button-active-rgb: 246, 166, 103;
+  --bg-input-rgb: 246, 166, 103;
+  --bg-input-hover-rgb: 246, 166, 103;
+  --bg-context-rgb: 237, 135, 82;
+  --border-primary-rgb: 246, 166, 103;
+  --border-secondary-rgb: 246, 166, 103;
+  --border-input-rgb: 246, 166, 103;
+  --border-context-rgb: 237, 135, 82;
+  --text-primary-rgb: 255, 235, 218;
+  --text-secondary-rgb: 222, 190, 172;
+  --text-tertiary-rgb: 202, 163, 149;
+  --text-muted-rgb: 151, 111, 105;
+  --text-disabled-rgb: 105, 73, 75;
+  --scrollbar-track-rgb: 0, 0, 0;
+  --scrollbar-thumb-rgb: 237, 135, 82;
+  --scrollbar-thumb-hover-rgb: 249, 174, 113;
+  --select-option-bg: #312225;
+  --select-option-color: #ffebda;
+  --switch-active: #ed8752;
+  --texture-image: radial-gradient(circle at 18px 20px, rgba(237, 135, 82, 0.12) 0 1px, transparent 1.5px),
+    radial-gradient(circle at 48px 8px, rgba(246, 166, 103, 0.08) 0 1px, transparent 1.5px);
+  --texture-size: 64px 32px;
+  --texture-tile: 64px;
+  --texture-anim: texture-drift 36s linear infinite;
+  --skin-pattern: radial-gradient(circle at 15% 15%, rgba(237, 135, 82, 0.08) 0 1px, transparent 1.5px),
+    linear-gradient(135deg, rgba(246, 166, 103, 0.035), transparent 44%);
+  --skin-pattern-size: 46px 46px, 100% 100%;
+  --skin-app-radius: 12px;
+  --skin-control-radius: 7px;
+  --skin-card-radius: 9px;
+  --skin-panel-radius: 13px;
+  --skin-header-fill: linear-gradient(180deg, rgba(65, 44, 45, 0.99), rgba(49, 34, 37, 0.98));
+  --skin-shadow: 0 12px 38px rgba(0, 0, 0, 0.48), inset 0 1px 0 rgba(246, 166, 103, 0.08);
+}
+
+/* 让皮肤同时影响布局边界、字体和控件形状，而不改变功能 */
+html,
+body {
+  font-family: var(--skin-font-family);
+}
+
+#app {
+  border-radius: var(--skin-app-radius);
+  background-image: var(--skin-pattern);
+  background-size: var(--skin-pattern-size);
+  box-shadow: var(--skin-shadow);
+}
+
+#app.has-bg {
+  background-image: none;
+}
+
+.header {
+  background: var(--skin-header-fill);
+  border-bottom-color: var(--skin-line);
+}
+
+.icon-btn,
+select,
+.prompt-btn,
+.number-input,
+.shortcut-input,
+.search-bar,
+.everything-bar,
+.theme-card {
+  border-radius: var(--skin-control-radius);
+}
+
+.group-tab,
+.selection-toolbar,
+.sel-btn {
+  border-radius: var(--skin-pill-radius);
+}
+
+.file-item,
+.group-folder {
+  border-radius: var(--skin-card-radius);
+}
+
+.prompt-dialog,
+.folder-preview,
+.widget-item,
+.rule-item,
+.group-return-bar {
+  border-radius: var(--skin-panel-radius);
+}
+
+.theme-gallery {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 6px;
+  margin-top: 10px;
+}
+
+.theme-card {
+  position: relative;
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  min-width: 0;
+  padding: 6px 7px;
+  border: 1px solid var(--border-input);
+  background: var(--bg-button);
+  color: var(--text-secondary);
+  cursor: pointer;
+  text-align: left;
+  transition: background 0.15s, border-color 0.15s, transform 0.15s, color 0.15s;
+  -webkit-app-region: no-drag;
+}
+
+.theme-card:hover {
+  color: var(--text-primary);
+  background: var(--bg-button-hover);
+  transform: translateY(-1px);
+}
+
+.theme-card.active {
+  color: var(--text-primary);
+  background: var(--bg-context);
+  border-color: var(--switch-active);
+  box-shadow: 0 0 0 1px rgba(var(--border-context-rgb), 0.22) inset;
+}
+
+.theme-swatch {
+  width: 30px;
+  height: 22px;
+  flex: 0 0 30px;
+  border: 1px solid rgba(255, 255, 255, 0.25);
+  border-radius: 5px;
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.12);
+}
+
+.theme-card-label {
+  min-width: 0;
+  overflow: hidden;
+  font-size: 10px;
+  line-height: 1.2;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.theme-card[data-theme-option="dark"] .theme-swatch {
+  background: linear-gradient(135deg, #1e1e1e 0 55%, #3b3b3b 55%);
+}
+
+.theme-card[data-theme-option="light"] .theme-swatch {
+  background: linear-gradient(135deg, #ffffff 0 55%, #e9e9e9 55%);
+}
+
+.theme-card[data-theme-option="system"] .theme-swatch {
+  background: linear-gradient(90deg, #292b31 0 50%, #f4ede3 50%);
+}
+
+.theme-card[data-theme-option="topo"] .theme-swatch {
+  background: repeating-linear-gradient(0deg, #142019 0 4px, #5fd68b 5px, #142019 6px);
+}
+
+.theme-card[data-theme-option="ocean"] .theme-swatch {
+  background: repeating-linear-gradient(0deg, #0c1c33 0 5px, #38bdf8 6px, #0c1c33 7px);
+}
+
+.theme-card[data-theme-option="forest"] .theme-swatch {
+  background: radial-gradient(circle at 70% 25%, #a6d76f 0 18%, transparent 19%), #1a2b20;
+}
+
+.theme-card[data-theme-option="cream"] .theme-swatch {
+  background: radial-gradient(#bc6946 0 1px, transparent 1.5px), #faf1df;
+  background-size: 7px 7px;
+}
+
+.theme-card[data-theme-option="sakura"] .theme-swatch {
+  background: radial-gradient(circle at 70% 30%, #cb658b 0 18%, transparent 19%), #f8e2ea;
+}
+
+.theme-card[data-theme-option="mist"] .theme-swatch {
+  background: repeating-linear-gradient(135deg, #f5f1fb 0 5px, #7765c1 6px, #f5f1fb 7px);
+}
+
+.theme-card[data-theme-option="cyber"] .theme-swatch {
+  background: repeating-linear-gradient(90deg, #11151b 0 7px, #ffb13a 8px, #11151b 9px);
+}
+
+.theme-card[data-theme-option="terminal"] .theme-swatch {
+  background: repeating-linear-gradient(0deg, #0d1d14 0 3px, #7edb85 4px, #0d1d14 5px);
+}
+
+.theme-card[data-theme-option="sunset"] .theme-swatch {
+  background: radial-gradient(circle at 70% 30%, #ed8752 0 20%, transparent 21%), #312225;
+}
+
+.theme-card:focus-visible,
+.icon-btn:focus-visible,
+select:focus-visible,
+input:focus-visible,
+.prompt-btn:focus-visible {
+  outline: 2px solid var(--switch-active);
+  outline-offset: 2px;
+}
+
+@media (max-width: 420px) {
+  .theme-gallery {
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    scroll-behavior: auto !important;
+    transition-duration: 0.01ms !important;
+  }
+}
