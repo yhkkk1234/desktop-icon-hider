@@ -20,15 +20,35 @@
       </button>
       <span class="title" data-i18n="header.title">桌面图标</span>
       <div class="header-actions">
-        <button id="settings-btn" class="icon-btn" title="设置" data-i18n-title="action.settings">⚙️</button>
-        <button id="refresh-btn" class="icon-btn" title="刷新" data-i18n-title="action.refresh">🔄</button>
-        <button id="quit-btn" class="icon-btn" title="关闭" data-i18n-title="action.quit">×</button>
+        <button id="settings-btn" class="icon-btn" title="设置" data-i18n-title="action.settings">
+          <svg class="ui-icon gear-icon" viewBox="0 0 24 24" aria-hidden="true">
+            <path fill-rule="evenodd" d="M19.43 12.98c.04-.32.07-.65.07-.98s-.02-.66-.07-.98l2.11-1.65c.19-.15.24-.42.12-.64l-2-3.46c-.12-.22-.37-.31-.6-.22l-2.49 1a7.9 7.9 0 0 0-1.69-.98l-.38-2.65A.51.51 0 0 0 14 2h-4c-.25 0-.46.18-.5.42l-.38 2.65c-.61.25-1.17.59-1.69.98l-2.49-1c-.23-.08-.48 0-.6.22l-2 3.46c-.13.22-.07.49.12.64l2.11 1.65c-.04.32-.08.65-.08.98s.03.66.08.98l-2.11 1.65c-.19.15-.24.42-.12.64l2 3.46c.12.22.37.31.6.22l2.49-1c.52.4 1.08.73 1.69.98l.38 2.65c.04.24.25.42.5.42h4c.25 0 .46-.18.5-.42l.38-2.65c.61-.25 1.17-.58 1.69-.98l2.49 1c.23.08.48 0 .6-.22l2-3.46c.12-.22.07-.49-.12-.64l-2.11-1.65zM12 15.5A3.5 3.5 0 1 1 12 8a3.5 3.5 0 0 1 0 7.5z"></path>
+          </svg>
+        </button>
+        <button id="refresh-btn" class="icon-btn" title="刷新" data-i18n-title="action.refresh">
+          <svg class="ui-icon" viewBox="0 0 24 24" aria-hidden="true">
+            <path d="M20 11a8 8 0 0 0-13.3-4.9L4 8.8"></path>
+            <path d="M4 4.5v4.3h4.3"></path>
+            <path d="M4 13a8 8 0 0 0 13.3 4.9l2.7-2.7"></path>
+            <path d="M20 19.5v-4.3h-4.3"></path>
+          </svg>
+        </button>
+        <button id="quit-btn" class="icon-btn" title="关闭" data-i18n-title="action.quit">
+          <svg class="ui-icon" viewBox="0 0 24 24" aria-hidden="true">
+            <path d="M7 7l10 10M17 7L7 17"></path>
+          </svg>
+        </button>
       </div>
     </div>
     
     <!-- Everything 搜索栏（标题栏下） -->
     <div id="everything-bar" class="everything-bar" style="display: none;">
-      <span class="search-icon">🔍</span>
+      <span class="search-icon" aria-hidden="true">
+        <svg class="ui-icon" viewBox="0 0 24 24">
+          <circle cx="10.5" cy="10.5" r="5.5"></circle>
+          <path d="M15 15l4.5 4.5"></path>
+        </svg>
+      </span>
       <input type="text" id="everything-input" data-i18n-placeholder="everything.placeholder" placeholder="搜索全盘文件... (回车)" autocomplete="off" spellcheck="false">
       <button id="everything-go" class="search-clear" data-i18n="everything.searchBtn">搜索</button>
     </div>
@@ -53,6 +73,8 @@
             <option value="cyber" data-i18n="settings.themeCyber">霓虹</option>
             <option value="terminal" data-i18n="settings.themeTerminal">终端</option>
             <option value="sunset" data-i18n="settings.themeSunset">暮色</option>
+            <option value="clay" data-i18n="settings.themeClay">柔光拟态</option>
+            <option value="obsidian" data-i18n="settings.themeObsidian">黑曜机械</option>
           </select>
           <div id="theme-gallery" class="theme-gallery" role="group" aria-label="主题预览">
             <button type="button" class="theme-card" data-theme-option="dark" data-i18n-title="settings.themeDark" aria-pressed="false">
@@ -102,6 +124,14 @@
             <button type="button" class="theme-card" data-theme-option="sunset" data-i18n-title="settings.themeSunset" aria-pressed="false">
               <span class="theme-swatch" aria-hidden="true"></span>
               <span class="theme-card-label" data-i18n="settings.themeSunset">暮色</span>
+            </button>
+            <button type="button" class="theme-card" data-theme-option="clay" data-i18n-title="settings.themeClay" aria-pressed="false">
+              <span class="theme-swatch" aria-hidden="true"></span>
+              <span class="theme-card-label" data-i18n="settings.themeClay">柔光拟态</span>
+            </button>
+            <button type="button" class="theme-card" data-theme-option="obsidian" data-i18n-title="settings.themeObsidian" aria-pressed="false">
+              <span class="theme-swatch" aria-hidden="true"></span>
+              <span class="theme-card-label" data-i18n="settings.themeObsidian">黑曜机械</span>
             </button>
           </div>
         </div>
@@ -271,7 +301,7 @@
           <span class="setting-label" data-i18n="widget.showToggle">显示小组件（时钟 / 日历）</span>
         </div>
         <div class="setting-description" data-i18n="widget.settingsDesc">
-          在分组栏点击 🧩 添加时钟或日历组件，拖动可自由摆放位置。
+          在分组栏点击组件按钮添加时钟或日历组件，拖动可自由摆放位置。
         </div>
       </div>
       
@@ -400,16 +430,33 @@
     
     <div id="content" class="content">
       <div id="search-bar" class="search-bar" style="display: none;">
-        <span class="search-icon">🔍</span>
+        <span class="search-icon" aria-hidden="true">
+          <svg class="ui-icon" viewBox="0 0 24 24">
+            <circle cx="10.5" cy="10.5" r="5.5"></circle>
+            <path d="M15 15l4.5 4.5"></path>
+          </svg>
+        </span>
         <input type="text" id="search-input" data-i18n-placeholder="search.placeholder" placeholder="搜索文件名或扩展名..." autocomplete="off" spellcheck="false">
         <button id="search-clear" class="search-clear" data-i18n-title="search.clear" title="清空 (Esc)">×</button>
         <span id="search-count" class="search-count"></span>
       </div>
       <div id="groups-bar" class="groups-bar">
         <div id="groups-list" class="groups-list"></div>
-        <button id="add-group-btn" class="add-group-btn" title="新建分组">＋</button>
-        <button id="auto-group-btn" class="add-group-btn" title="按文件类型自动分组">⚙</button>
-        <button id="add-widget-btn" class="add-group-btn" title="添加小组件" data-i18n-title="widget.add">🧩</button>
+        <button id="add-group-btn" class="add-group-btn" title="新建分组">
+          <svg class="ui-icon" viewBox="0 0 24 24" aria-hidden="true">
+            <path d="M12 5v14M5 12h14"></path>
+          </svg>
+        </button>
+        <button id="auto-group-btn" class="add-group-btn" title="按文件类型自动分组">
+          <svg class="ui-icon gear-icon" viewBox="0 0 24 24" aria-hidden="true">
+            <path fill-rule="evenodd" d="M19.43 12.98c.04-.32.07-.65.07-.98s-.02-.66-.07-.98l2.11-1.65c.19-.15.24-.42.12-.64l-2-3.46c-.12-.22-.37-.31-.6-.22l-2.49 1a7.9 7.9 0 0 0-1.69-.98l-.38-2.65A.51.51 0 0 0 14 2h-4c-.25 0-.46.18-.5.42l-.38 2.65c-.61.25-1.17.59-1.69.98l-2.49-1c-.23-.08-.48 0-.6.22l-2 3.46c-.13.22-.07.49.12.64l2.11 1.65c-.04.32-.08.65-.08.98s.03.66.08.98l-2.11 1.65c-.19.15-.24.42-.12.64l2 3.46c.12.22.37.31.6.22l2.49-1c.52.4 1.08.73 1.69.98l.38 2.65c.04.24.25.42.5.42h4c.25 0 .46-.18.5-.42l.38-2.65c.61-.25 1.17-.58 1.69-.98l2.49 1c.23.08.48 0 .6-.22l2-3.46c.12-.22.07-.49-.12-.64l-2.11-1.65zM12 15.5A3.5 3.5 0 1 1 12 8a3.5 3.5 0 0 1 0 7.5z"></path>
+          </svg>
+        </button>
+        <button id="add-widget-btn" class="add-group-btn" title="添加小组件" data-i18n-title="widget.add">
+          <svg class="ui-icon" viewBox="0 0 24 24" aria-hidden="true">
+            <path d="M9 4.5h2.2a2.3 2.3 0 1 1 4.6 0H18a2 2 0 0 1 2 2v2.2a2.3 2.3 0 1 0 0 4.6V16a2 2 0 0 1-2 2h-2.2a2.3 2.3 0 1 0-4.6 0H7a2 2 0 0 1-2-2v-2.7a2.3 2.3 0 1 0 0-4.6V6.5a2 2 0 0 1 2-2H9z"></path>
+          </svg>
+        </button>
         <div id="widget-menu" class="widget-menu" style="display:none;">
           <div class="widget-menu-item" data-widget-type="clock" data-i18n="widget.clock">时钟</div>
           <div class="widget-menu-item" data-widget-type="calendar" data-i18n="widget.calendar">日历</div>

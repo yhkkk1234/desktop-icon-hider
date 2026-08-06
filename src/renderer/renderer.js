@@ -519,7 +519,8 @@ async function handleThemeChange() {
 function applyTheme(themeMode) {
   const html = document.documentElement;
   const supportedThemes = new Set([
-    'dark', 'light', 'system', 'topo', 'ocean', 'forest', 'cream', 'sakura', 'mist', 'cyber', 'terminal', 'sunset'
+    'dark', 'light', 'system', 'topo', 'ocean', 'forest', 'cream', 'sakura', 'mist', 'cyber', 'terminal', 'sunset',
+    'clay', 'obsidian'
   ]);
   const normalizedTheme = supportedThemes.has(themeMode) ? themeMode : 'dark';
 

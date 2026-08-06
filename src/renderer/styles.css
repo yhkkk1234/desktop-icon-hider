@@ -2531,3 +2531,424 @@ input:focus-visible,
     transition-duration: 0.01ms !important;
   }
 }
+
+/* ============ 前卫拟态：柔光拟态 / 黑曜机械 ============ */
+:root {
+  --neu-raised: 6px 6px 14px rgba(0, 0, 0, 0.18), -6px -6px 14px rgba(255, 255, 255, 0.16);
+  --neu-raised-small: 3px 3px 8px rgba(0, 0, 0, 0.16), -3px -3px 8px rgba(255, 255, 255, 0.14);
+  --neu-inset: inset 4px 4px 9px rgba(0, 0, 0, 0.14), inset -4px -4px 9px rgba(255, 255, 255, 0.14);
+  --neu-inset-accent: inset 4px 4px 9px rgba(0, 0, 0, 0.16), inset -4px -4px 9px rgba(255, 255, 255, 0.1);
+}
+
+/* 柔光拟态：温暖软陶材质，重点是浮雕层级与按压反馈 */
+[data-theme="clay"] {
+  --bg-primary-rgb: 231, 224, 218;
+  --bg-secondary-rgb: 224, 215, 208;
+  --bg-tertiary-rgb: 238, 231, 225;
+  --bg-hover-rgb: 92, 70, 65;
+  --bg-active-rgb: 92, 70, 65;
+  --bg-button-rgb: 92, 70, 65;
+  --bg-button-hover-rgb: 92, 70, 65;
+  --bg-button-active-rgb: 92, 70, 65;
+  --bg-input-rgb: 92, 70, 65;
+  --bg-input-hover-rgb: 92, 70, 65;
+  --bg-context-rgb: 208, 106, 91;
+  --border-primary-rgb: 112, 88, 81;
+  --border-secondary-rgb: 112, 88, 81;
+  --border-input-rgb: 112, 88, 81;
+  --border-context-rgb: 208, 106, 91;
+  --text-primary-rgb: 57, 45, 42;
+  --text-secondary-rgb: 83, 66, 61;
+  --text-tertiary-rgb: 100, 80, 73;
+  --text-muted-rgb: 139, 115, 105;
+  --text-disabled-rgb: 164, 139, 129;
+  --scrollbar-track-rgb: 112, 88, 81;
+  --scrollbar-thumb-rgb: 208, 106, 91;
+  --scrollbar-thumb-hover-rgb: 226, 133, 116;
+  --select-option-bg: #eee6e0;
+  --select-option-color: #392d2a;
+  --switch-active: #d06a5b;
+  --texture-image: linear-gradient(145deg, rgba(255, 255, 255, 0.28), transparent 42%, rgba(174, 145, 136, 0.12));
+  --texture-size: 100% 100%;
+  --texture-tile: 100%;
+  --texture-anim: none;
+  --skin-pattern: radial-gradient(ellipse at 12% 10%, rgba(255, 255, 255, 0.24), transparent 30%),
+    radial-gradient(ellipse at 90% 88%, rgba(180, 145, 136, 0.1), transparent 35%);
+  --skin-pattern-size: 100% 100%, 100% 100%;
+  --skin-app-radius: 24px;
+  --skin-control-radius: 14px;
+  --skin-card-radius: 16px;
+  --skin-panel-radius: 20px;
+  --skin-pill-radius: 999px;
+  --skin-font-family: 'Segoe UI Variable', 'Microsoft YaHei UI', 'Segoe UI', sans-serif;
+  --skin-header-fill: linear-gradient(145deg, rgba(239, 232, 226, 0.98), rgba(218, 208, 201, 0.96));
+  --skin-shadow: 10px 12px 30px rgba(161, 130, 120, 0.28), inset 0 1px 0 rgba(255, 255, 255, 0.54);
+  --neu-raised: 8px 8px 18px rgba(176, 145, 135, 0.38), -8px -8px 18px rgba(255, 255, 255, 0.72);
+  --neu-raised-small: 4px 4px 10px rgba(176, 145, 135, 0.3), -4px -4px 10px rgba(255, 255, 255, 0.66);
+  --neu-inset: inset 5px 5px 11px rgba(176, 145, 135, 0.3), inset -5px -5px 11px rgba(255, 255, 255, 0.68);
+  --neu-inset-accent: inset 5px 5px 11px rgba(176, 145, 135, 0.34), inset -5px -5px 11px rgba(255, 255, 255, 0.5);
+}
+
+[data-theme="clay"] #app {
+  border-color: transparent;
+}
+
+[data-theme="clay"] .header {
+  border-bottom-color: transparent;
+  box-shadow: var(--neu-raised);
+}
+
+[data-theme="clay"] .content {
+  padding: 14px;
+}
+
+[data-theme="clay"] .settings-panel {
+  border-color: transparent;
+  background: var(--bg-primary);
+  box-shadow: var(--neu-inset);
+}
+
+[data-theme="clay"] .groups-bar {
+  width: auto;
+  margin: 0 0 12px;
+  padding: 4px 0;
+  border: none;
+  border-radius: 0;
+  background: transparent;
+  box-shadow: none;
+}
+
+[data-theme="clay"] .search-bar,
+[data-theme="clay"] .everything-bar,
+[data-theme="clay"] select,
+[data-theme="clay"] .number-input,
+[data-theme="clay"] .shortcut-input,
+[data-theme="clay"] .prompt-input {
+  border-color: transparent;
+  background: var(--bg-primary);
+  box-shadow: var(--neu-inset);
+}
+
+[data-theme="clay"] .icon-btn,
+[data-theme="clay"] .add-group-btn,
+[data-theme="clay"] .group-tab,
+[data-theme="clay"] .prompt-btn-cancel,
+[data-theme="clay"] .sel-btn,
+[data-theme="clay"] .widget-cal-nav,
+[data-theme="clay"] .theme-card {
+  border-color: transparent;
+  background: var(--bg-secondary);
+  box-shadow: var(--neu-raised-small);
+}
+
+[data-theme="clay"] .icon-btn:hover,
+[data-theme="clay"] .add-group-btn:hover,
+[data-theme="clay"] .group-tab:hover,
+[data-theme="clay"] .sel-btn:hover,
+[data-theme="clay"] .widget-cal-nav:hover,
+[data-theme="clay"] .theme-card:hover {
+  transform: translateY(-1px);
+  box-shadow: var(--neu-raised);
+}
+
+[data-theme="clay"] .icon-btn:active,
+[data-theme="clay"] .add-group-btn:active,
+[data-theme="clay"] .sel-btn:active,
+[data-theme="clay"] .widget-cal-nav:active,
+[data-theme="clay"] .theme-card:active {
+  transform: translateY(1px);
+  box-shadow: var(--neu-inset);
+}
+
+[data-theme="clay"] .group-tab.active,
+[data-theme="clay"] .theme-card.active {
+  border-color: rgba(208, 106, 91, 0.55);
+  background: var(--bg-secondary);
+  box-shadow: var(--neu-inset-accent), 0 0 0 1px rgba(208, 106, 91, 0.18);
+}
+
+[data-theme="clay"] .file-item,
+[data-theme="clay"] .group-folder {
+  background: transparent;
+}
+
+[data-theme="clay"] .file-item:hover,
+[data-theme="clay"] .group-folder:hover {
+  background: var(--bg-secondary);
+  box-shadow: var(--neu-raised-small);
+}
+
+[data-theme="clay"] .file-item.selected,
+[data-theme="clay"] .file-item.multi-selected,
+[data-theme="clay"] .file-item.in-box-select,
+[data-theme="clay"] .group-folder.drop-target {
+  background: var(--bg-secondary);
+  outline: none;
+  box-shadow: var(--neu-inset-accent), 0 0 0 1px rgba(208, 106, 91, 0.24);
+}
+
+[data-theme="clay"] .prompt-dialog,
+[data-theme="clay"] .folder-preview,
+[data-theme="clay"] .widget-item,
+[data-theme="clay"] .selection-toolbar,
+[data-theme="clay"] .rule-item,
+[data-theme="clay"] .group-return-bar {
+  border-color: transparent;
+  box-shadow: var(--neu-raised);
+}
+
+[data-theme="clay"] .slider {
+  background: var(--bg-primary);
+  box-shadow: var(--neu-inset);
+}
+
+[data-theme="clay"] .slider:before,
+[data-theme="clay"] .opacity-control input[type="range"]::-webkit-slider-thumb,
+[data-theme="clay"] .icon-size-control input[type="range"]::-webkit-slider-thumb {
+  box-shadow: var(--neu-raised-small);
+}
+
+/* 黑曜机械：深色硬表面、橙色信号线与压入式控制区 */
+[data-theme="obsidian"] {
+  --bg-primary-rgb: 17, 21, 27;
+  --bg-secondary-rgb: 26, 31, 39;
+  --bg-tertiary-rgb: 35, 41, 50;
+  --bg-hover-rgb: 255, 159, 91;
+  --bg-active-rgb: 255, 159, 91;
+  --bg-button-rgb: 255, 159, 91;
+  --bg-button-hover-rgb: 255, 159, 91;
+  --bg-button-active-rgb: 255, 159, 91;
+  --bg-input-rgb: 255, 159, 91;
+  --bg-input-hover-rgb: 255, 159, 91;
+  --bg-context-rgb: 240, 128, 72;
+  --border-primary-rgb: 157, 170, 185;
+  --border-secondary-rgb: 157, 170, 185;
+  --border-input-rgb: 157, 170, 185;
+  --border-context-rgb: 240, 128, 72;
+  --text-primary-rgb: 242, 237, 227;
+  --text-secondary-rgb: 199, 205, 212;
+  --text-tertiary-rgb: 174, 183, 193;
+  --text-muted-rgb: 122, 134, 148;
+  --text-disabled-rgb: 82, 94, 108;
+  --scrollbar-track-rgb: 0, 0, 0;
+  --scrollbar-thumb-rgb: 240, 128, 72;
+  --scrollbar-thumb-hover-rgb: 255, 164, 104;
+  --select-option-bg: #1a1f27;
+  --select-option-color: #f2ede3;
+  --switch-active: #f08048;
+  --texture-image: repeating-linear-gradient(90deg, transparent 0 47px, rgba(240, 128, 72, 0.1) 47px 48px),
+    linear-gradient(180deg, rgba(255, 255, 255, 0.06), transparent 65%);
+  --texture-size: 96px 100%;
+  --texture-tile: 96px;
+  --texture-anim: texture-drift 30s linear infinite;
+  --skin-pattern: repeating-linear-gradient(90deg, transparent 0 47px, rgba(240, 128, 72, 0.035) 47px 48px),
+    repeating-linear-gradient(0deg, transparent 0 31px, rgba(157, 170, 185, 0.028) 31px 32px);
+  --skin-pattern-size: 96px 64px;
+  --skin-app-radius: 10px;
+  --skin-control-radius: 6px;
+  --skin-card-radius: 8px;
+  --skin-panel-radius: 10px;
+  --skin-pill-radius: 8px;
+  --skin-font-family: 'Segoe UI Variable', 'Microsoft YaHei UI', 'Segoe UI', sans-serif;
+  --skin-header-fill: linear-gradient(145deg, rgba(48, 56, 67, 0.99), rgba(23, 28, 35, 0.98));
+  --skin-shadow: 9px 10px 25px rgba(2, 5, 9, 0.7), inset 0 1px 0 rgba(157, 170, 185, 0.16);
+  --neu-raised: 7px 8px 17px rgba(2, 5, 9, 0.7), -6px -6px 15px rgba(75, 86, 101, 0.24);
+  --neu-raised-small: 3px 4px 9px rgba(2, 5, 9, 0.65), -3px -3px 8px rgba(75, 86, 101, 0.2);
+  --neu-inset: inset 4px 4px 9px rgba(2, 5, 9, 0.64), inset -3px -3px 8px rgba(75, 86, 101, 0.16);
+  --neu-inset-accent: inset 4px 4px 9px rgba(2, 5, 9, 0.7), inset -3px -3px 8px rgba(75, 86, 101, 0.14);
+}
+
+[data-theme="obsidian"] #app {
+  border-color: rgba(240, 128, 72, 0.3);
+}
+
+[data-theme="obsidian"] .header {
+  border-bottom-color: rgba(240, 128, 72, 0.36);
+  box-shadow: var(--neu-raised);
+}
+
+[data-theme="obsidian"] .header::after {
+  content: '';
+  position: absolute;
+  left: 12px;
+  bottom: 0;
+  width: 76px;
+  height: 2px;
+  background: var(--switch-active);
+  box-shadow: 0 0 10px rgba(240, 128, 72, 0.7);
+  pointer-events: none;
+}
+
+[data-theme="obsidian"] .content {
+  padding: 12px;
+}
+
+[data-theme="obsidian"] .settings-panel {
+  border-color: rgba(157, 170, 185, 0.16);
+  background: var(--bg-secondary);
+  box-shadow: var(--neu-inset);
+}
+
+[data-theme="obsidian"] .groups-bar {
+  width: auto;
+  margin: 0 0 12px;
+  padding: 4px 0;
+  border: none;
+  border-radius: 0;
+  background: transparent;
+  box-shadow: none;
+}
+
+[data-theme="obsidian"] .search-bar,
+[data-theme="obsidian"] .everything-bar,
+[data-theme="obsidian"] select,
+[data-theme="obsidian"] .number-input,
+[data-theme="obsidian"] .shortcut-input,
+[data-theme="obsidian"] .prompt-input {
+  border-color: rgba(157, 170, 185, 0.18);
+  background: var(--bg-primary);
+  box-shadow: var(--neu-inset);
+}
+
+[data-theme="obsidian"] .icon-btn,
+[data-theme="obsidian"] .add-group-btn,
+[data-theme="obsidian"] .group-tab,
+[data-theme="obsidian"] .prompt-btn-cancel,
+[data-theme="obsidian"] .sel-btn,
+[data-theme="obsidian"] .widget-cal-nav,
+[data-theme="obsidian"] .theme-card {
+  border-color: rgba(157, 170, 185, 0.18);
+  background: var(--bg-secondary);
+  box-shadow: var(--neu-raised-small);
+}
+
+[data-theme="obsidian"] .icon-btn:hover,
+[data-theme="obsidian"] .add-group-btn:hover,
+[data-theme="obsidian"] .group-tab:hover,
+[data-theme="obsidian"] .sel-btn:hover,
+[data-theme="obsidian"] .widget-cal-nav:hover,
+[data-theme="obsidian"] .theme-card:hover {
+  color: var(--text-primary);
+  border-color: rgba(240, 128, 72, 0.44);
+  transform: translateY(-1px);
+  box-shadow: var(--neu-raised), 0 0 0 1px rgba(240, 128, 72, 0.12);
+}
+
+[data-theme="obsidian"] .icon-btn:active,
+[data-theme="obsidian"] .add-group-btn:active,
+[data-theme="obsidian"] .sel-btn:active,
+[data-theme="obsidian"] .widget-cal-nav:active,
+[data-theme="obsidian"] .theme-card:active {
+  transform: translateY(1px);
+  box-shadow: var(--neu-inset);
+}
+
+[data-theme="obsidian"] .group-tab.active,
+[data-theme="obsidian"] .theme-card.active {
+  border-color: rgba(240, 128, 72, 0.76);
+  background: var(--bg-secondary);
+  box-shadow: var(--neu-inset-accent), 0 0 0 1px rgba(240, 128, 72, 0.22);
+}
+
+[data-theme="obsidian"] .files-list {
+  gap: 8px;
+}
+
+[data-theme="obsidian"] .file-item,
+[data-theme="obsidian"] .group-folder {
+  background: var(--bg-secondary);
+  border: 1px solid rgba(157, 170, 185, 0.12);
+  box-shadow: var(--neu-raised-small);
+}
+
+[data-theme="obsidian"] .file-item:hover,
+[data-theme="obsidian"] .group-folder:hover {
+  background: var(--bg-tertiary);
+  border-color: rgba(240, 128, 72, 0.44);
+  box-shadow: var(--neu-raised);
+}
+
+[data-theme="obsidian"] .file-item.selected,
+[data-theme="obsidian"] .file-item.multi-selected,
+[data-theme="obsidian"] .file-item.in-box-select,
+[data-theme="obsidian"] .group-folder.drop-target {
+  background: var(--bg-secondary);
+  outline: none;
+  border-color: rgba(240, 128, 72, 0.78);
+  box-shadow: var(--neu-inset-accent), 0 0 0 1px rgba(240, 128, 72, 0.18);
+}
+
+[data-theme="obsidian"] .prompt-dialog,
+[data-theme="obsidian"] .folder-preview,
+[data-theme="obsidian"] .widget-item,
+[data-theme="obsidian"] .selection-toolbar,
+[data-theme="obsidian"] .rule-item,
+[data-theme="obsidian"] .group-return-bar {
+  border-color: rgba(157, 170, 185, 0.18);
+  box-shadow: var(--neu-raised);
+}
+
+[data-theme="obsidian"] .slider {
+  background: var(--bg-primary);
+  box-shadow: var(--neu-inset);
+}
+
+[data-theme="obsidian"] .slider:before,
+[data-theme="obsidian"] .opacity-control input[type="range"]::-webkit-slider-thumb,
+[data-theme="obsidian"] .icon-size-control input[type="range"]::-webkit-slider-thumb {
+  box-shadow: var(--neu-raised-small);
+}
+
+.theme-card[data-theme-option="clay"] .theme-swatch {
+  background: radial-gradient(circle at 70% 25%, #d06a5b 0 18%, transparent 19%), #e7e0da;
+  box-shadow: 3px 3px 6px rgba(176, 145, 135, 0.42), -3px -3px 6px rgba(255, 255, 255, 0.65);
+}
+
+.theme-card[data-theme-option="obsidian"] .theme-swatch {
+  background: linear-gradient(135deg, #303843 0 58%, #f08048 59% 67%, #151a21 68%);
+}
+
+/* 统一线性图标：避免系统 Emoji 的多色风格破坏主题材质 */
+.ui-icon {
+  display: block;
+  width: 15px;
+  height: 15px;
+  flex: 0 0 auto;
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 1.8;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+  pointer-events: none;
+}
+
+.ui-icon.gear-icon {
+  fill: currentColor;
+  stroke: none;
+}
+
+.add-group-btn .ui-icon {
+  width: 14px;
+  height: 14px;
+}
+
+.search-icon .ui-icon {
+  width: 14px;
+  height: 14px;
+}
+
+[data-theme="clay"] .icon-btn:hover .ui-icon,
+[data-theme="clay"] .add-group-btn:hover .ui-icon {
+  color: var(--switch-active);
+}
+
+[data-theme="obsidian"] .icon-btn:hover .ui-icon,
+[data-theme="obsidian"] .add-group-btn:hover .ui-icon {
+  color: var(--switch-active);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  [data-theme="obsidian"] .header::after {
+    box-shadow: none;
+  }
+}
