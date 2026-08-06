@@ -1578,7 +1578,7 @@ body.icons-locked .file-item.draggable:active {
 #app.has-bg {
   background: transparent;
   border-color: transparent;
-  box-shadow: 0 8px 32px rgba(0, 0, 0, 0.22);
+  box-shadow: none;
 }
 
 #app.has-bg .header {
@@ -2361,7 +2361,8 @@ body {
   border-radius: var(--skin-app-radius);
   background-image: var(--skin-pattern);
   background-size: var(--skin-pattern-size);
-  box-shadow: var(--skin-shadow);
+  /* Electron 透明窗口会把根容器外投影渲染成圆角尖角，阴影交给内部控件负责 */
+  box-shadow: none;
 }
 
 #app.has-bg {
