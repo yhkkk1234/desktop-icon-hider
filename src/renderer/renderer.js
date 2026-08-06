@@ -520,16 +520,23 @@ function applyTheme(themeMode) {
   const html = document.documentElement;
   const supportedThemes = new Set([
     'dark', 'light', 'system', 'topo', 'ocean', 'forest', 'cream', 'sakura', 'mist', 'cyber', 'terminal', 'sunset',
-    'clay', 'obsidian'
+    'clay', 'night-clay', 'glass-light', 'glass-dark', 'obsidian'
   ]);
   const normalizedTheme = supportedThemes.has(themeMode) ? themeMode : 'dark';
+  const visualTheme = normalizedTheme === 'night-clay' ? 'clay' : normalizedTheme;
 
   if (normalizedTheme === 'system') {
     // 跟随系统主题
     const prefersDark = window.matchMedia('(prefers-color-scheme: dark)').matches;
     html.setAttribute('data-theme', prefersDark ? 'dark' : 'light');
   } else {
-    html.setAttribute('data-theme', normalizedTheme);
+    html.setAttribute('data-theme', visualTheme);
+  }
+
+  if (normalizedTheme === 'night-clay') {
+    html.setAttribute('data-skin', 'night-clay');
+  } else {
+    html.removeAttribute('data-skin');
   }
 
   // 更新下拉菜单选中状态

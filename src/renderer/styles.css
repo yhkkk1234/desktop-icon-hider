@@ -2948,6 +2948,348 @@ input:focus-visible,
   color: var(--switch-active);
 }
 
+/* 暗夜柔光：复用柔光拟态的圆润结构，只切换为深石墨紫灰材质 */
+[data-skin="night-clay"] {
+  --bg-primary-rgb: 29, 29, 36;
+  --bg-secondary-rgb: 38, 38, 47;
+  --bg-tertiary-rgb: 48, 47, 57;
+  --bg-hover-rgb: 231, 154, 137;
+  --bg-active-rgb: 231, 154, 137;
+  --bg-button-rgb: 231, 154, 137;
+  --bg-button-hover-rgb: 231, 154, 137;
+  --bg-button-active-rgb: 231, 154, 137;
+  --bg-input-rgb: 231, 154, 137;
+  --bg-input-hover-rgb: 231, 154, 137;
+  --bg-context-rgb: 211, 116, 101;
+  --border-primary-rgb: 128, 125, 141;
+  --border-secondary-rgb: 128, 125, 141;
+  --border-input-rgb: 128, 125, 141;
+  --border-context-rgb: 211, 116, 101;
+  --text-primary-rgb: 245, 239, 232;
+  --text-secondary-rgb: 210, 202, 198;
+  --text-tertiary-rgb: 188, 179, 183;
+  --text-muted-rgb: 139, 133, 145;
+  --text-disabled-rgb: 99, 96, 108;
+  --scrollbar-track-rgb: 0, 0, 0;
+  --scrollbar-thumb-rgb: 211, 116, 101;
+  --scrollbar-thumb-hover-rgb: 235, 148, 130;
+  --select-option-bg: #26262f;
+  --select-option-color: #f5efe8;
+  --switch-active: #d37465;
+  --texture-image: linear-gradient(145deg, rgba(255, 255, 255, 0.08), transparent 42%, rgba(211, 116, 101, 0.08));
+  --texture-size: 100% 100%;
+  --texture-tile: 100%;
+  --texture-anim: none;
+  --skin-pattern: radial-gradient(ellipse at 12% 10%, rgba(255, 255, 255, 0.06), transparent 30%),
+    radial-gradient(ellipse at 90% 88%, rgba(211, 116, 101, 0.06), transparent 35%);
+  --skin-pattern-size: 100% 100%, 100% 100%;
+  --skin-app-radius: 24px;
+  --skin-control-radius: 14px;
+  --skin-card-radius: 16px;
+  --skin-panel-radius: 20px;
+  --skin-pill-radius: 999px;
+  --skin-font-family: 'Segoe UI Variable', 'Microsoft YaHei UI', 'Segoe UI', sans-serif;
+  --skin-header-fill: linear-gradient(145deg, rgba(54, 54, 65, 0.98), rgba(36, 36, 45, 0.96));
+  --skin-shadow: 10px 12px 30px rgba(7, 7, 11, 0.5), inset 0 1px 0 rgba(255, 255, 255, 0.08);
+  --neu-raised: 8px 8px 18px rgba(9, 9, 13, 0.72), -8px -8px 18px rgba(75, 74, 88, 0.3);
+  --neu-raised-small: 4px 4px 10px rgba(9, 9, 13, 0.64), -4px -4px 10px rgba(75, 74, 88, 0.26);
+  --neu-inset: inset 5px 5px 11px rgba(9, 9, 13, 0.62), inset -5px -5px 11px rgba(75, 74, 88, 0.24);
+  --neu-inset-accent: inset 5px 5px 11px rgba(9, 9, 13, 0.68), inset -5px -5px 11px rgba(75, 74, 88, 0.2);
+}
+
+.theme-card[data-theme-option="night-clay"] .theme-swatch {
+  background: radial-gradient(circle at 70% 25%, #d37465 0 18%, transparent 19%), #25252f;
+  box-shadow: 3px 3px 6px rgba(9, 9, 13, 0.6), -3px -3px 6px rgba(75, 74, 88, 0.36);
+}
+
+/* ============ 玻璃明亮 / 玻璃深色 ============ */
+[data-theme="glass-light"] {
+  --bg-primary-rgb: 245, 244, 241;
+  --bg-secondary-rgb: 255, 255, 255;
+  --bg-tertiary-rgb: 250, 250, 249;
+  --bg-hover-rgb: 48, 65, 84;
+  --bg-active-rgb: 48, 65, 84;
+  --bg-button-rgb: 255, 255, 255;
+  --bg-button-hover-rgb: 255, 255, 255;
+  --bg-button-active-rgb: 255, 255, 255;
+  --bg-input-rgb: 255, 255, 255;
+  --bg-input-hover-rgb: 255, 255, 255;
+  --bg-context-rgb: 72, 137, 224;
+  --border-primary-rgb: 255, 255, 255;
+  --border-secondary-rgb: 255, 255, 255;
+  --border-input-rgb: 255, 255, 255;
+  --border-context-rgb: 72, 137, 224;
+  --text-primary-rgb: 38, 45, 54;
+  --text-secondary-rgb: 61, 71, 82;
+  --text-tertiary-rgb: 82, 92, 103;
+  --text-muted-rgb: 112, 122, 132;
+  --text-disabled-rgb: 151, 159, 168;
+  --scrollbar-track-rgb: 48, 65, 84;
+  --scrollbar-thumb-rgb: 72, 137, 224;
+  --scrollbar-thumb-hover-rgb: 103, 161, 235;
+  --select-option-bg: #f7f7f5;
+  --select-option-color: #26303a;
+  --switch-active: #4889e0;
+  --texture-image: none;
+  --texture-size: auto;
+  --texture-tile: auto;
+  --texture-anim: none;
+  --skin-pattern: none;
+  --skin-pattern-size: auto;
+  --skin-app-radius: 16px;
+  --skin-control-radius: 10px;
+  --skin-card-radius: 12px;
+  --skin-panel-radius: 16px;
+  --skin-pill-radius: 999px;
+  --skin-font-family: 'Segoe UI Variable', 'Microsoft YaHei UI', 'Segoe UI', sans-serif;
+  --skin-header-fill: rgba(255, 255, 255, 0.34);
+  --skin-shadow: none;
+  --glass-surface: rgba(255, 255, 255, calc(0.05 + var(--opacity-bg, 0.92) * 0.25));
+  --glass-surface-strong: rgba(255, 255, 255, calc(0.08 + var(--opacity-bg, 0.92) * 0.413));
+  --glass-surface-soft: rgba(255, 255, 255, calc(0.02 + var(--opacity-bg, 0.92) * 0.13));
+  --glass-border: rgba(255, 255, 255, 0.58);
+  --glass-border-soft: rgba(255, 255, 255, 0.34);
+  --glass-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.72), 0 8px 26px rgba(56, 67, 82, 0.14);
+  --glass-blur: 22px;
+  --glass-saturate: 125%;
+}
+
+[data-theme="glass-dark"] {
+  --bg-primary-rgb: 20, 24, 31;
+  --bg-secondary-rgb: 33, 39, 48;
+  --bg-tertiary-rgb: 44, 51, 62;
+  --bg-hover-rgb: 255, 255, 255;
+  --bg-active-rgb: 255, 255, 255;
+  --bg-button-rgb: 255, 255, 255;
+  --bg-button-hover-rgb: 255, 255, 255;
+  --bg-button-active-rgb: 255, 255, 255;
+  --bg-input-rgb: 255, 255, 255;
+  --bg-input-hover-rgb: 255, 255, 255;
+  --bg-context-rgb: 111, 163, 241;
+  --border-primary-rgb: 255, 255, 255;
+  --border-secondary-rgb: 255, 255, 255;
+  --border-input-rgb: 255, 255, 255;
+  --border-context-rgb: 111, 163, 241;
+  --text-primary-rgb: 239, 242, 246;
+  --text-secondary-rgb: 204, 211, 220;
+  --text-tertiary-rgb: 180, 190, 201;
+  --text-muted-rgb: 135, 146, 160;
+  --text-disabled-rgb: 90, 101, 115;
+  --scrollbar-track-rgb: 0, 0, 0;
+  --scrollbar-thumb-rgb: 111, 163, 241;
+  --scrollbar-thumb-hover-rgb: 145, 187, 250;
+  --select-option-bg: #202731;
+  --select-option-color: #eff2f6;
+  --switch-active: #6fa3f1;
+  --texture-image: none;
+  --texture-size: auto;
+  --texture-tile: auto;
+  --texture-anim: none;
+  --skin-pattern: none;
+  --skin-pattern-size: auto;
+  --skin-app-radius: 16px;
+  --skin-control-radius: 10px;
+  --skin-card-radius: 12px;
+  --skin-panel-radius: 16px;
+  --skin-pill-radius: 999px;
+  --skin-font-family: 'Segoe UI Variable', 'Microsoft YaHei UI', 'Segoe UI', sans-serif;
+  --skin-header-fill: rgba(44, 51, 62, 0.5);
+  --skin-shadow: none;
+  --glass-surface: rgba(29, 34, 43, calc(0.12 + var(--opacity-bg, 0.92) * 0.348));
+  --glass-surface-strong: rgba(50, 58, 71, calc(0.16 + var(--opacity-bg, 0.92) * 0.478));
+  --glass-surface-soft: rgba(24, 29, 37, calc(0.05 + var(--opacity-bg, 0.92) * 0.25));
+  --glass-border: rgba(255, 255, 255, 0.2);
+  --glass-border-soft: rgba(255, 255, 255, 0.12);
+  --glass-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.16), 0 8px 26px rgba(0, 0, 0, 0.24);
+  --glass-blur: 24px;
+  --glass-saturate: 125%;
+}
+
+[data-theme="glass-light"] #app,
+[data-theme="glass-dark"] #app {
+  background: var(--glass-surface);
+  background-image: none;
+  border: 1px solid var(--glass-border);
+  -webkit-backdrop-filter: blur(var(--glass-blur)) saturate(var(--glass-saturate));
+  backdrop-filter: blur(var(--glass-blur)) saturate(var(--glass-saturate));
+}
+
+[data-theme="glass-light"] #app.has-bg,
+[data-theme="glass-dark"] #app.has-bg {
+  background: var(--glass-surface);
+  border-color: var(--glass-border);
+}
+
+[data-theme="glass-light"] .header,
+[data-theme="glass-dark"] .header {
+  background: var(--glass-surface-strong);
+  border: 1px solid var(--glass-border);
+  border-bottom-color: var(--glass-border);
+  box-shadow: var(--glass-shadow);
+  -webkit-backdrop-filter: blur(var(--glass-blur)) saturate(var(--glass-saturate));
+  backdrop-filter: blur(var(--glass-blur)) saturate(var(--glass-saturate));
+}
+
+[data-theme="glass-light"] .content,
+[data-theme="glass-dark"] .content {
+  background: var(--glass-surface-soft);
+  -webkit-backdrop-filter: blur(calc(var(--glass-blur) * 0.7)) saturate(var(--glass-saturate));
+  backdrop-filter: blur(calc(var(--glass-blur) * 0.7)) saturate(var(--glass-saturate));
+}
+
+[data-theme="glass-light"] .settings-panel,
+[data-theme="glass-dark"] .settings-panel,
+[data-theme="glass-light"] .groups-bar,
+[data-theme="glass-dark"] .groups-bar,
+[data-theme="glass-light"] .prompt-dialog,
+[data-theme="glass-dark"] .prompt-dialog,
+[data-theme="glass-light"] .folder-preview,
+[data-theme="glass-dark"] .folder-preview,
+[data-theme="glass-light"] .widget-item,
+[data-theme="glass-dark"] .widget-item,
+[data-theme="glass-light"] .selection-toolbar,
+[data-theme="glass-dark"] .selection-toolbar,
+[data-theme="glass-light"] .rule-item,
+[data-theme="glass-dark"] .rule-item,
+[data-theme="glass-light"] .group-return-bar,
+[data-theme="glass-dark"] .group-return-bar {
+  background: var(--glass-surface-strong);
+  border-color: var(--glass-border);
+  box-shadow: var(--glass-shadow);
+  -webkit-backdrop-filter: blur(var(--glass-blur)) saturate(var(--glass-saturate));
+  backdrop-filter: blur(var(--glass-blur)) saturate(var(--glass-saturate));
+}
+
+[data-theme="glass-light"] .groups-bar,
+[data-theme="glass-dark"] .groups-bar {
+  margin: 0 0 12px;
+  border-radius: var(--skin-panel-radius);
+}
+
+[data-theme="glass-light"] .search-bar,
+[data-theme="glass-dark"] .search-bar,
+[data-theme="glass-light"] .everything-bar,
+[data-theme="glass-dark"] .everything-bar,
+[data-theme="glass-light"] select,
+[data-theme="glass-dark"] select,
+[data-theme="glass-light"] .number-input,
+[data-theme="glass-dark"] .number-input,
+[data-theme="glass-light"] .shortcut-input,
+[data-theme="glass-dark"] .shortcut-input,
+[data-theme="glass-light"] .prompt-input,
+[data-theme="glass-dark"] .prompt-input {
+  background: var(--glass-surface-soft);
+  border-color: var(--glass-border-soft);
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.16);
+  -webkit-backdrop-filter: blur(calc(var(--glass-blur) * 0.7)) saturate(var(--glass-saturate));
+  backdrop-filter: blur(calc(var(--glass-blur) * 0.7)) saturate(var(--glass-saturate));
+}
+
+[data-theme="glass-light"] .icon-btn,
+[data-theme="glass-dark"] .icon-btn,
+[data-theme="glass-light"] .add-group-btn,
+[data-theme="glass-dark"] .add-group-btn,
+[data-theme="glass-light"] .group-tab,
+[data-theme="glass-dark"] .group-tab,
+[data-theme="glass-light"] .prompt-btn-cancel,
+[data-theme="glass-dark"] .prompt-btn-cancel,
+[data-theme="glass-light"] .sel-btn,
+[data-theme="glass-dark"] .sel-btn,
+[data-theme="glass-light"] .widget-cal-nav,
+[data-theme="glass-dark"] .widget-cal-nav,
+[data-theme="glass-light"] .theme-card,
+[data-theme="glass-dark"] .theme-card {
+  background: var(--glass-surface);
+  border-color: var(--glass-border-soft);
+  box-shadow: var(--glass-shadow);
+  -webkit-backdrop-filter: blur(calc(var(--glass-blur) * 0.7)) saturate(var(--glass-saturate));
+  backdrop-filter: blur(calc(var(--glass-blur) * 0.7)) saturate(var(--glass-saturate));
+}
+
+[data-theme="glass-light"] .icon-btn:hover,
+[data-theme="glass-dark"] .icon-btn:hover,
+[data-theme="glass-light"] .add-group-btn:hover,
+[data-theme="glass-dark"] .add-group-btn:hover,
+[data-theme="glass-light"] .group-tab:hover,
+[data-theme="glass-dark"] .group-tab:hover,
+[data-theme="glass-light"] .sel-btn:hover,
+[data-theme="glass-dark"] .sel-btn:hover,
+[data-theme="glass-light"] .widget-cal-nav:hover,
+[data-theme="glass-dark"] .widget-cal-nav:hover,
+[data-theme="glass-light"] .theme-card:hover,
+[data-theme="glass-dark"] .theme-card:hover {
+  background: var(--glass-surface-strong);
+  border-color: var(--glass-border);
+  box-shadow: var(--glass-shadow), 0 0 0 1px rgba(var(--border-context-rgb), 0.12);
+}
+
+[data-theme="glass-light"] .file-item,
+[data-theme="glass-dark"] .file-item,
+[data-theme="glass-light"] .group-folder,
+[data-theme="glass-dark"] .group-folder {
+  background: var(--glass-surface-soft);
+  border: 1px solid var(--glass-border-soft);
+  box-shadow: none;
+}
+
+[data-theme="glass-light"] .file-item:hover,
+[data-theme="glass-dark"] .file-item:hover,
+[data-theme="glass-light"] .group-folder:hover,
+[data-theme="glass-dark"] .group-folder:hover {
+  background: var(--glass-surface-strong);
+  border-color: var(--glass-border);
+  box-shadow: var(--glass-shadow);
+}
+
+[data-theme="glass-light"] .file-item.selected,
+[data-theme="glass-dark"] .file-item.selected,
+[data-theme="glass-light"] .file-item.multi-selected,
+[data-theme="glass-dark"] .file-item.multi-selected,
+[data-theme="glass-light"] .file-item.in-box-select,
+[data-theme="glass-dark"] .file-item.in-box-select,
+[data-theme="glass-light"] .group-folder.drop-target,
+[data-theme="glass-dark"] .group-folder.drop-target,
+[data-theme="glass-light"] .group-tab.active,
+[data-theme="glass-dark"] .group-tab.active,
+[data-theme="glass-light"] .theme-card.active,
+[data-theme="glass-dark"] .theme-card.active {
+  background: var(--bg-context);
+  border-color: var(--switch-active);
+  box-shadow: 0 0 0 1px rgba(var(--border-context-rgb), 0.28) inset;
+}
+
+[data-theme="glass-light"] .bg-layer img,
+[data-theme="glass-dark"] .bg-layer img {
+  filter: blur(var(--bg-blur, 24px)) saturate(1.06);
+}
+
+[data-theme="glass-light"] .bg-layer::after {
+  box-shadow: inset 0 0 32px rgba(255, 255, 255, 0.12);
+}
+
+[data-theme="glass-dark"] .bg-layer::after {
+  box-shadow: inset 0 0 32px rgba(0, 0, 0, 0.34);
+}
+
+.theme-card[data-theme-option="glass-light"] .theme-swatch {
+  background: linear-gradient(135deg, rgba(255, 255, 255, 0.88), rgba(174, 205, 231, 0.6));
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.9);
+}
+
+.theme-card[data-theme-option="glass-dark"] .theme-swatch {
+  background: linear-gradient(135deg, rgba(63, 75, 91, 0.94), rgba(18, 23, 30, 0.92));
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.24);
+}
+
+/* 性能优先：玻璃主题使用背景图单次模糊，避免每个控件重复实时重采样 */
+[data-theme="glass-light"] #app,
+[data-theme="glass-dark"] #app,
+[data-theme="glass-light"] #app *,
+[data-theme="glass-dark"] #app * {
+  -webkit-backdrop-filter: none !important;
+  backdrop-filter: none !important;
+}
+
 @media (prefers-reduced-motion: reduce) {
   [data-theme="obsidian"] .header::after {
     box-shadow: none;

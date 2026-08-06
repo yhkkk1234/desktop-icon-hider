@@ -74,6 +74,9 @@
             <option value="terminal" data-i18n="settings.themeTerminal">终端</option>
             <option value="sunset" data-i18n="settings.themeSunset">暮色</option>
             <option value="clay" data-i18n="settings.themeClay">柔光拟态</option>
+            <option value="night-clay" data-i18n="settings.themeNightClay">暗夜柔光</option>
+            <option value="glass-light" data-i18n="settings.themeGlassLight">玻璃明亮</option>
+            <option value="glass-dark" data-i18n="settings.themeGlassDark">玻璃深色</option>
             <option value="obsidian" data-i18n="settings.themeObsidian">黑曜机械</option>
           </select>
           <div id="theme-gallery" class="theme-gallery" role="group" aria-label="主题预览">
@@ -128,6 +131,18 @@
             <button type="button" class="theme-card" data-theme-option="clay" data-i18n-title="settings.themeClay" aria-pressed="false">
               <span class="theme-swatch" aria-hidden="true"></span>
               <span class="theme-card-label" data-i18n="settings.themeClay">柔光拟态</span>
+            </button>
+            <button type="button" class="theme-card" data-theme-option="night-clay" data-i18n-title="settings.themeNightClay" aria-pressed="false">
+              <span class="theme-swatch" aria-hidden="true"></span>
+              <span class="theme-card-label" data-i18n="settings.themeNightClay">暗夜柔光</span>
+            </button>
+            <button type="button" class="theme-card" data-theme-option="glass-light" data-i18n-title="settings.themeGlassLight" aria-pressed="false">
+              <span class="theme-swatch" aria-hidden="true"></span>
+              <span class="theme-card-label" data-i18n="settings.themeGlassLight">玻璃明亮</span>
+            </button>
+            <button type="button" class="theme-card" data-theme-option="glass-dark" data-i18n-title="settings.themeGlassDark" aria-pressed="false">
+              <span class="theme-swatch" aria-hidden="true"></span>
+              <span class="theme-card-label" data-i18n="settings.themeGlassDark">玻璃深色</span>
             </button>
             <button type="button" class="theme-card" data-theme-option="obsidian" data-i18n-title="settings.themeObsidian" aria-pressed="false">
               <span class="theme-swatch" aria-hidden="true"></span>
@@ -486,6 +501,7 @@
     <!-- 框选矩形 -->
     <div id="box-select" class="box-select" style="display: none;"></div>
   </div>
+
   <script src="i18n.js"></script>
   <script src="renderer.js"></script>
 </body>
