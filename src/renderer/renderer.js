@@ -380,7 +380,7 @@ document.addEventListener('DOMContentLoaded', () => {
   // 监听打开设置事件(从托盘)
   window.api.onOpenSettings(() => {
     settingsPanel.style.display = 'block';
-    settingsBtn.title = '隐藏设置';
+    settingsBtn.title = t('settings.hide');
   });
 
   // 监听全局快捷键触发的刷新 (Ctrl+Alt+R)
@@ -414,11 +414,11 @@ function updateCollapseState() {
   if (isCollapsed) {
     contentEl.style.display = 'none';
     toggleIcon.textContent = '▶';
-    toggleBtn.title = '展开';
+    toggleBtn.title = t('collapse.expand');
   } else {
     contentEl.style.display = 'block';
     toggleIcon.textContent = '▼';
-    toggleBtn.title = '折叠';
+    toggleBtn.title = t('collapse.collapse');
   }
   // 折叠时隐藏小组件层
   if (widgetsLayer) {
@@ -501,7 +501,7 @@ function handleQuit() {
 function handleToggleSettings() {
   const isVisible = settingsPanel.style.display !== 'none';
   settingsPanel.style.display = isVisible ? 'none' : 'block';
-  settingsBtn.title = isVisible ? '显示设置' : '隐藏设置';
+  settingsBtn.title = isVisible ? t('settings.show') : t('settings.hide');
 }
 
 // 主题切换
@@ -1122,7 +1122,10 @@ function pasteFiles() {
 async function deleteSelected(permanent) {
   const selected = getSelectedFiles();
   if (selected.length === 0) return;
-  if (!confirm(t('files.deleteConfirm', { n: selected.length }))) return;
+  const message = permanent
+    ? t('files.deleteConfirmPermanent', { n: selected.length })
+    : t('files.deleteConfirm', { n: selected.length });
+  if (!confirm(message)) return;
   let failed = false;
   for (const f of selected) {
     const result = await window.api.deleteFile(f.path, permanent);
@@ -1876,7 +1879,7 @@ function getTypeEmoji(file) {
 // 批量加入分组（自动命名：默认名时按首个文件类型命名）
 function addPathsToGroup(group, paths) {
   if (!group.paths) group.paths = [];
-  const isDefaultName = group.name === '新分组' || group.name === '';
+  const isDefaultName = group.name === t('group.newGroup') || group.name === '';
   if (isDefaultName && paths.length > 0) {
     const first = filesMap.get(paths[0]);
     const catName = getTypeCategoryName(first);
@@ -2090,7 +2093,7 @@ function renderGroups() {
     tab.innerHTML = `
       <span class="group-name">${escapeHtml(group.name)}</span>
       <span class="group-count">(${count})</span>
-      <button class="group-delete" title="删除分组">×</button>
+      <button class="group-delete" title="${t('group.delete')}">×</button>
     `;
 
     tab.addEventListener('click', (e) => {
@@ -2153,7 +2156,7 @@ function switchGroup(groupId) {
 }
 
 async function handleAddGroup() {
-  const name = await createInlineInput('新分组名称', '');
+  const name = await createInlineInput(t('group.newName'), '');
   if (name === null) return;
   const trimmed = name.trim();
   if (!trimmed) return;
@@ -2175,14 +2178,14 @@ async function handleAddGroup() {
 }
 
 const TYPE_CATEGORIES = [
-  { name: '文件夹', test: (f) => f.isDirectory },
-  { name: '文档', test: (f) => ['.txt', '.doc', '.docx', '.pdf', '.rtf', '.odt', '.wps'].includes(f.extension) },
-  { name: '图片', test: (f) => ['.jpg', '.jpeg', '.png', '.gif', '.bmp', '.webp', '.svg', '.ico', '.tiff'].includes(f.extension) },
-  { name: '视频', test: (f) => ['.mp4', '.avi', '.mkv', '.mov', '.wmv', '.flv', '.webm', '.m4v'].includes(f.extension) },
-  { name: '音频', test: (f) => ['.mp3', '.wav', '.flac', '.aac', '.ogg', '.wma', '.m4a'].includes(f.extension) },
-  { name: '压缩包', test: (f) => ['.zip', '.rar', '.7z', '.tar', '.gz', '.bz2'].includes(f.extension) },
-  { name: '程序', test: (f) => ['.exe', '.msi', '.bat', '.cmd', '.ps1', '.app'].includes(f.extension) },
-  { name: '代码', test: (f) => ['.js', '.ts', '.jsx', '.tsx', '.py', '.java', '.c', '.cpp', '.cs', '.html', '.css', '.json', '.xml', '.yaml', '.yml', '.go', '.rs', '.sh'].includes(f.extension) },
+  { name: t('category.folder'), test: (f) => f.isDirectory },
+  { name: t('category.docs'), test: (f) => ['.txt', '.doc', '.docx', '.pdf', '.rtf', '.odt', '.wps'].includes(f.extension) },
+  { name: t('category.image'), test: (f) => ['.jpg', '.jpeg', '.png', '.gif', '.bmp', '.webp', '.svg', '.ico', '.tiff'].includes(f.extension) },
+  { name: t('category.video'), test: (f) => ['.mp4', '.avi', '.mkv', '.mov', '.wmv', '.flv', '.webm', '.m4v'].includes(f.extension) },
+  { name: t('category.audio'), test: (f) => ['.mp3', '.wav', '.flac', '.aac', '.ogg', '.wma', '.m4a'].includes(f.extension) },
+  { name: t('category.archive'), test: (f) => ['.zip', '.rar', '.7z', '.tar', '.gz', '.bz2'].includes(f.extension) },
+  { name: t('category.app'), test: (f) => ['.exe', '.msi', '.bat', '.cmd', '.ps1', '.app'].includes(f.extension) },
+  { name: t('category.code'), test: (f) => ['.js', '.ts', '.jsx', '.tsx', '.py', '.java', '.c', '.cpp', '.cs', '.html', '.css', '.json', '.xml', '.yaml', '.yml', '.go', '.rs', '.sh'].includes(f.extension) },
 ];
 
 function handleAutoGroup() {
@@ -2208,7 +2211,7 @@ function handleAutoGroup() {
   }
 
   if (uncategorized.length > 0) {
-    categorized.set('其他', uncategorized);
+    categorized.set(t('category.other'), uncategorized);
   }
 
   if (categorized.size === 0) return;
@@ -2228,7 +2231,7 @@ function handleAutoGroup() {
   if (newGroups.length === 0) return;
 
   if (groups.length > 0) {
-    if (!confirm('将清除现有分组并按文件类型重新创建，是否继续？')) return;
+    if (!confirm(t('group.clearConfirm'))) return;
     groups = newGroups;
   } else {
     groups = newGroups;
@@ -2242,7 +2245,7 @@ function handleAutoGroup() {
 function handleDeleteGroup(groupId) {
   const group = groups.find(g => g.id === groupId);
   if (!group) return;
-  if (!confirm(`确定删除分组 "${group.name}" 吗？（不会删除文件本身）`)) return;
+  if (!confirm(t('group.deleteConfirm', { name: group.name }))) return;
 
   groups = groups.filter(g => g.id !== groupId);
   if (currentGroupId === groupId) currentGroupId = null;
@@ -2254,7 +2257,7 @@ function handleDeleteGroup(groupId) {
 async function handleRenameGroup(groupId) {
   const group = groups.find(g => g.id === groupId);
   if (!group) return;
-  const newName = await createInlineInput('重命名分组', group.name);
+  const newName = await createInlineInput(t('group.rename'), group.name);
   if (newName === null) return;
   const trimmed = newName.trim();
   if (!trimmed || trimmed === group.name) return;
@@ -2306,11 +2309,11 @@ function createInlineInput(title, defaultValue) {
 
     const confirmBtn = document.createElement('button');
     confirmBtn.className = 'prompt-btn prompt-btn-confirm';
-    confirmBtn.textContent = '确定';
+    confirmBtn.textContent = t('common.ok');
 
     const cancelBtn = document.createElement('button');
     cancelBtn.className = 'prompt-btn prompt-btn-cancel';
-    cancelBtn.textContent = '取消';
+    cancelBtn.textContent = t('common.cancel');
 
     btnRow.appendChild(confirmBtn);
     btnRow.appendChild(cancelBtn);
@@ -2436,7 +2439,7 @@ async function promptRuleEditor(existing) {
   const name = await createInlineInput(t('rule.name'), existing ? existing.name : '');
   if (name === null) return;
   const rule = existing || { id: 'r_' + Date.now() + '_' + Math.random().toString(36).slice(2, 8) };
-  rule.name = name.trim() || '未命名';
+  rule.name = name.trim() || t('rule.unnamed');
   const keywordsStr = await createInlineInput(t('rule.keywords'), (rule.keywords || []).join(', '));
   if (keywordsStr === null) return;
   const extStr = await createInlineInput(t('rule.extensions'), (rule.extensions || []).join(', '));
@@ -2807,7 +2810,8 @@ function updateClockNode(node) {
   if (timeEl) timeEl.textContent = `${hh}:${mm}:${ss}`;
   if (dateEl) {
     const weekdays = [t('widget.sun'), t('widget.mon'), t('widget.tue'), t('widget.wed'), t('widget.thu'), t('widget.fri'), t('widget.sat')];
-    dateEl.textContent = `${now.getFullYear()}年${now.getMonth() + 1}月${now.getDate()}日 ${weekdays[now.getDay()]}`;
+    const dateStr = t('widget.dateFormat', { y: now.getFullYear(), m: now.getMonth() + 1, d: now.getDate() });
+    dateEl.textContent = `${dateStr} ${weekdays[now.getDay()]}`;
   }
 }
 
@@ -2822,7 +2826,7 @@ function updateCalendarNode(node) {
   const today = (offset === 0) ? now.getDate() : -1;
 
   const titleEl = node.querySelector('.widget-cal-title');
-  if (titleEl) titleEl.textContent = `${y}年${m + 1}月`;
+  if (titleEl) titleEl.textContent = t('widget.monthTitle', { y, m: m + 1 });
 
   const grid = node.querySelector('.widget-cal-grid');
   if (!grid) return;
@@ -2852,9 +2856,10 @@ async function updateWeatherNode(node) {
   const body = node.querySelector('.widget-weather-body');
   if (!body) return;
 
-  // 改城市按钮（悬停显示）
+  // 改城市按钮（悬停显示），只绑定一次避免重复监听
   const editBtn = node.querySelector('.weather-edit-btn');
-  if (editBtn) {
+  if (editBtn && !editBtn.dataset.bound) {
+    editBtn.dataset.bound = 'true';
     editBtn.addEventListener('click', async (e) => {
       e.stopPropagation();
       await promptSetCity(node);

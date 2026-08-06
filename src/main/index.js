@@ -62,19 +62,36 @@ function getDesktopPath() {
   return path.join(process.env.USERPROFILE || '', 'Desktop');
 }
 
-// 获取公共桌面路径
+// 校验路径是否属于本应用的桌面管辖范围（用户桌面/公共桌面/系统虚拟文件夹），
+// 防止渲染进程通过 IPC 操作任意文件
+function isAllowedPath(filePath) {
+  if (!filePath || typeof filePath !== 'string') return false;
+  if (filePath.startsWith('::')) return true; // 系统虚拟文件夹（此电脑、回收站等），仅只读用途
+  const normalized = filePath.toLowerCase();
+  const userDesktop = getDesktopPath().toLowerCase();
+  if (userDesktop.endsWith('desktop') && normalized.startsWith(userDesktop + '\\')) return true;
+  const publicDesktop = getPublicDesktopPath().toLowerCase();
+  if (publicDesktop.endsWith('desktop') && normalized.startsWith(publicDesktop + '\\')) return true;
+  return false;
+}
+
+// 获取公共桌面路径（登录会话内不变，缓存避免每次刷新启动 PowerShell）
+let cachedPublicDesktopPath = null;
+
 function getPublicDesktopPath() {
+  if (cachedPublicDesktopPath !== null) return cachedPublicDesktopPath;
   try {
     // 使用 PowerShell 获取公共桌面路径
     const result = execSync(
       'powershell -Command "[Environment]::GetFolderPath(\'CommonDesktopDirectory\')"',
       { timeout: 5000, encoding: 'utf8' }
     );
-    return result.trim();
+    cachedPublicDesktopPath = result.trim();
   } catch (e) {
     // 回退到默认路径
-    return path.join(process.env.ProgramData || 'C:\\ProgramData', 'Desktop');
+    cachedPublicDesktopPath = path.join(process.env.ProgramData || 'C:\\ProgramData', 'Desktop');
   }
+  return cachedPublicDesktopPath;
 }
 
 // ============ 桌面文件自动监听 ============
@@ -156,18 +173,22 @@ foreach ($item in $folder.Items()) {
   $items += @{ name = $item.Name; isDirectory = [bool]$item.IsFolder; path = $p }
 }
 $items | ConvertTo-Json -Depth 2 -Compress`;
-    const tempFile = path.join(os.tmpdir(), 'temp-sysfolder.ps1');
+    const tempFile = path.join(os.tmpdir(), `temp-sysfolder-${process.pid}.ps1`);
     fs.writeFileSync(tempFile, psScript, 'utf8');
-    const result = execSync(
-      `powershell -NoProfile -ExecutionPolicy Bypass -File "${tempFile}"`,
-      {
-        timeout: 8000,
-        encoding: 'utf8',
-        maxBuffer: 1024 * 1024,
-        env: { ...process.env, DIH_SYS_PATH: displayPath }
-      }
-    );
-    try { fs.unlinkSync(tempFile); } catch (e) { /* 忽略 */ }
+    let result = null;
+    try {
+      result = execSync(
+        `powershell -NoProfile -ExecutionPolicy Bypass -File "${tempFile}"`,
+        {
+          timeout: 8000,
+          encoding: 'utf8',
+          maxBuffer: 1024 * 1024,
+          env: { ...process.env, DIH_SYS_PATH: displayPath }
+        }
+      );
+    } finally {
+      try { fs.unlinkSync(tempFile); } catch (e) { /* 忽略 */ }
+    }
     if (!result || result.trim() === 'null' || result.trim() === '') return [];
     const items = JSON.parse(result.trim());
     if (!Array.isArray(items)) return [];
@@ -241,8 +262,15 @@ async function pasteClipboard({ mode, paths, targetDir }) {
   if (!Array.isArray(paths) || paths.length === 0 || !targetDir) {
     return { success: false, error: '无效的粘贴参数' };
   }
+  if (!isAllowedPath(targetDir)) {
+    return { success: false, error: '目标目录不允许' };
+  }
   if (!fs.existsSync(targetDir)) {
     return { success: false, error: '目标目录不存在' };
+  }
+  // 源路径同样限制在桌面管辖范围，防止复制/移动任意文件
+  if (!paths.every(p => isAllowedPath(p))) {
+    return { success: false, error: '源路径不允许' };
   }
   const results = [];
   let anySuccess = false;
@@ -280,7 +308,16 @@ async function pasteClipboard({ mode, paths, targetDir }) {
 }
 
 // 获取系统图标（此电脑、回收站、网络等）
+// PowerShell COM 枚举开销大，缓存 30 秒避免每次刷新都启动进程
+let systemIconsCache = null;
+let systemIconsCacheTime = 0;
+const SYSTEM_ICONS_CACHE_TTL = 30 * 1000;
+
 function getSystemIcons() {
+  const now = Date.now();
+  if (systemIconsCache && (now - systemIconsCacheTime) < SYSTEM_ICONS_CACHE_TTL) {
+    return systemIconsCache;
+  }
   try {
     const psScript = `[Console]::OutputEncoding = [System.Text.Encoding]::UTF8
 $shell = New-Object -ComObject Shell.Application
@@ -296,15 +333,18 @@ foreach ($item in $desktop.Items()) {
 }
 $items | ConvertTo-Json -Depth 3`;
     
-    const tempFile = path.join(os.tmpdir(), 'temp-system-icons.ps1');
+    const tempFile = path.join(os.tmpdir(), `temp-system-icons-${process.pid}.ps1`);
     fs.writeFileSync(tempFile, psScript, 'utf8');
     
-    const result = execSync(
-      `powershell -ExecutionPolicy Bypass -File "${tempFile}"`,
-      { timeout: 10000, encoding: 'utf8', maxBuffer: 1024 * 1024 }
-    );
-    
-    try { fs.unlinkSync(tempFile); } catch (e) { /* 临时文件可能已被清理，忽略 */ }
+    let result = null;
+    try {
+      result = execSync(
+        `powershell -ExecutionPolicy Bypass -File "${tempFile}"`,
+        { timeout: 10000, encoding: 'utf8', maxBuffer: 1024 * 1024 }
+      );
+    } finally {
+      try { fs.unlinkSync(tempFile); } catch (e) { /* 临时文件可能已被清理，忽略 */ }
+    }
     
     if (!result || result.trim() === 'null') {
       return [];
@@ -327,6 +367,8 @@ $items | ConvertTo-Json -Depth 3`;
         });
       }
     }
+    systemIconsCache = resultItems;
+    systemIconsCacheTime = now;
     return resultItems;
   } catch (e) {
     console.error('获取系统图标失败:', e.message);
@@ -456,15 +498,17 @@ public class DesktopHelper {
 "@
 [DesktopHelper]::Hide()`;
     
-    const tempFile = path.join(os.tmpdir(), 'temp-hide.ps1');
+    const tempFile = path.join(os.tmpdir(), `temp-hide-${process.pid}.ps1`);
     fs.writeFileSync(tempFile, psScript, 'utf8');
     
-    execSync(`powershell -ExecutionPolicy Bypass -File "${tempFile}"`, { 
-      timeout: 10000,
-      encoding: 'utf8'
-    });
-    
-    try { fs.unlinkSync(tempFile); } catch (e) { /* 临时文件可能已被清理，忽略 */ }
+    try {
+      execSync(`powershell -ExecutionPolicy Bypass -File "${tempFile}"`, { 
+        timeout: 10000,
+        encoding: 'utf8'
+      });
+    } finally {
+      try { fs.unlinkSync(tempFile); } catch (e) { /* 临时文件可能已被清理，忽略 */ }
+    }
     return true;
   } catch (error) {
     console.error('隐藏桌面图标失败:', error.message);
@@ -499,15 +543,17 @@ public class DesktopHelper {
 "@
 [DesktopHelper]::Show()`;
     
-    const tempFile = path.join(os.tmpdir(), 'temp-show.ps1');
+    const tempFile = path.join(os.tmpdir(), `temp-show-${process.pid}.ps1`);
     fs.writeFileSync(tempFile, psScript, 'utf8');
     
-    execSync(`powershell -ExecutionPolicy Bypass -File "${tempFile}"`, { 
-      timeout: 10000,
-      encoding: 'utf8'
-    });
-    
-    try { fs.unlinkSync(tempFile); } catch (e) { /* 临时文件可能已被清理，忽略 */ }
+    try {
+      execSync(`powershell -ExecutionPolicy Bypass -File "${tempFile}"`, { 
+        timeout: 10000,
+        encoding: 'utf8'
+      });
+    } finally {
+      try { fs.unlinkSync(tempFile); } catch (e) { /* 临时文件可能已被清理，忽略 */ }
+    }
     return true;
   } catch (error) {
     console.error('显示桌面图标失败:', error.message);
@@ -657,7 +703,8 @@ ipcMain.handle('toggle-collapse', async (event, collapse) => {
   if (!mainWindow) return false;
   
   const bounds = mainWindow.getBounds();
-  store.set('isCollapsed', collapse);
+  mainWindow.isCollapsed = !!collapse;
+  store.set('isCollapsed', !!collapse);
   
   // 取消所有自动隐藏定时器
   if (mainWindow.autoHideState) {
@@ -715,11 +762,18 @@ ipcMain.handle('refresh-files', async () => {
   }
 });
 
-ipcMain.handle('open-file', (event, filePath) => {
-  shell.openPath(filePath);
+ipcMain.handle('open-file', async (event, filePath) => {
+  if (!isAllowedPath(filePath)) return { success: false, error: '路径不允许' };
+  try {
+    const errorMessage = await shell.openPath(filePath);
+    return { success: !errorMessage, error: errorMessage || null };
+  } catch (e) {
+    return { success: false, error: e.message };
+  }
 });
 
 ipcMain.handle('open-in-explorer', (event, filePath) => {
+  if (!isAllowedPath(filePath)) return false;
   try {
     shell.showItemInFolder(filePath);
     return true;
@@ -729,10 +783,12 @@ ipcMain.handle('open-in-explorer', (event, filePath) => {
 });
 
 ipcMain.handle('list-directory', async (event, dirPath) => {
+  if (!isAllowedPath(dirPath)) return [];
   return await listDirectory(dirPath);
 });
 
 ipcMain.handle('get-image-preview', async (event, filePath) => {
+  if (!isAllowedPath(filePath)) return null;
   return await getImagePreview(filePath);
 });
 
@@ -912,12 +968,22 @@ ipcMain.handle('set-shortcuts', async (event, shortcuts) => {
   try {
     if (!shortcuts || typeof shortcuts !== 'object') return false;
     const sanitized = {
-      toggleWindow: String(shortcuts.toggleWindow || 'CommandOrControl+Alt+D'),
-      refresh: String(shortcuts.refresh || 'CommandOrControl+Alt+R')
+      toggleWindow: String(shortcuts.toggleWindow || DEFAULT_SHORTCUTS.TOGGLE_WINDOW),
+      refresh: String(shortcuts.refresh || DEFAULT_SHORTCUTS.REFRESH)
     };
-    store.set('shortcuts', sanitized);
+    // 两个快捷键相同会导致其中一个注册失败
+    if (sanitized.toggleWindow === sanitized.refresh) return false;
+
     globalShortcut.unregisterAll();
-    registerGlobalShortcuts();
+    const reg1 = globalShortcut.register(sanitized.toggleWindow, handleGlobalToggleWindow);
+    const reg2 = globalShortcut.register(sanitized.refresh, handleGlobalRefresh);
+    if (!reg1 || !reg2) {
+      // 注册失败（非法/被占用）：恢复旧快捷键，不保存新配置
+      globalShortcut.unregisterAll();
+      registerGlobalShortcuts();
+      return false;
+    }
+    store.set('shortcuts', sanitized);
     return true;
   } catch (error) {
     return false;
@@ -1227,6 +1293,7 @@ ipcMain.handle('import-layout', async (event, importGroups) => {
 
 ipcMain.handle('rename-file', async (event, oldPath, newName) => {
   try {
+    if (!isAllowedPath(oldPath)) return { success: false, error: '路径不允许' };
     const dir = path.dirname(oldPath);
     const newPath = path.join(dir, newName);
     if (oldPath === newPath) return { success: true };
@@ -1244,6 +1311,7 @@ ipcMain.handle('rename-file', async (event, oldPath, newName) => {
 
 ipcMain.handle('delete-file', async (event, filePath, permanent) => {
   try {
+    if (!isAllowedPath(filePath)) return { success: false, error: '路径不允许' };
     if (permanent) {
       const stats = await fs.promises.stat(filePath);
       if (stats.isDirectory()) {
@@ -1268,6 +1336,7 @@ ipcMain.handle('move-window', (event, newX, newY) => {
 
 ipcMain.handle('get-file-icon', async (event, filePath) => {
   try {
+    if (!isAllowedPath(filePath)) return null;
     if (filePath && filePath.startsWith('::')) {
       return getSystemIconEmoji(filePath) || '\u{1F4C1}';
     }
@@ -1312,7 +1381,7 @@ ipcMain.handle('get-file-icons', async (event, files) => {
       return file;
     });
     
-    return await getFileIcons(validatedFiles);
+    return await getFileIcons(validatedFiles.filter(f => f.path && isAllowedPath(f.path)));
   } catch (error) {
     console.error('批量获取图标失败:', error);
     return {};
@@ -1332,8 +1401,14 @@ ipcMain.handle('clear-icon-cache', async () => {
 });
 
 // 主题功能的IPC处理
+const SUPPORTED_THEMES = new Set([
+  'dark', 'light', 'system', 'topo', 'ocean', 'forest', 'cream', 'sakura', 'mist', 'cyber', 'terminal', 'sunset',
+  'clay', 'night-clay', 'glass-light', 'glass-dark', 'obsidian'
+]);
+
 ipcMain.handle('set-theme', async (event, theme) => {
   try {
+    if (!SUPPORTED_THEMES.has(theme)) return false;
     store.set('theme', theme);
     return true;
   } catch (error) {
@@ -1349,7 +1424,8 @@ ipcMain.handle('get-theme', async () => {
 // 透明度功能的IPC处理
 ipcMain.handle('set-opacity', async (event, opacity) => {
   try {
-    store.set('opacity', opacity);
+    const value = Number.isFinite(opacity) ? Math.max(50, Math.min(100, Math.round(opacity))) : 92;
+    store.set('opacity', value);
     return true;
   } catch (error) {
     console.error('Error setting opacity:', error);
@@ -1364,7 +1440,8 @@ ipcMain.handle('get-opacity', async () => {
 // 图标大小功能的IPC处理
 ipcMain.handle('set-icon-size', async (event, size) => {
   try {
-    store.set('iconSize', size);
+    const value = Number.isFinite(size) ? Math.max(24, Math.min(96, Math.round(size))) : 40;
+    store.set('iconSize', value);
     return true;
   } catch (error) {
     console.error('Error setting icon size:', error);
@@ -1652,32 +1729,38 @@ const DEFAULT_SHORTCUTS = {
   REFRESH: 'CommandOrControl+Alt+R'
 };
 
+// 显示/隐藏窗口
+function handleGlobalToggleWindow() {
+  if (!mainWindow || mainWindow.isDestroyed()) return;
+  if (mainWindow.isVisible() && !mainWindow.isMinimized()) {
+    mainWindow.hide();
+  } else {
+    if (mainWindow.isMinimized()) mainWindow.restore();
+    mainWindow.show();
+    mainWindow.focus();
+  }
+}
+
+// 刷新文件列表
+function handleGlobalRefresh() {
+  if (mainWindow && !mainWindow.isDestroyed() && mainWindow.webContents) {
+    mainWindow.webContents.send('refresh-files');
+  }
+}
+
 function registerGlobalShortcuts() {
   const shortcuts = store.get('shortcuts', {});
   const toggleKey = shortcuts.toggleWindow || DEFAULT_SHORTCUTS.TOGGLE_WINDOW;
   const refreshKey = shortcuts.refresh || DEFAULT_SHORTCUTS.REFRESH;
 
   // 自定义快捷键：显示/隐藏窗口
-  const reg1 = globalShortcut.register(toggleKey, () => {
-    if (!mainWindow || mainWindow.isDestroyed()) return;
-    if (mainWindow.isVisible() && !mainWindow.isMinimized()) {
-      mainWindow.hide();
-    } else {
-      if (mainWindow.isMinimized()) mainWindow.restore();
-      mainWindow.show();
-      mainWindow.focus();
-    }
-  });
+  const reg1 = globalShortcut.register(toggleKey, handleGlobalToggleWindow);
   if (!reg1) {
     console.warn('全局快捷键注册失败:', toggleKey);
   }
 
   // 自定义快捷键：刷新文件列表
-  const reg2 = globalShortcut.register(refreshKey, () => {
-    if (mainWindow && !mainWindow.isDestroyed() && mainWindow.webContents) {
-      mainWindow.webContents.send('refresh-files');
-    }
-  });
+  const reg2 = globalShortcut.register(refreshKey, handleGlobalRefresh);
   if (!reg2) {
     console.warn('全局快捷键注册失败:', refreshKey);
   }

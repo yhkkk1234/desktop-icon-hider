@@ -34,6 +34,19 @@ let autoHideState = {
   mouseMonitorInterval: null
 };
 
+// 获取窗口所在的显示器（多显示器环境下吸附/隐藏/显示都应以窗口所在显示器为基准）
+function getDisplayForWindow(window) {
+  if (window && !window.isDestroyed()) {
+    try {
+      const bounds = window.getBounds();
+      if (bounds && Number.isFinite(bounds.x) && Number.isFinite(bounds.y)) {
+        return screen.getDisplayMatching(bounds);
+      }
+    } catch (e) { /* 窗口可能已销毁，忽略 */ }
+  }
+  return screen.getPrimaryDisplay();
+}
+
 function createMainWindow(store) {
   try {
     const primaryDisplay = screen.getPrimaryDisplay();
@@ -154,74 +167,14 @@ function createMainWindow(store) {
   }
 }
 
-function getDesktopCenterPosition() {
-  const primaryDisplay = screen.getPrimaryDisplay();
-  const { width } = primaryDisplay.workAreaSize;
-  
-  return {
-    x: (width - WINDOW_CONFIG.DEFAULT_WIDTH) / 2,
-    y: 0
-  };
-}
-
-function setWindowCollapsed(window, collapsed) {
-  if (!window) return false;
-  
-  try {
-    window.isCollapsed = collapsed;
-    
-    if (collapsed) {
-      const bounds = window.getBounds();
-      window.setBounds({
-        x: bounds.x,
-        y: bounds.y,
-        width: bounds.width,
-        height: WINDOW_CONFIG.HEADER_HEIGHT
-      });
-    } else {
-      const primaryDisplay = screen.getPrimaryDisplay();
-      const bounds = window.getBounds();
-      window.setBounds({
-        x: bounds.x,
-        y: bounds.y,
-        width: bounds.width,
-        height: primaryDisplay.workAreaSize.height
-      });
-    }
-    
-    // 折叠/展开时重置 isHidden 状态，避免逻辑混乱
-    if (window.autoHideState) {
-      window.autoHideState.isHidden = false;
-    }
-    
-    window.webContents.send('collapse-changed', { collapsed });
-    return true;
-    
-  } catch (error) {
-    return false;
-  }
-}
-
-function minimizeWindow(window) {
-  if (window) {
-    window.minimize();
-  }
-}
-
-function restoreWindow(window) {
-  if (window) {
-    window.restore();
-  }
-}
-
 // 边缘自动隐藏功能
 
 function snapToEdge(window, edge) {
   if (!window || edge === EDGE_TYPES.NONE) return;
   
   const bounds = window.getBounds();
-  const primaryDisplay = screen.getPrimaryDisplay();
-  const { width: screenWidth, height: screenHeight } = primaryDisplay.workAreaSize;
+  const display = getDisplayForWindow(window);
+  const { width: screenWidth, height: screenHeight } = display.workAreaSize;
   
   switch (edge) {
   case EDGE_TYPES.TOP:
@@ -246,8 +199,8 @@ function detectEdgeSnap(window, store) {
   if (!window || !window.autoHideState.enabled) return;
   
   const bounds = window.getBounds();
-  const primaryDisplay = screen.getPrimaryDisplay();
-  const { width: screenWidth, height: screenHeight } = primaryDisplay.workAreaSize;
+  const display = getDisplayForWindow(window);
+  const { width: screenWidth, height: screenHeight } = display.workAreaSize;
   
   let detectedEdge = EDGE_TYPES.NONE;
   
@@ -330,8 +283,8 @@ function hideWindow(window) {
   if (!window || !window.autoHideState.enabled || window.autoHideState.isHidden) return;
   
   const bounds = window.getBounds();
-  const primaryDisplay = screen.getPrimaryDisplay();
-  const { width: screenWidth, height: screenHeight } = primaryDisplay.workAreaSize;
+  const display = getDisplayForWindow(window);
+  const { width: screenWidth, height: screenHeight } = display.workAreaSize;
   
   let newBounds = { ...bounds };
   
@@ -364,8 +317,8 @@ function showWindow(window) {
   if (!window || !window.autoHideState.isHidden) return;
   
   const bounds = window.getBounds();
-  const primaryDisplay = screen.getPrimaryDisplay();
-  const { width: screenWidth, height: screenHeight } = primaryDisplay.workAreaSize;
+  const display = getDisplayForWindow(window);
+  const { width: screenWidth, height: screenHeight } = display.workAreaSize;
   
   let newBounds = { ...bounds };
   
@@ -534,8 +487,8 @@ function checkMousePosition(window) {
   try {
     const cursorPos = screen.getCursorScreenPoint();
     const bounds = window.getBounds();
-    const primaryDisplay = screen.getPrimaryDisplay();
-    const { width: screenWidth, height: screenHeight } = primaryDisplay.workAreaSize;
+    const display = getDisplayForWindow(window);
+    const { width: screenWidth, height: screenHeight } = display.workAreaSize;
     
     // 计算窗口正常显示时的位置
     let windowDisplayBounds = { ...bounds };
@@ -638,6 +591,10 @@ function setAutoHideEnabled(window, enabled, store) {
     if (enabled) {
       // 启用自动隐藏
       startAutoHide(window);
+      // 已配置边缘时主动吸附，避免隐藏时窗口从当前位置直接飞出屏幕
+      if (window.autoHideState.currentEdge !== EDGE_TYPES.NONE) {
+        snapToEdge(window, window.autoHideState.currentEdge);
+      }
       window.webContents.send('auto-hide-status', { enabled: true });
     } else {
       // 禁用自动隐藏
@@ -672,10 +629,6 @@ function getAutoHideStatus(window) {
 
 module.exports = {
   createMainWindow,
-  getDesktopCenterPosition,
-  setWindowCollapsed,
-  minimizeWindow,
-  restoreWindow,
   setAutoHideEnabled,
   getAutoHideStatus,
   WINDOW_CONFIG,

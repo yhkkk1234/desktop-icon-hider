@@ -52,14 +52,21 @@ async function loadIconCacheAsync() {
   }
 }
 
+let iconCacheSaveTimer = null;
+
 function saveIconCache() {
-  try {
-    if (cacheFile) {
-      fs.writeFileSync(cacheFile, JSON.stringify(Object.fromEntries(iconCache)), 'utf8');
+  // 防抖写盘：大量图标提取时避免频繁同步写入阻塞主进程
+  if (iconCacheSaveTimer) clearTimeout(iconCacheSaveTimer);
+  iconCacheSaveTimer = setTimeout(() => {
+    iconCacheSaveTimer = null;
+    try {
+      if (cacheFile) {
+        fs.writeFileSync(cacheFile, JSON.stringify(Object.fromEntries(iconCache)), 'utf8');
+      }
+    } catch (error) {
+      console.error('Failed to save icon cache:', error.message);
     }
-  } catch (error) {
-    console.error('Failed to save icon cache:', error.message);
-  }
+  }, 500);
 }
 
 async function extractFileIcon(filePath) {
@@ -177,12 +184,17 @@ async function extractFileIconsBatch(files) {
   if (iconExtractor) {
     try {
       const paths = files.map(f => f.path);
-      const batchResult = iconExtractor.extractIconsBatch(paths);
-      for (const [filePath, iconData] of Object.entries(batchResult)) {
-        if (iconData && iconData.length > 100) {
-          result[filePath] = iconData;
-          iconCache.set(filePath, iconData);
+      // 分批提取（每批 8 个后让出事件循环），避免一次同步提取大量图标阻塞主进程
+      const BATCH_SIZE = 8;
+      for (let i = 0; i < paths.length; i += BATCH_SIZE) {
+        const batchResult = iconExtractor.extractIconsBatch(paths.slice(i, i + BATCH_SIZE));
+        for (const [filePath, iconData] of Object.entries(batchResult)) {
+          if (iconData && iconData.length > 100) {
+            result[filePath] = iconData;
+            iconCache.set(filePath, iconData);
+          }
         }
+        await new Promise(resolve => setImmediate(resolve));
       }
     } catch (error) {
       console.error('Native batch icon extraction failed:', error.message);
@@ -204,6 +216,10 @@ async function extractFileIconsBatch(files) {
 }
 
 function clearIconCache() {
+  if (iconCacheSaveTimer) {
+    clearTimeout(iconCacheSaveTimer);
+    iconCacheSaveTimer = null;
+  }
   iconCache.clear();
   try {
     if (cacheFile && fs.existsSync(cacheFile)) {

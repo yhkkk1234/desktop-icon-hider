@@ -10,7 +10,6 @@ contextBridge.exposeInMainWorld('api', {
   moveWindow: (newX, newY) => ipcRenderer.invoke('move-window', newX, newY),
   getFileIcon: (filePath) => ipcRenderer.invoke('get-file-icon', filePath),
   getFileIcons: (files) => ipcRenderer.invoke('get-file-icons', files),
-  log: (...args) => ipcRenderer.invoke('log', ...args),
   onInitData: (callback) => ipcRenderer.on('init-data', (event, data) => callback(data)),
   
   // 主题功能API

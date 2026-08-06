@@ -3,6 +3,7 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data:; font-src 'self' data:; connect-src 'self' https://*.open-meteo.com;">
   <title>桌面图标分区</title>
   <link rel="stylesheet" href="styles.css">
 </head>
@@ -419,17 +420,17 @@
       <!-- 快捷键说明 -->
       <div class="settings-section">
         <h3 data-i18n="settings.about">快捷键说明</h3>
-        <div class="setting-item"><kbd>Ctrl + F</kbd><span class="setting-label">搜索文件</span></div>
-        <div class="setting-item"><kbd>Ctrl + Alt + D</kbd><span class="setting-label">显示/隐藏窗口</span></div>
-        <div class="setting-item"><kbd>Ctrl + Alt + R</kbd><span class="setting-label">刷新文件列表</span></div>
-        <div class="setting-item"><kbd>F2</kbd><span class="setting-label">重命名</span></div>
-        <div class="setting-item"><kbd>Del</kbd><span class="setting-label">移至回收站</span></div>
-        <div class="setting-item"><kbd>Shift + Del</kbd><span class="setting-label">永久删除</span></div>
-        <div class="setting-item"><kbd>F5</kbd><span class="setting-label">刷新</span></div>
-        <div class="setting-item"><kbd>Ctrl + A</kbd><span class="setting-label">全选</span></div>
-        <div class="setting-item"><kbd>Ctrl + C / X / V</kbd><span class="setting-label">复制 / 剪切 / 粘贴</span></div>
-        <div class="setting-item"><kbd>双击空白</kbd><span class="setting-label">隐藏/显示全部图标</span></div>
-        <div class="setting-description">
+        <div class="setting-item"><kbd>Ctrl + F</kbd><span class="setting-label" data-i18n="about.searchFiles">搜索文件</span></div>
+        <div class="setting-item"><kbd>Ctrl + Alt + D</kbd><span class="setting-label" data-i18n="about.toggleWindow">显示/隐藏窗口</span></div>
+        <div class="setting-item"><kbd>Ctrl + Alt + R</kbd><span class="setting-label" data-i18n="about.refreshFiles">刷新文件列表</span></div>
+        <div class="setting-item"><kbd>F2</kbd><span class="setting-label" data-i18n="about.rename">重命名</span></div>
+        <div class="setting-item"><kbd>Del</kbd><span class="setting-label" data-i18n="about.trash">移至回收站</span></div>
+        <div class="setting-item"><kbd>Shift + Del</kbd><span class="setting-label" data-i18n="about.deleteForever">永久删除</span></div>
+        <div class="setting-item"><kbd>F5</kbd><span class="setting-label" data-i18n="about.refresh">刷新</span></div>
+        <div class="setting-item"><kbd>Ctrl + A</kbd><span class="setting-label" data-i18n="about.selectAll">全选</span></div>
+        <div class="setting-item"><kbd>Ctrl + C / X / V</kbd><span class="setting-label" data-i18n="about.copyPaste">复制 / 剪切 / 粘贴</span></div>
+        <div class="setting-item"><kbd>双击空白</kbd><span class="setting-label" data-i18n="about.dblclick">隐藏/显示全部图标</span></div>
+        <div class="setting-description" data-i18n="about.globalNote">
           全局快捷键在任何应用下都可用，其他快捷键仅在窗口激活时有效。
         </div>
       </div>

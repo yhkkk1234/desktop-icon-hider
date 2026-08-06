@@ -110,19 +110,32 @@ std::string iconToPng(HICON hIcon) {
             h = bm.bmHeight / 2;
         }
     }
-    if (w == 0) { DestroyIcon(hIcon); return ""; }
+    if (w == 0) {
+        if (ii.hbmColor) DeleteObject(ii.hbmColor);
+        if (ii.hbmMask) DeleteObject(ii.hbmMask);
+        DestroyIcon(hIcon); 
+        return ""; 
+    }
     
     int size = (w > h) ? w : h;
     w = size;
     h = size;
     
     Bitmap* bmp = new Bitmap(w, h, PixelFormat32bppARGB);
-    if (!bmp || bmp->GetLastStatus() != Ok) { if (bmp) delete bmp; DestroyIcon(hIcon); return ""; }
+    if (!bmp || bmp->GetLastStatus() != Ok) {
+        if (bmp) delete bmp;
+        if (ii.hbmColor) DeleteObject(ii.hbmColor);
+        if (ii.hbmMask) DeleteObject(ii.hbmMask);
+        DestroyIcon(hIcon); 
+        return ""; 
+    }
     
     Graphics* graphics = Graphics::FromImage(bmp);
     if (!graphics || graphics->GetLastStatus() != Ok) { 
         if (graphics) delete graphics; 
         delete bmp; 
+        if (ii.hbmColor) DeleteObject(ii.hbmColor);
+        if (ii.hbmMask) DeleteObject(ii.hbmMask);
         DestroyIcon(hIcon); 
         return ""; 
     }
@@ -137,6 +150,9 @@ std::string iconToPng(HICON hIcon) {
     
     delete graphics;
     DestroyIcon(hIcon);
+    // GetIconInfoExW 返回的位图句柄必须释放，否则每个图标泄漏 2 个 GDI 对象
+    if (ii.hbmColor) DeleteObject(ii.hbmColor);
+    if (ii.hbmMask) DeleteObject(ii.hbmMask);
     
     CLSID pngClsid;
     UINT num = 0, sz = 0;
@@ -155,11 +171,12 @@ std::string iconToPng(HICON hIcon) {
     MemoryStream* ms = new MemoryStream();
     Status st = bmp->Save(ms, &pngClsid, NULL);
     delete bmp;
-    if (st != Ok) { delete ms; return ""; }
+    if (st != Ok) { ms->Release(); return ""; }
     
     const std::vector<BYTE>& d = ms->getData();
     std::string r = b64enc(d.data(), d.size());
-    delete ms;
+    // 用 Release() 而非裸 delete：Save 期间 GDI+ 可能持有引用，直接 delete 有二次释放风险
+    ms->Release();
     return r;
 }
 

@@ -7,16 +7,24 @@ directories:
   output: dist
   buildResources: build
 
+# 注意：electron-builder.yml 优先于 package.json 的 build 字段，
+# 因此所有打包配置必须在此维护（package.json 中不再保留 build 键）。
 files:
-  - src/**/*
-  - package.json
-  - binding.gyp
-  - !**/node_modules/**/{TEST,test,tests,__tests__}/**
-  - !**/node_modules/**/{README,readme}/**
-  - !**/node_modules/**/{LICENSE,license}/**
-  - !**/node_modules/**/{CONTRIBUTING,contributing}/**
-  - !**/node_modules/**/{CHANGELOG,changelog}/**
-  - !**/node_modules/**/{.github,.git}/**
+  - "src/**/*"
+  - "assets/**/*"
+  - "build/Release/*.node"
+  - "package.json"
+  - "binding.gyp"
+  - "!**/node_modules/**/{TEST,test,tests,__tests__}/**"
+  - "!**/node_modules/**/{README,readme}/**"
+  - "!**/node_modules/**/{LICENSE,license}/**"
+  - "!**/node_modules/**/{CONTRIBUTING,contributing}/**"
+  - "!**/node_modules/**/{CHANGELOG,changelog}/**"
+  - "!**/node_modules/**/{.github,.git}/**"
+
+# 原生模块必须从 asar 解包，否则 require 失败
+asarUnpack:
+  - build/Release/*.node
 
 npmRebuild: true
 buildDependenciesFromSource: true
@@ -26,11 +34,9 @@ win:
     - target: nsis
       arch:
         - x64
-        - ia32
     - target: portable
       arch:
         - x64
-  icon: build/icon.ico
   artifactName: ${productName}-${version}-${os}-${arch}.${ext}
   requestedExecutionLevel: asInvoker
 
@@ -51,6 +57,3 @@ publish:
   provider: github
   owner: your-username
   repo: desktop-icon-hider
-
-afterSign: build/afterSign.js
-afterPack: build/afterPack.js

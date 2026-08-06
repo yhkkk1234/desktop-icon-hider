@@ -9,6 +9,7 @@
     "build": "powershell -ExecutionPolicy Bypass -File build-native.ps1 && electron-builder",
     "build:win": "powershell -ExecutionPolicy Bypass -File build-native.ps1 && electron-builder --win",
     "rebuild-native": "node-gyp rebuild",
+    "postinstall": "node scripts/apply-patches.js",
     "lint": "eslint src/**/*.js",
     "test": "jest"
   },
@@ -33,35 +34,5 @@
   "dependencies": {
     "electron-auto-launch": "^5.0.7",
     "electron-store": "^8.2.0"
-  },
-  "build": {
-    "appId": "com.desktopiconhider.app",
-    "productName": "Desktop Icon Hider",
-    "directories": {
-      "output": "dist"
-    },
-    "files": [
-      "src/**/*",
-      "assets/**/*",
-      "build/Release/*.node",
-      "package.json"
-    ],
-    "asarUnpack": [
-      "build/Release/*.node"
-    ],
-    "win": {
-      "target": [
-        "nsis",
-        "portable"
-      ],
-      "icon": "build/icon.ico",
-      "signAndEditExecutable": false
-    },
-    "nsis": {
-      "oneClick": false,
-      "allowToChangeInstallationDirectory": true,
-      "createDesktopShortcut": true,
-      "createStartMenuShortcut": true
-    }
   }
 }
