@@ -34,6 +34,7 @@ let bgConfig = { enabled: false, blur: 24, dim: 45 }; // 自定义背景图片�
 let bgData = null; // 背景图片 data URL
 let widgets = []; // 小组件: [{ id, type: 'clock'|'calendar'|'weather', x, y }] 坐标为百分比
 let showWidgets = true; // 小组件显示开关
+let widgetsAvoidIcons = false; // 图标自动绕开小组件区域
 let widgetDrag = null; // 组件拖拽状态
 let widgetSaveTimer = null;
 let clockTimer = null;
@@ -66,7 +67,7 @@ let startupDelayInput, languageSelect;
 let shortcutToggleInput, shortcutRefreshInput;
 let exportLayoutBtn, importLayoutBtn, quitAppBtn;
 let groupModeSelect, groupsBar, thumbStyleSelect;
-let widgetsLayer, addWidgetBtn, widgetMenu, showWidgetsToggle;
+let widgetsLayer, addWidgetBtn, widgetMenu, showWidgetsToggle, widgetsAvoidToggle;
 let everythingBar, everythingInput, everythingGo, everythingToggle, everythingStatus, everythingDownloadBtn, everythingAdminWarn;
 let folderPreviewToggle;
 let bgLayer, bgImage, bgToggle, selectBgBtn, clearBgBtn, bgBlurSlider, bgBlurValue, bgDimSlider, bgDimValue;
@@ -133,6 +134,7 @@ document.addEventListener('DOMContentLoaded', () => {
   addWidgetBtn = document.getElementById('add-widget-btn');
   widgetMenu = document.getElementById('widget-menu');
   showWidgetsToggle = document.getElementById('show-widgets-toggle');
+  widgetsAvoidToggle = document.getElementById('widgets-avoid-toggle');
   everythingBar = document.getElementById('everything-bar');
   everythingInput = document.getElementById('everything-input');
   everythingGo = document.getElementById('everything-go');
@@ -224,6 +226,7 @@ document.addEventListener('DOMContentLoaded', () => {
     widgetMenu.style.display = 'none';
   });
   showWidgetsToggle.addEventListener('change', handleShowWidgetsToggle);
+  widgetsAvoidToggle.addEventListener('change', handleWidgetsAvoidToggle);
   document.addEventListener('click', (e) => {
     if (!e.target.closest('.widget-menu') && !e.target.closest('#add-widget-btn')) {
       widgetMenu.style.display = 'none';
@@ -232,6 +235,24 @@ document.addEventListener('DOMContentLoaded', () => {
   // 组件拖拽兜底：事件丢失/窗口失焦时清理拖拽状态，避免跟丢
   document.addEventListener('pointerup', handleWidgetDragEnd);
   window.addEventListener('blur', handleWidgetDragEnd);
+
+  // 图标列表内容变化时重新计算绕开布局
+  const listObserver = new MutationObserver(() => scheduleIconLayout());
+  listObserver.observe(filesList, { childList: true });
+
+  // 窗口大小变化时重新计算（组件为百分比定位，随窗口变化）
+  let resizeTimer = null;
+  window.addEventListener('resize', () => {
+    if (resizeTimer) clearTimeout(resizeTimer);
+    resizeTimer = setTimeout(scheduleIconLayout, 100);
+  });
+
+  // 滚动时图标动态绕开悬浮组件（组件 fixed 于视口，图标位于滚动容器内）
+  let scrollTimer = null;
+  contentEl.addEventListener('scroll', () => {
+    if (scrollTimer) clearTimeout(scrollTimer);
+    scrollTimer = setTimeout(scheduleIconLayout, 100);
+  });
 
   // 批量操作
   selOpenBtn.addEventListener('click', openSelected);
@@ -322,6 +343,7 @@ document.addEventListener('DOMContentLoaded', () => {
     bgData = typeof data.backgroundData === 'string' ? data.backgroundData : null;
     widgets = Array.isArray(data.widgets) ? data.widgets : [];
     showWidgets = data.showWidgets !== false;
+    widgetsAvoidIcons = !!data.widgetsAvoidIcons;
     weatherCity = data.weatherCity || null;
 
     setLanguage(data.language || 'zh-CN');
@@ -335,6 +357,7 @@ document.addEventListener('DOMContentLoaded', () => {
     updateGroupModeUI();
     updateWidgetsUI();
     renderWidgets();
+    updateWidgetsAvoidUI();
     updateIconsLockUI();
     updateStartupDelayUI();
     updateShortcutInputs();
@@ -381,6 +404,7 @@ document.addEventListener('DOMContentLoaded', () => {
   window.api.onOpenSettings(() => {
     settingsPanel.style.display = 'block';
     settingsBtn.title = t('settings.hide');
+    scheduleIconLayout();
   });
 
   // 监听全局快捷键触发的刷新 (Ctrl+Alt+R)
@@ -424,6 +448,7 @@ function updateCollapseState() {
   if (widgetsLayer) {
     widgetsLayer.style.display = (isCollapsed || !showWidgets) ? 'none' : 'block';
   }
+  scheduleIconLayout();
 }
 
 // ============ 图标可见性（双击空白切换） ============
@@ -502,6 +527,9 @@ function handleToggleSettings() {
   const isVisible = settingsPanel.style.display !== 'none';
   settingsPanel.style.display = isVisible ? 'none' : 'block';
   settingsBtn.title = isVisible ? t('settings.show') : t('settings.hide');
+  // 面板占据文档流高度，显隐都会改变 content 区域与组件的相对位置，
+  // 必须重排，否则关闭面板后组件会压住未避让的图标
+  scheduleIconLayout();
 }
 
 // 主题切换
@@ -614,6 +642,7 @@ function applyIconSize(size) {
   if (iconSizeValue) {
     iconSizeValue.textContent = size + 'px';
   }
+  scheduleIconLayout();
 }
 
 // Ctrl + 滚轮调整图标大小
@@ -1238,6 +1267,7 @@ function showSearchBar() {
   searchBar.style.display = 'flex';
   searchInput.focus();
   updateSearchCount();
+  scheduleIconLayout();
 }
 
 function hideSearchBar() {
@@ -1248,6 +1278,7 @@ function hideSearchBar() {
     searchInput.value = '';
     renderFiles();
   }
+  scheduleIconLayout();
 }
 
 function handleSearchInput(e) {
@@ -1581,11 +1612,13 @@ function renderFiles() {
 
   if (groupDisplayMode === 'folder') {
     renderFilesFolderMode();
+    layoutIconsAroundWidgets();
     return;
   }
 
   if (files.length === 0) {
     filesList.innerHTML = '<div class="empty">' + t('files.empty') + '</div>';
+    layoutIconsAroundWidgets();
     return;
   }
 
@@ -1597,10 +1630,130 @@ function renderFiles() {
 
   if (visibleFiles.length === 0 && searchQuery) {
     filesList.innerHTML = `<div class="empty">${t('files.noMatch')}</div>`;
+    layoutIconsAroundWidgets();
     return;
   }
 
   renderFileItems(visibleFiles);
+  // 渲染后同步重排，确保切换分组/模式后图标立即绕开组件（不依赖 rAF 时序）
+  layoutIconsAroundWidgets();
+}
+
+// ============ 图标绕开小组件自动排列 ============
+// 开启后图标改为绝对定位网格排列，自动跳过被小组件遮挡的单元格（类似手机桌面）
+let iconLayoutRaf = null;
+let iconLayoutObserver = null;
+
+function scheduleIconLayout() {
+  if (iconLayoutRaf) return;
+  iconLayoutRaf = requestAnimationFrame(() => {
+    iconLayoutRaf = null;
+    layoutIconsAroundWidgets();
+  });
+}
+
+function getWidgetBlockRects() {
+  const blocks = [];
+  if (!widgetsLayer || widgetsLayer.style.display === 'none') return blocks;
+  const MARGIN = 6;
+  const listRect = filesList.getBoundingClientRect();
+  const style = getComputedStyle(filesList);
+  const padLeft = parseFloat(style.paddingLeft) || 0;
+  const padTop = parseFloat(style.paddingTop) || 0;
+  for (const node of widgetsLayer.children) {
+    if (!(node instanceof HTMLElement) || node.style.display === 'none') continue;
+    const r = node.getBoundingClientRect();
+    blocks.push({
+      left: r.left - listRect.left - padLeft - MARGIN,
+      top: r.top - listRect.top - padTop - MARGIN,
+      right: r.right - listRect.left - padLeft + MARGIN,
+      bottom: r.bottom - listRect.top - padTop + MARGIN
+    });
+  }
+  return blocks;
+}
+
+function layoutIconsAroundWidgets() {
+  if (!filesList) return;
+  const active = widgetsAvoidIcons && showWidgets && !isCollapsed &&
+    contentEl.style.display !== 'none' && filesList.clientWidth > 0;
+
+  filesList.classList.toggle('widget-avoid', active);
+
+  const items = filesList.querySelectorAll('.file-item, .group-folder');
+  if (!active) {
+    filesList.style.height = '';
+    for (const item of items) {
+      item.style.left = '';
+      item.style.top = '';
+    }
+    return;
+  }
+  if (items.length === 0) {
+    filesList.style.height = '';
+    return;
+  }
+
+  const availW = filesList.clientWidth;
+  const colW = Math.max(74, iconSize + 34);
+  const rowH = Math.round(iconSize + 53);
+  const cols = Math.max(1, Math.floor(availW / colW));
+
+  const blocks = getWidgetBlockRects();
+
+  // 组视图返回条占用的起始高度
+  const returnBar = filesList.querySelector('.group-return-bar');
+  const startY = returnBar ? returnBar.offsetHeight + 6 : 0;
+
+  let col = 0;
+  let row = 0;
+  let maxSkip = cols * 2000 + 500; // 循环保护：异常场景下强制放置，避免死循环
+  for (const item of items) {
+    // 用整个单元格矩形（含图标与下方文件名）与组件区域做相交判定，
+    // 组件压到文件名也会触发避让
+    let covered = true;
+    while (covered && maxSkip-- > 0) {
+      const cellLeft = col * colW;
+      const cellTop = startY + row * rowH;
+      covered = blocks.some(b => cellLeft < b.right && cellLeft + colW > b.left &&
+        cellTop < b.bottom && cellTop + rowH > b.top);
+      if (covered) {
+        col++;
+        if (col >= cols) {
+          col = 0;
+          row++;
+        }
+      }
+    }
+    item.style.left = (col * colW) + 'px';
+    item.style.top = (startY + row * rowH) + 'px';
+    col++;
+    if (col >= cols) {
+      col = 0;
+      row++;
+    }
+  }
+
+  // 撑开容器高度，保证滚动条正常
+  filesList.style.height = (startY + (row + 1) * rowH) + 'px';
+}
+
+function updateWidgetsAvoidUI() {
+  if (widgetsAvoidToggle) widgetsAvoidToggle.checked = widgetsAvoidIcons;
+  // 监听组件尺寸变化（天气/日历加载后高度改变）时自动重排
+  if (!iconLayoutObserver) {
+    iconLayoutObserver = new ResizeObserver(() => scheduleIconLayout());
+  }
+  for (const node of widgetsLayer.children) {
+    if (node instanceof HTMLElement) iconLayoutObserver.observe(node);
+  }
+  layoutIconsAroundWidgets();
+}
+
+async function handleWidgetsAvoidToggle() {
+  widgetsAvoidIcons = widgetsAvoidToggle.checked;
+  await window.api.setWidgetsAvoidIcons(widgetsAvoidIcons);
+  updateWidgetsAvoidUI();
 }
 
 // diff 渲染图标列表（复用现有节点，仅更新变化项）
@@ -2688,7 +2841,10 @@ function renderWidgets() {
   }
   const newIds = new Set(widgets.map(w => w.id));
   for (const [id, node] of existing) {
-    if (!newIds.has(id)) node.remove();
+    if (!newIds.has(id)) {
+      if (iconLayoutObserver && node instanceof HTMLElement) iconLayoutObserver.unobserve(node);
+      node.remove();
+    }
   }
 
   for (const widget of widgets) {
@@ -2696,9 +2852,12 @@ function renderWidgets() {
     if (!node) {
       node = createWidgetElement(widget);
       widgetsLayer.appendChild(node);
+      if (iconLayoutObserver) iconLayoutObserver.observe(node);
     }
     syncWidgetElement(node, widget);
   }
+
+  scheduleIconLayout();
 
   // 时钟组件定时更新
   if (clockTimer) {
@@ -2855,6 +3014,7 @@ function handleWidgetDragMove(e) {
     node.style.top = widgetDrag.widget.y + '%';
   }
   saveWidgets();
+  scheduleIconLayout();
 }
 
 function handleWidgetDragEnd() {
@@ -3008,6 +3168,7 @@ function updateEverythingUI() {
     everythingStatus.className = 'status-disabled';
     everythingDownloadBtn.style.display = everythingEnabled ? 'inline-block' : 'none';
   }
+  scheduleIconLayout();
   // 管理员模式警告
   if (everythingAdminWarn) {
     everythingAdminWarn.style.display = (everythingInstalled && everythingRunAsAdmin) ? 'block' : 'none';

@@ -43,6 +43,7 @@ contextBridge.exposeInMainWorld('api', {
   // 小组件
   setWidgets: (widgets) => ipcRenderer.invoke('set-widgets', widgets),
   setShowWidgets: (enabled) => ipcRenderer.invoke('set-show-widgets', enabled),
+  setWidgetsAvoidIcons: (enabled) => ipcRenderer.invoke('set-widgets-avoid', enabled),
   
   // 天气组件
   searchCity: (name) => ipcRenderer.invoke('search-city', name),

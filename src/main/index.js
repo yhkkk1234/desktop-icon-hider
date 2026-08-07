@@ -46,6 +46,7 @@ const store = new Store({
     },
     widgets: [],
     showWidgets: true,
+    widgetsAvoidIcons: false,
     weatherCity: null, // { name, lat, lon }
     shortcuts: {
       toggleWindow: 'CommandOrControl+Alt+D',
@@ -596,6 +597,7 @@ function createWindow() {
           backgroundData: await getBackgroundData(),
           widgets: store.get('widgets', []),
           showWidgets: store.get('showWidgets', true),
+          widgetsAvoidIcons: store.get('widgetsAvoidIcons', false),
           weatherCity: store.get('weatherCity', null)
         });
       } catch (error) {
@@ -627,6 +629,7 @@ function createWindow() {
           backgroundData: null,
           widgets: store.get('widgets', []),
           showWidgets: store.get('showWidgets', true),
+          widgetsAvoidIcons: store.get('widgetsAvoidIcons', false),
           weatherCity: store.get('weatherCity', null)
         });
       }
@@ -832,6 +835,11 @@ ipcMain.handle('set-widgets', async (event, widgets) => {
 
 ipcMain.handle('set-show-widgets', async (event, enabled) => {
   store.set('showWidgets', !!enabled);
+  return true;
+});
+
+ipcMain.handle('set-widgets-avoid', async (event, enabled) => {
+  store.set('widgetsAvoidIcons', !!enabled);
   return true;
 });
 

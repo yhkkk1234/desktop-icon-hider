@@ -686,6 +686,26 @@ kbd {
   justify-content: start;
 }
 
+/* 图标绕开小组件模式：改为 JS 驱动的绝对定位网格（跳过组件遮挡区域） */
+.files-list.widget-avoid {
+  display: block;
+  position: relative;
+}
+
+.files-list.widget-avoid .file-item,
+.files-list.widget-avoid .group-folder {
+  position: absolute;
+  left: 0;
+  top: 0;
+  width: 70px;
+  margin: 0;
+}
+
+.files-list.widget-avoid .group-return-bar {
+  position: relative;
+  grid-column: auto;
+}
+
 .file-item {
   display: flex;
   flex-direction: column;
