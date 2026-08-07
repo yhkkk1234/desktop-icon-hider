@@ -42,6 +42,7 @@ let calendarTimer = null;
 let weatherTimer = null;
 let monitorTimer = null; // 性能监控组件刷新定时器
 let monitorHistory = new Map(); // 组件历史数据: id -> { cpu: [], mem: [], gpu: [], vram: [] }
+let weatherFxEnabled = true; // 天气组件动态背景开关
 let weatherCity = null; // 天气城市配置 { name, lat, lon }
 
 // 多选
@@ -69,7 +70,7 @@ let startupDelayInput, languageSelect;
 let shortcutToggleInput, shortcutRefreshInput;
 let exportLayoutBtn, importLayoutBtn, quitAppBtn;
 let groupModeSelect, groupsBar, thumbStyleSelect;
-let widgetsLayer, addWidgetBtn, widgetMenu, showWidgetsToggle, widgetsAvoidToggle;
+let widgetsLayer, addWidgetBtn, widgetMenu, showWidgetsToggle, widgetsAvoidToggle, weatherFxToggle;
 let everythingBar, everythingInput, everythingGo, everythingToggle, everythingStatus, everythingDownloadBtn, everythingAdminWarn;
 let folderPreviewToggle;
 let bgLayer, bgImage, bgToggle, selectBgBtn, clearBgBtn, bgBlurSlider, bgBlurValue, bgDimSlider, bgDimValue;
@@ -137,6 +138,7 @@ document.addEventListener('DOMContentLoaded', () => {
   widgetMenu = document.getElementById('widget-menu');
   showWidgetsToggle = document.getElementById('show-widgets-toggle');
   widgetsAvoidToggle = document.getElementById('widgets-avoid-toggle');
+  weatherFxToggle = document.getElementById('weather-fx-toggle');
   everythingBar = document.getElementById('everything-bar');
   everythingInput = document.getElementById('everything-input');
   everythingGo = document.getElementById('everything-go');
@@ -229,6 +231,7 @@ document.addEventListener('DOMContentLoaded', () => {
   });
   showWidgetsToggle.addEventListener('change', handleShowWidgetsToggle);
   widgetsAvoidToggle.addEventListener('change', handleWidgetsAvoidToggle);
+  weatherFxToggle.addEventListener('change', handleWeatherFxToggle);
   document.addEventListener('click', (e) => {
     if (!e.target.closest('.widget-menu') && !e.target.closest('#add-widget-btn')) {
       widgetMenu.style.display = 'none';
@@ -346,6 +349,7 @@ document.addEventListener('DOMContentLoaded', () => {
     widgets = Array.isArray(data.widgets) ? data.widgets : [];
     showWidgets = data.showWidgets !== false;
     widgetsAvoidIcons = !!data.widgetsAvoidIcons;
+    weatherFxEnabled = data.weatherFxEnabled !== false;
     weatherCity = data.weatherCity || null;
 
     setLanguage(data.language || 'zh-CN');
@@ -360,6 +364,7 @@ document.addEventListener('DOMContentLoaded', () => {
     updateWidgetsUI();
     renderWidgets();
     updateWidgetsAvoidUI();
+    updateWeatherFxUI();
     updateIconsLockUI();
     updateStartupDelayUI();
     updateShortcutInputs();
@@ -3374,6 +3379,23 @@ async function updateWeatherNode(node) {
   const result = await window.api.getWeather();
   if (!node.isConnected) return; // 组件已被删除
   if (result && result.success) {
+    // 动态背景层（纯 CSS 动画；天气类型变化时才重建粒子，避免刷新闪烁）
+    const fxPlan = weatherFxForCode(result.code);
+    let fx = node.querySelector('.weather-fx');
+    if (weatherFxEnabled && fxPlan.kind !== 'none') {
+      if (!fx) {
+        fx = document.createElement('div');
+        fx.className = 'weather-fx';
+        fx.dataset.kind = '';
+        node.prepend(fx);
+      }
+      if (fx.dataset.kind !== fxPlan.kind) {
+        fx.dataset.kind = fxPlan.kind;
+        fx.innerHTML = buildWeatherFx(fxPlan);
+      }
+    } else if (fx) {
+      fx.remove();
+    }
     const todayLine = (result.todayMax !== null && result.todayMin !== null)
       ? `<div class="weather-today">${t('widget.today')} ↑${result.todayMax}° ↓${result.todayMin}°</div>`
       : '';
@@ -3397,6 +3419,138 @@ async function updateWeatherNode(node) {
       <button class="weather-config-btn">${t('widget.weatherRetry')}</button>
     `;
     body.querySelector('.weather-config-btn').addEventListener('click', () => updateWeatherNode(node));
+  }
+}
+
+// ============ 天气组件动态背景 ============
+// WMO 天气码 → 动效方案 { kind, intensity }。纯 CSS transform/opacity 动画（GPU 合成），
+// 粒子仅在生成时创建一次 DOM，动画期间主线程零参与，性能开销极小。
+function weatherFxForCode(code) {
+  const c = Number(code);
+  if (c === 0) return { kind: 'none', intensity: 0 }; // 晴
+  if (c === 1) return { kind: 'clouds', intensity: 1 }; // 基本晴朗：少量淡云
+  if (c === 2) return { kind: 'clouds', intensity: 2 }; // 多云
+  if (c === 3) return { kind: 'clouds', intensity: 3 }; // 阴：云多且暗
+  if (c === 45 || c === 48) return { kind: 'fog', intensity: 1 }; // 雾
+  if (c >= 51 && c <= 57) return { kind: 'drizzle', intensity: 1 }; // 毛毛雨
+  if (c === 61 || c === 66) return { kind: 'rain', intensity: 1 }; // 小雨 / 冻雨
+  if (c === 63 || c === 80 || c === 81 || c === 67) return { kind: 'rain', intensity: 2 }; // 中雨 / 阵雨 / 冻雨
+  if (c === 65 || c === 82) return { kind: 'rain', intensity: 3 }; // 大雨 / 暴雨
+  if (c === 71 || c === 77) return { kind: 'snow', intensity: 1 }; // 小雪 / 米雪
+  if (c === 73 || c === 85) return { kind: 'snow', intensity: 2 }; // 中雪 / 阵雪
+  if (c === 75 || c === 86) return { kind: 'snow', intensity: 3 }; // 大雪 / 强阵雪
+  if (c === 95) return { kind: 'thunder', intensity: 3 }; // 雷暴
+  if (c === 96 || c === 99) return { kind: 'thunder', intensity: 3 }; // 雷暴冰雹
+  return { kind: 'none', intensity: 0 };
+}
+
+const WEATHER_FX_PARTICLES = {
+  drizzle: { count: 22, speed: [1.1, 1.6], size: [5, 8] },
+  rain: { count: [30, 55, 85], speed: [0.7, 1.05], size: [7, 12] }, // 按强度 1-3
+  snow: { count: [18, 32, 50], speed: [3.2, 4.6], size: [4, 6] },
+  thunder: { count: 85, speed: [0.55, 0.85], size: [9, 13] }
+};
+
+function buildWeatherFx(plan) {
+  if (!plan || plan.kind === 'none') {
+    return '';
+  }
+  const parts = [];
+
+  // 云（多云 / 阴 / 毛毛雨 / 雨 / 雪 / 雷暴都叠加云层，营造天空氛围）
+  // 三峰饱满云形（单 path 单层填充，无半透明叠加加深）
+  const cloudCount = plan.kind === 'clouds' ? plan.intensity + 1 : 2;
+  for (let i = 0; i < cloudCount; i++) {
+    const scale = 0.7 + Math.random() * 0.9;
+    const dur = 22 + Math.random() * 26;
+    const delay = -Math.random() * dur;
+    const top = 6 + Math.random() * 55;
+    const opacity = (plan.kind === 'clouds' && plan.intensity >= 3 ? 0.75 : 0.5) * (0.6 + Math.random() * 0.4);
+    parts.push(`<div class="wf-cloud" style="--ws:${scale.toFixed(2)}; top:${top}%; opacity:${opacity.toFixed(2)}; animation-duration:${dur.toFixed(1)}s; animation-delay:${delay.toFixed(1)}s;">
+      <svg viewBox="3 8.5 20.5 9" aria-hidden="true">
+        <path d="M3 17.5C3 14.1 5.5 12.3 9 12.3C9.5 10 11.5 8.5 14.5 8.5C18 8.5 20.5 10.4 20.5 12.6C22.5 13 23.5 14.5 23.5 16.4C23.5 17.1 23 17.5 22 17.5Z"></path>
+      </svg>
+    </div>`);
+  }
+
+  // 雾带
+  if (plan.kind === 'fog') {
+    for (let i = 0; i < 3; i++) {
+      const dur = 18 + Math.random() * 14;
+      const delay = -Math.random() * dur;
+      const top = 30 + i * 18 + Math.random() * 10;
+      parts.push(`<div class="wf-fog" style="top:${top}%; opacity:${(0.25 + Math.random() * 0.2).toFixed(2)}; animation-duration:${dur.toFixed(1)}s; animation-delay:${delay.toFixed(1)}s;"></div>`);
+    }
+  }
+
+  // 雨滴 / 毛毛雨
+  if (plan.kind === 'rain' || plan.kind === 'drizzle' || plan.kind === 'thunder') {
+    const cfg = plan.kind === 'drizzle'
+      ? WEATHER_FX_PARTICLES.drizzle
+      : plan.kind === 'thunder'
+        ? WEATHER_FX_PARTICLES.thunder
+        : {
+          count: WEATHER_FX_PARTICLES.rain.count[plan.intensity - 1],
+          speed: WEATHER_FX_PARTICLES.rain.speed,
+          size: WEATHER_FX_PARTICLES.rain.size
+        };
+    const count = cfg.count;
+    for (let i = 0; i < count; i++) {
+      const left = Math.random() * 100;
+      const dur = (cfg.speed[0] + Math.random() * (cfg.speed[1] - cfg.speed[0])).toFixed(2);
+      const delay = -Math.random() * parseFloat(dur);
+      const size = Math.round(cfg.size[0] + Math.random() * (cfg.size[1] - cfg.size[0]));
+      parts.push(`<div class="wf-drop" style="left:${left.toFixed(1)}%; height:${size}px; animation-duration:${dur}s; animation-delay:${delay.toFixed(2)}s;"></div>`);
+    }
+  }
+
+  // 雪花
+  if (plan.kind === 'snow') {
+    const cfg = {
+      count: WEATHER_FX_PARTICLES.snow.count[plan.intensity - 1],
+      speed: WEATHER_FX_PARTICLES.snow.speed,
+      size: WEATHER_FX_PARTICLES.snow.size
+    };
+    for (let i = 0; i < cfg.count; i++) {
+      const left = Math.random() * 100;
+      const dur = (cfg.speed[0] + Math.random() * (cfg.speed[1] - cfg.speed[0])).toFixed(2);
+      const delay = -Math.random() * parseFloat(dur);
+      const sway = 2.2 + Math.random() * 2.2;
+      const swayDelay = -Math.random() * sway;
+      const size = Math.round(cfg.size[0] + Math.random() * (cfg.size[1] - cfg.size[0]));
+      parts.push(`<div class="wf-flake" style="left:${left.toFixed(1)}%; width:${size}px; height:${size}px; animation-duration:${dur}s, ${sway.toFixed(2)}s; animation-delay:${delay.toFixed(2)}s, ${swayDelay.toFixed(2)}s;"></div>`);
+    }
+  }
+
+  // 闪电（雷暴）
+  if (plan.kind === 'thunder') {
+    for (let i = 0; i < 3; i++) {
+      const delay = 0.5 + Math.random() * 5;
+      const left = 15 + Math.random() * 70;
+      const scale = 0.7 + Math.random() * 0.8;
+      parts.push(`<div class="wf-bolt" style="left:${left.toFixed(1)}%; animation-delay:${delay.toFixed(2)}s; transform: scale(${scale.toFixed(2)});">
+        <svg viewBox="0 0 20 40" aria-hidden="true">
+          <polygon points="12,0 3,22 8,22 6,40 17,16 11,16 15,0"></polygon>
+        </svg>
+      </div>`);
+    }
+  }
+
+  return parts.join('');
+}
+
+function updateWeatherFxUI() {
+  if (weatherFxToggle) weatherFxToggle.checked = weatherFxEnabled;
+}
+
+async function handleWeatherFxToggle() {
+  weatherFxEnabled = weatherFxToggle.checked;
+  await window.api.setWeatherFxEnabled(weatherFxEnabled);
+  // 重新渲染所有天气组件以应用/移除动效
+  for (const w of widgets) {
+    if (w.type !== 'weather') continue;
+    const node = widgetsLayer.querySelector(`[data-widget-id="${CSS.escape(w.id)}"]`);
+    if (node) updateWeatherNode(node);
   }
 }
 

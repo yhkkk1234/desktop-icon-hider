@@ -2118,6 +2118,196 @@ body.icons-locked .file-item.draggable:active {
   color: var(--text-primary);
 }
 
+/* ============ 天气组件动态背景 ============ */
+/* 纯 transform/opacity 动画（GPU 合成），粒子生成后主线程零参与 */
+/* 注意：.widget-weather 与 .widget-item 是同一元素（已 absolute 定位），
+   不能再设 position，否则会覆盖组件定位导致横向占满 */
+
+.widget-weather-body {
+  position: relative;
+  z-index: 1;
+}
+
+/* 内容层（z-index:1）会盖住默认层级的按钮，需把按钮提到内容层之上 */
+.widget-weather .widget-close,
+.widget-weather .weather-edit-btn {
+  z-index: 2;
+}
+
+.weather-fx {
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  border-radius: inherit;
+  overflow: hidden;
+  z-index: 0;
+  pointer-events: none;
+}
+
+/* 云朵：三峰扁云形（48x21 与 viewBox 3 8.5 20.5 9 等比），--ws 控制缩放，translateX 循环滚动 */
+.wf-cloud {
+  position: absolute;
+  left: -70px;
+  width: 48px;
+  height: 21px;
+  --ws: 1;
+  animation: wf-drift linear infinite;
+  will-change: transform;
+}
+
+.wf-cloud svg {
+  width: 100%;
+  height: 100%;
+  display: block;
+  fill: var(--text-tertiary);
+}
+
+@keyframes wf-drift {
+  from {
+    transform: translateX(0) scale(var(--ws, 1));
+  }
+  to {
+    transform: translateX(280px) scale(var(--ws, 1));
+  }
+}
+
+/* 雾带：渐变模拟模糊，避免每帧 filter 重绘 */
+.wf-fog {
+  position: absolute;
+  left: -60%;
+  width: 220%;
+  height: 20px;
+  border-radius: 50%;
+  background: linear-gradient(90deg, transparent, var(--text-tertiary), transparent);
+  animation: wf-fog-drift linear infinite alternate;
+  will-change: transform;
+}
+
+@keyframes wf-fog-drift {
+  from {
+    transform: translateX(-30%);
+  }
+  to {
+    transform: translateX(30%);
+  }
+}
+
+/* 雨滴：细渐变竖条，无阴影避免昂贵绘制 */
+.wf-drop {
+  position: absolute;
+  top: -16px;
+  width: 1.5px;
+  background: linear-gradient(180deg, transparent, var(--text-tertiary));
+  border-radius: 1px;
+  animation: wf-fall linear infinite;
+  will-change: transform, opacity;
+}
+
+@keyframes wf-fall {
+  0% {
+    transform: translateY(0);
+    opacity: 0;
+  }
+  12% {
+    opacity: 1;
+  }
+  88% {
+    opacity: 1;
+  }
+  100% {
+    transform: translateY(200px);
+    opacity: 0;
+  }
+}
+
+/* 雪花：下落 + 左右摇摆（摇摆用独立 rotate 属性，避免与 translateY 冲突、避免布局抖动） */
+.wf-flake {
+  position: absolute;
+  top: -10px;
+  border-radius: 50%;
+  background: var(--text-tertiary);
+  animation: wf-snow linear infinite, wf-sway ease-in-out infinite;
+  will-change: transform, opacity;
+}
+
+@keyframes wf-snow {
+  0% {
+    transform: translateY(0);
+    opacity: 0;
+  }
+  10% {
+    opacity: 1;
+  }
+  90% {
+    opacity: 1;
+  }
+  100% {
+    transform: translateY(210px);
+    opacity: 0;
+  }
+}
+
+@keyframes wf-sway {
+  0%,
+  100% {
+    rotate: -12deg;
+  }
+  50% {
+    rotate: 12deg;
+  }
+}
+
+/* 闪电：闪烁动画，3 个以内开销可忽略 */
+.wf-bolt {
+  position: absolute;
+  top: 6px;
+  width: 14px;
+  opacity: 0;
+  animation: wf-flash 6s linear infinite;
+  pointer-events: none;
+}
+
+.wf-bolt svg {
+  width: 100%;
+  display: block;
+}
+
+.wf-bolt polygon {
+  fill: rgba(255, 236, 130, 0.95);
+}
+
+@keyframes wf-flash {
+  0%,
+  76%,
+  80%,
+  84%,
+  100% {
+    opacity: 0;
+  }
+  77%,
+  79% {
+    opacity: 1;
+  }
+  81%,
+  83% {
+    opacity: 0.6;
+  }
+}
+
+/* 系统"减少动态效果"：降级为纯背景，不渲染粒子 */
+@media (prefers-reduced-motion: reduce) {
+  .wf-cloud,
+  .wf-fog,
+  .wf-drop,
+  .wf-flake,
+  .wf-bolt {
+    animation: none !important;
+    display: none;
+  }
+}
+
 /* ============ 性能监控组件 ============ */
 .widget-monitor {
   min-width: 172px;

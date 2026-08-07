@@ -50,6 +50,7 @@ contextBridge.exposeInMainWorld('api', {
   searchCity: (name) => ipcRenderer.invoke('search-city', name),
   getWeather: () => ipcRenderer.invoke('get-weather'),
   setWeatherCity: (city) => ipcRenderer.invoke('set-weather-city', city),
+  setWeatherFxEnabled: (enabled) => ipcRenderer.invoke('set-weather-fx', enabled),
   
   // 开机启动功能API
   getAutoLaunch: () => ipcRenderer.invoke('get-auto-launch'),

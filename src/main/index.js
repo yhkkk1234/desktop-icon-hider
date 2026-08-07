@@ -48,6 +48,7 @@ const store = new Store({
     widgets: [],
     showWidgets: true,
     widgetsAvoidIcons: false,
+    weatherFxEnabled: true,
     weatherCity: null, // { name, lat, lon }
     shortcuts: {
       toggleWindow: 'CommandOrControl+Alt+D',
@@ -599,7 +600,8 @@ function createWindow() {
           widgets: store.get('widgets', []),
           showWidgets: store.get('showWidgets', true),
           widgetsAvoidIcons: store.get('widgetsAvoidIcons', false),
-          weatherCity: store.get('weatherCity', null)
+          weatherCity: store.get('weatherCity', null),
+          weatherFxEnabled: store.get('weatherFxEnabled', true)
         });
       } catch (error) {
         console.error('发送初始化数据失败:', error);
@@ -631,7 +633,8 @@ function createWindow() {
           widgets: store.get('widgets', []),
           showWidgets: store.get('showWidgets', true),
           widgetsAvoidIcons: store.get('widgetsAvoidIcons', false),
-          weatherCity: store.get('weatherCity', null)
+          weatherCity: store.get('weatherCity', null),
+          weatherFxEnabled: store.get('weatherFxEnabled', true)
         });
       }
     });
@@ -914,6 +917,7 @@ async function getWeather() {
       temp: Math.round(current.temperature_2m),
       humidity: current.relative_humidity_2m,
       wind: current.wind_speed_10m,
+      code: current.weather_code,
       emoji: wmo.emoji,
       text: wmo.text,
       todayMax: daily && Number.isFinite(daily.temperature_2m_max[0]) ? Math.round(daily.temperature_2m_max[0]) : null,
@@ -946,6 +950,11 @@ ipcMain.handle('set-weather-city', async (event, city) => {
   } catch (e) {
     return false;
   }
+});
+
+ipcMain.handle('set-weather-fx', async (event, enabled) => {
+  store.set('weatherFxEnabled', !!enabled);
+  return true;
 });
 
 ipcMain.handle('set-folder-preview-enabled', async (event, enabled) => {
