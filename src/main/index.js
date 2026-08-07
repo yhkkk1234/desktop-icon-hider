@@ -13,6 +13,7 @@ const {
   EDGE_TYPES 
 } = require('./window-manager');
 const { createTray, updateTrayMenu, destroyTray, autoLauncher } = require('./tray');
+const { startSampler, stopSampler, getSystemStats } = require('./hardware-monitor');
 
 const store = new Store({
   name: 'desktop-icon-hider',
@@ -822,15 +823,20 @@ ipcMain.handle('set-widgets', async (event, widgets) => {
     if (!Array.isArray(widgets)) return false;
     const sanitized = widgets.map(w => ({
       id: String(w.id || ''),
-      type: ['clock', 'calendar', 'weather'].includes(w.type) ? w.type : 'clock',
+      type: ['clock', 'calendar', 'weather', 'monitor'].includes(w.type) ? w.type : 'clock',
       x: Number.isFinite(w.x) ? Math.max(0, Math.min(95, w.x)) : 2,
-      y: Number.isFinite(w.y) ? Math.max(0, Math.min(90, w.y)) : 2
+      y: Number.isFinite(w.y) ? Math.max(0, Math.min(90, w.y)) : 2,
+      style: ['gauge', 'chart', 'bar'].includes(w.style) ? w.style : 'gauge'
     })).filter(w => w.id);
     store.set('widgets', sanitized);
     return true;
   } catch (error) {
     return false;
   }
+});
+
+ipcMain.handle('get-system-stats', async () => {
+  return getSystemStats();
 });
 
 ipcMain.handle('set-show-widgets', async (event, enabled) => {
@@ -1681,6 +1687,9 @@ app.whenReady().then(async () => {
     // 注册全局快捷键
     registerGlobalShortcuts();
     
+    // 启动性能数据采样进程（小组件使用）
+    startSampler();
+    
     // 监听系统主题变化
     nativeTheme.on('updated', () => {
       if (mainWindow && !mainWindow.isDestroyed()) {
@@ -1715,6 +1724,9 @@ app.on('before-quit', () => {
 
   // 停止文件监听
   stopDesktopWatchers();
+
+  // 停止性能采样进程
+  stopSampler();
 
   // 销毁托盘图标
   destroyTray();

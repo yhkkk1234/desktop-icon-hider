@@ -24,3 +24,4 @@ logs/
 
 # Windows 保留设备名文件（误创建，无法常规删除）
 nul
+native/

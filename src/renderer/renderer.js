@@ -40,6 +40,8 @@ let widgetSaveTimer = null;
 let clockTimer = null;
 let calendarTimer = null;
 let weatherTimer = null;
+let monitorTimer = null; // 性能监控组件刷新定时器
+let monitorHistory = new Map(); // 组件历史数据: id -> { cpu: [], mem: [], gpu: [], vram: [] }
 let weatherCity = null; // 天气城市配置 { name, lat, lon }
 
 // 多选
@@ -2814,7 +2816,8 @@ function addWidget(type) {
     id: 'w_' + Date.now() + '_' + Math.random().toString(36).slice(2, 8),
     type,
     x: Math.min(10 + offset, 60),
-    y: Math.min(10 + offset, 60)
+    y: Math.min(10 + offset, 60),
+    style: 'gauge'
   };
   widgets.push(widget);
   saveWidgets();
@@ -2902,6 +2905,18 @@ function renderWidgets() {
     refreshAllWeatherWidgets();
     weatherTimer = setInterval(refreshAllWeatherWidgets, 30 * 60 * 1000);
   }
+
+  // 性能监控组件：立即刷新 + 1 秒定时刷新
+  if (monitorTimer) {
+    clearInterval(monitorTimer);
+    monitorTimer = null;
+  }
+  if (widgets.some(w => w.type === 'monitor')) {
+    refreshAllMonitorWidgets();
+    monitorTimer = setInterval(refreshAllMonitorWidgets, 1000);
+  } else {
+    monitorHistory.clear();
+  }
 }
 
 // 刷新所有天气组件
@@ -2949,6 +2964,35 @@ function createWidgetElement(widget) {
       <button class="weather-edit-btn" title="${t('widget.editCity')}">⚙</button>
     `;
     updateWeatherNode(node);
+  } else if (widget.type === 'monitor') {
+    node.innerHTML = `
+      <div class="wm-body"></div>
+      <div class="wm-fan-row">
+        <div class="wm-fan">
+          <svg viewBox="0 0 40 40" aria-hidden="true">
+            <g class="wm-blades">
+              <ellipse cx="20" cy="9" rx="4.2" ry="8.5"></ellipse>
+              <ellipse cx="20" cy="9" rx="4.2" ry="8.5" transform="rotate(90 20 20)"></ellipse>
+              <ellipse cx="20" cy="9" rx="4.2" ry="8.5" transform="rotate(180 20 20)"></ellipse>
+              <ellipse cx="20" cy="9" rx="4.2" ry="8.5" transform="rotate(270 20 20)"></ellipse>
+            </g>
+            <circle class="wm-fan-hub" cx="20" cy="20" r="3.5"></circle>
+          </svg>
+        </div>
+        <div class="wm-fan-info">
+          <span class="wm-fan-name"></span>
+          <span class="wm-fan-rpm"></span>
+        </div>
+        <div class="wm-temps"></div>
+      </div>
+      <button class="widget-close" title="${t('widget.delete')}">×</button>
+      <button class="wm-style-btn" title="${t('widget.monitorStyle')}">◔</button>
+    `;
+    renderMonitorWidget(node, widget);
+    node.querySelector('.wm-style-btn').addEventListener('click', (e) => {
+      e.stopPropagation();
+      switchMonitorStyle(widget);
+    });
   }
 
   // 删除
@@ -2973,7 +3017,7 @@ function createWidgetElement(widget) {
   // 拖拽移动
   node.addEventListener('mousedown', (e) => {
     if (e.button !== 0) return;
-    if (e.target.closest('.widget-close') || e.target.closest('.widget-cal-nav')) return;
+    if (e.target.closest('.widget-close') || e.target.closest('.widget-cal-nav') || e.target.closest('.wm-style-btn')) return;
     e.preventDefault();
     widgetDrag = {
       widget,
@@ -3024,6 +3068,231 @@ function handleWidgetDragEnd() {
   const node = widgetDrag.node;
   if (node) node.classList.remove('widget-dragging');
   widgetDrag = null;
+}
+
+// ============ 性能监控组件 ============
+const MONITOR_STYLES = ['gauge', 'chart', 'bar'];
+const MONITOR_RING_C = 2 * Math.PI * 24;
+
+function refreshAllMonitorWidgets() {
+  for (const w of widgets) {
+    if (w.type !== 'monitor') continue;
+    const node = widgetsLayer.querySelector(`[data-widget-id="${CSS.escape(w.id)}"]`);
+    if (node) updateMonitorNode(node, w);
+  }
+}
+
+function getMonitorHistory(widgetId) {
+  let h = monitorHistory.get(widgetId);
+  if (!h) {
+    h = { cpu: [], mem: [], gpu: [], vram: [] };
+    monitorHistory.set(widgetId, h);
+  }
+  return h;
+}
+
+function pushMonitorValue(arr, v) {
+  arr.push(v);
+  if (arr.length > 60) arr.shift();
+}
+
+function clampPct(v) {
+  return typeof v === 'number' && isFinite(v) ? Math.max(0, Math.min(100, v)) : null;
+}
+
+async function updateMonitorNode(node, widget) {
+  let result = null;
+  try {
+    result = await window.api.getSystemStats();
+  } catch (e) {
+    return;
+  }
+  if (!result || !result.ok || !result.stats) return;
+  const s = result.stats;
+  node._monitorStats = s;
+
+  const hist = getMonitorHistory(widget.id);
+  pushMonitorValue(hist.cpu, clampPct(s.cpu));
+  pushMonitorValue(hist.mem, clampPct(s.mem));
+  pushMonitorValue(hist.gpu, clampPct(s.gpu));
+  let vramPct = null;
+  if (typeof s.vramTotal === 'number' && s.vramTotal > 0 && typeof s.vramUsed === 'number') {
+    vramPct = clampPct(s.vramUsed / s.vramTotal * 100);
+  }
+  pushMonitorValue(hist.vram, vramPct);
+
+  renderMonitorWidget(node, widget);
+}
+
+function switchMonitorStyle(widget) {
+  const idx = MONITOR_STYLES.indexOf(widget.style || 'gauge');
+  widget.style = MONITOR_STYLES[(idx + 1) % MONITOR_STYLES.length];
+  saveWidgets();
+  const node = widgetsLayer.querySelector(`[data-widget-id="${CSS.escape(widget.id)}"]`);
+  if (node) renderMonitorWidget(node, widget);
+}
+
+function monitorLatest(arr) {
+  return arr.length > 0 ? arr[arr.length - 1] : null;
+}
+
+function buildMonitorSkeleton(style) {
+  const items = [
+    ['cpu', t('widget.monitorCpu')],
+    ['mem', t('widget.monitorMem')],
+    ['gpu', t('widget.monitorGpu')],
+    ['vram', t('widget.monitorVram')]
+  ];
+  if (style === 'gauge') {
+    return '<div class="wm-grid">' + items.map(([k, label]) => `
+      <div class="wm-cell" data-k="${k}">
+        <svg viewBox="0 0 60 60" class="wm-ring">
+          <circle class="wm-ring-track" cx="30" cy="30" r="24"></circle>
+          <circle class="wm-ring-fill" cx="30" cy="30" r="24"></circle>
+        </svg>
+        <span class="wm-value">--</span>
+        <span class="wm-label">${label}</span>
+      </div>`).join('') + '</div>';
+  }
+  if (style === 'chart') {
+    return '<div class="wm-chart">' + items.map(([k, label]) => `
+      <div class="wm-chart-row" data-k="${k}">
+        <span class="wm-chart-label">${label}</span>
+        <svg viewBox="0 0 100 30" preserveAspectRatio="none" class="wm-line">
+          <polyline points=""></polyline>
+        </svg>
+        <span class="wm-chart-val">--</span>
+      </div>`).join('') + '</div>';
+  }
+  return '<div class="wm-bars">' + items.map(([k, label]) => `
+    <div class="wm-bar-row" data-k="${k}">
+      <span class="wm-bar-label">${label}</span>
+      <div class="wm-bar"><div class="wm-bar-fill"></div></div>
+      <span class="wm-bar-val">--</span>
+    </div>`).join('') + '</div>';
+}
+
+function monitorLinePoints(arr) {
+  const vals = (arr || []).filter(v => v !== null);
+  if (vals.length < 2) return '';
+  const W = 100;
+  const H = 30;
+  return vals.map((v, i) => {
+    const x = (i / (vals.length - 1)) * W;
+    const y = H - (clampPct(v) / 100) * H;
+    return `${x.toFixed(1)},${y.toFixed(1)}`;
+  }).join(' ');
+}
+
+function formatVram(used) {
+  const mb = typeof used === 'number' ? used : 0;
+  if (mb >= 1024) return (mb / 1024).toFixed(1) + ' GB';
+  return mb + ' MB';
+}
+
+function fillMonitorBody(body, style, hist) {
+  const entries = [
+    ['cpu', monitorLatest(hist.cpu)],
+    ['mem', monitorLatest(hist.mem)],
+    ['gpu', monitorLatest(hist.gpu)],
+    ['vram', monitorLatest(hist.vram)]
+  ];
+  const stats = body.closest('.widget-item')._monitorStats || {};
+
+  if (style === 'gauge') {
+    for (const [k, v] of entries) {
+      const cell = body.querySelector(`.wm-cell[data-k="${k}"]`);
+      if (!cell) continue;
+      const fill = cell.querySelector('.wm-ring-fill');
+      const valEl = cell.querySelector('.wm-value');
+      const pct = clampPct(v);
+      if (k === 'vram' && pct === null) {
+        valEl.textContent = typeof stats.vramUsed === 'number' ? formatVram(stats.vramUsed) : '--';
+      } else {
+        valEl.textContent = pct === null ? '--' : Math.round(pct) + '%';
+      }
+      if (fill) {
+        fill.style.strokeDasharray = MONITOR_RING_C.toFixed(1);
+        fill.style.strokeDashoffset = (pct === null ? MONITOR_RING_C : MONITOR_RING_C * (1 - pct / 100)).toFixed(1);
+      }
+    }
+  } else if (style === 'chart') {
+    for (const [k, v] of entries) {
+      const row = body.querySelector(`.wm-chart-row[data-k="${k}"]`);
+      if (!row) continue;
+      const line = row.querySelector('polyline');
+      const valEl = row.querySelector('.wm-chart-val');
+      const arr = hist[k] || [];
+      if (line) line.setAttribute('points', monitorLinePoints(arr));
+      const pct = clampPct(v);
+      if (k === 'vram' && pct === null) {
+        valEl.textContent = typeof stats.vramUsed === 'number' ? formatVram(stats.vramUsed) : '--';
+      } else {
+        valEl.textContent = pct === null ? '--' : Math.round(pct) + '%';
+      }
+    }
+  } else {
+    for (const [k, v] of entries) {
+      const row = body.querySelector(`.wm-bar-row[data-k="${k}"]`);
+      if (!row) continue;
+      const fill = row.querySelector('.wm-bar-fill');
+      const valEl = row.querySelector('.wm-bar-val');
+      const pct = clampPct(v);
+      if (fill) fill.style.width = (pct === null ? 0 : pct) + '%';
+      if (k === 'vram' && pct === null) {
+        valEl.textContent = typeof stats.vramUsed === 'number' ? formatVram(stats.vramUsed) : '--';
+      } else {
+        valEl.textContent = pct === null ? '--' : Math.round(pct) + '%';
+      }
+    }
+  }
+}
+
+function renderFanRow(node) {
+  const stats = node._monitorStats || null;
+  const fans = stats && Array.isArray(stats.fans) ? stats.fans : [];
+  const temps = stats && Array.isArray(stats.temps) ? stats.temps : [];
+  const fan = fans.length > 0 ? fans[0] : null;
+  const rpm = fan && typeof fan.r === 'number' ? fan.r : null;
+
+  const nameEl = node.querySelector('.wm-fan-name');
+  const rpmEl = node.querySelector('.wm-fan-rpm');
+  const blades = node.querySelector('.wm-blades');
+  const row = node.querySelector('.wm-fan-row');
+
+  if (rpm && rpm > 0) {
+    if (nameEl) nameEl.textContent = fan.n || t('widget.monitorFan');
+    if (rpmEl) rpmEl.textContent = rpm + ' RPM';
+    if (blades) blades.style.animationDuration = Math.max(0.2, 600 / rpm).toFixed(2) + 's';
+    if (row) row.classList.add('has-data');
+  } else {
+    if (nameEl) nameEl.textContent = t('widget.monitorFan');
+    if (rpmEl) rpmEl.textContent = '-- RPM';
+    if (blades) blades.style.animationDuration = '0s';
+    if (row) row.classList.remove('has-data');
+  }
+
+  const tempsEl = node.querySelector('.wm-temps');
+  if (tempsEl) {
+    const shown = temps.slice(0, 2)
+      .map(t => `${t.n.replace(/(GPU|CPU|Temperature)/gi, '').trim()} ${t.c}°C`)
+      .filter(Boolean)
+      .join(' · ');
+    tempsEl.textContent = shown;
+  }
+}
+
+function renderMonitorWidget(node, widget) {
+  const body = node.querySelector('.wm-body');
+  if (!body) return;
+  const style = MONITOR_STYLES.includes(widget.style) ? widget.style : 'gauge';
+  if (body.dataset.style !== style) {
+    body.dataset.style = style;
+    body.innerHTML = buildMonitorSkeleton(style);
+  }
+  const hist = getMonitorHistory(widget.id);
+  fillMonitorBody(body, style, hist);
+  renderFanRow(node);
 }
 
 // 时钟内容更新

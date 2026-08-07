@@ -26,6 +26,13 @@ files:
 asarUnpack:
   - build/Release/*.node
 
+# 性能监控采样脚本 + LibreHardwareMonitorLib 运行时（MPL-2.0, github.com/LibreHardwareMonitor/LibreHardwareMonitor）
+extraResources:
+  - from: native/hardware
+    to: hardware
+    filter:
+      - "**/*"
+
 npmRebuild: true
 buildDependenciesFromSource: true
 

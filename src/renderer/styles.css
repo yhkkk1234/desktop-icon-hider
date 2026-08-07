@@ -2118,6 +2118,276 @@ body.icons-locked .file-item.draggable:active {
   color: var(--text-primary);
 }
 
+/* ============ 性能监控组件 ============ */
+.widget-monitor {
+  min-width: 172px;
+}
+
+.widget-monitor .wm-body {
+  min-width: 148px;
+}
+
+/* 环形仪表盘（风格 A） */
+.wm-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 6px 10px;
+}
+
+.wm-cell {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 1px;
+  position: relative;
+  padding-top: 2px;
+}
+
+.wm-ring {
+  width: 52px;
+  height: 52px;
+  display: block;
+}
+
+.wm-ring-track {
+  fill: none;
+  stroke: var(--border-secondary);
+  stroke-width: 5;
+}
+
+.wm-ring-fill {
+  fill: none;
+  stroke-width: 5;
+  stroke-linecap: round;
+  transform: rotate(-90deg);
+  transform-origin: 30px 30px;
+  transition: stroke-dashoffset 0.6s ease;
+}
+
+.wm-cell[data-k="cpu"] .wm-ring-fill { stroke: #4caf50; }
+.wm-cell[data-k="mem"] .wm-ring-fill { stroke: #42a5f5; }
+.wm-cell[data-k="gpu"] .wm-ring-fill { stroke: #ffa726; }
+.wm-cell[data-k="vram"] .wm-ring-fill { stroke: #ab47bc; }
+
+.wm-value {
+  position: absolute;
+  top: 16px;
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--text-primary);
+  font-variant-numeric: tabular-nums;
+}
+
+.wm-label {
+  font-size: 10px;
+  color: var(--text-muted);
+}
+
+/* 趋势图（风格 B） */
+.wm-chart {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.wm-chart-row {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.wm-chart-label {
+  font-size: 10px;
+  color: var(--text-muted);
+  width: 26px;
+  flex-shrink: 0;
+}
+
+.wm-line {
+  flex: 1;
+  height: 26px;
+  min-width: 0;
+  background: var(--bg-input);
+  border-radius: 4px;
+}
+
+.wm-line polyline {
+  fill: none;
+  stroke-width: 1.6;
+  stroke-linejoin: round;
+  stroke-linecap: round;
+}
+
+.wm-chart-row[data-k="cpu"] polyline { stroke: #4caf50; }
+.wm-chart-row[data-k="mem"] polyline { stroke: #42a5f5; }
+.wm-chart-row[data-k="gpu"] polyline { stroke: #ffa726; }
+.wm-chart-row[data-k="vram"] polyline { stroke: #ab47bc; }
+
+.wm-chart-val {
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--text-primary);
+  width: 38px;
+  text-align: right;
+  flex-shrink: 0;
+  font-variant-numeric: tabular-nums;
+}
+
+/* 进度条（风格 C） */
+.wm-bars {
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+}
+
+.wm-bar-row {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.wm-bar-label {
+  font-size: 10px;
+  color: var(--text-muted);
+  width: 26px;
+  flex-shrink: 0;
+}
+
+.wm-bar {
+  flex: 1;
+  height: 8px;
+  background: var(--bg-input);
+  border-radius: 4px;
+  overflow: hidden;
+  min-width: 0;
+}
+
+.wm-bar-fill {
+  height: 100%;
+  border-radius: 4px;
+  transition: width 0.6s ease;
+}
+
+.wm-bar-row[data-k="cpu"] .wm-bar-fill { background: linear-gradient(90deg, #66bb6a, #4caf50); }
+.wm-bar-row[data-k="mem"] .wm-bar-fill { background: linear-gradient(90deg, #64b5f6, #42a5f5); }
+.wm-bar-row[data-k="gpu"] .wm-bar-fill { background: linear-gradient(90deg, #ffb74d, #ffa726); }
+.wm-bar-row[data-k="vram"] .wm-bar-fill { background: linear-gradient(90deg, #ce93d8, #ab47bc); }
+
+.wm-bar-val {
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--text-primary);
+  width: 38px;
+  text-align: right;
+  flex-shrink: 0;
+  font-variant-numeric: tabular-nums;
+}
+
+/* 风扇区（三种风格通用） */
+.wm-fan-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-top: 8px;
+  padding-top: 7px;
+  border-top: 1px solid var(--border-secondary);
+  opacity: 0.75;
+}
+
+.wm-fan-row.has-data {
+  opacity: 1;
+}
+
+.wm-fan {
+  width: 26px;
+  height: 26px;
+  flex-shrink: 0;
+}
+
+.wm-fan svg {
+  width: 26px;
+  height: 26px;
+  display: block;
+}
+
+.wm-blades {
+  transform-origin: 20px 20px;
+  animation: wm-spin 1s linear infinite;
+  animation-play-state: running;
+}
+
+.wm-blades ellipse {
+  fill: var(--text-secondary);
+}
+
+.wm-fan-hub {
+  fill: var(--text-muted);
+}
+
+.wm-fan-info {
+  display: flex;
+  flex-direction: column;
+  line-height: 1.3;
+  min-width: 0;
+}
+
+.wm-fan-name {
+  font-size: 10px;
+  color: var(--text-muted);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  max-width: 90px;
+}
+
+.wm-fan-rpm {
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--text-primary);
+  font-variant-numeric: tabular-nums;
+}
+
+.wm-temps {
+  flex: 1;
+  font-size: 10px;
+  color: var(--text-secondary);
+  text-align: right;
+  line-height: 1.4;
+}
+
+@keyframes wm-spin {
+  from { transform: rotate(0deg); }
+  to { transform: rotate(360deg); }
+}
+
+/* 切换样式按钮 */
+.wm-style-btn {
+  position: absolute;
+  top: 4px;
+  right: 26px;
+  width: 20px;
+  height: 20px;
+  border: none;
+  background: transparent;
+  color: var(--text-muted);
+  border-radius: 50%;
+  cursor: pointer;
+  font-size: 12px;
+  line-height: 1;
+  display: none;
+  align-items: center;
+  justify-content: center;
+}
+
+.widget-item:hover .wm-style-btn {
+  display: flex;
+}
+
+.wm-style-btn:hover {
+  background: var(--bg-button-hover);
+  color: var(--text-primary);
+}
+
 /* ============ 主题皮肤套装 ============ */
 :root {
   --skin-pattern: none;

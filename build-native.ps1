@@ -41,3 +41,41 @@ try {
 } finally {
   Pop-Location
 }
+
+# 4. 准备性能监控所需的三方库（LibreHardwareMonitorLib + HidSharp，MPL-2.0）
+#    用于读取真实风扇转速/温度，随应用打包到 native/hardware/（electron-builder extraResources）。
+Write-Host "==> Preparing hardware monitor libraries (LibreHardwareMonitorLib)..."
+$hwDir = Join-Path $PSScriptRoot 'native\hardware'
+New-Item -ItemType Directory -Force -Path $hwDir | Out-Null
+$pkgTmp = Join-Path $env:TEMP 'dih-nuget'
+New-Item -ItemType Directory -Force -Path $pkgTmp | Out-Null
+
+function Get-NugetLib {
+  param([string]$PkgName, [string]$Version, [string]$DllName, [string]$TargetLib)
+  $zip = Join-Path $pkgTmp "$PkgName.$Version.zip"
+  $dir = Join-Path $pkgTmp "$PkgName.$Version"
+  try {
+    if (-not (Test-Path $zip)) {
+      Invoke-WebRequest "https://www.nuget.org/api/v2/package/$PkgName/$Version" -OutFile $zip -UseBasicParsing
+    }
+    if (-not (Test-Path $dir)) {
+      Expand-Archive $zip $dir -Force
+    }
+    $src = Join-Path $dir $TargetLib
+    if (Test-Path $src) {
+      Copy-Item $src (Join-Path $hwDir $DllName) -Force
+      Write-Host "    + $DllName"
+    } else {
+      Write-Warning "    - 未找到 $TargetLib（$PkgName）"
+    }
+  } catch {
+    Write-Warning "    - 下载/解压 $PkgName 失败: $($_.Exception.Message)"
+  }
+}
+
+Get-NugetLib 'LibreHardwareMonitorLib' '0.9.4' 'LibreHardwareMonitorLib.dll' 'lib\net472\LibreHardwareMonitorLib.dll'
+Get-NugetLib 'HidSharp' '2.1.0' 'HidSharp.dll' 'lib\net35\HidSharp.dll'
+
+# 采样脚本一并放入资源目录（打包后 PowerShell 只能读取真实文件，不能读取 asar 内文件）
+Copy-Item (Join-Path $PSScriptRoot 'src\main\hardware-sampler.ps1') (Join-Path $hwDir 'hardware-sampler.ps1') -Force
+Write-Host '==> Hardware monitor libraries ready.'
