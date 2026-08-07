@@ -1705,11 +1705,17 @@ function renderFilesFolderMode() {
     returnBar.innerHTML = `
       <button class="group-back-btn">← ${escapeHtml(group ? group.name : '')}</button>
       <span class="group-return-count">(${(group ? group.paths : []).length})</span>
+      <button class="group-return-delete">${t('group.delete')}</button>
     `;
     returnBar.querySelector('.group-back-btn').addEventListener('click', () => {
       openGroupId = null;
       renderFiles();
     });
+    if (group) {
+      returnBar.querySelector('.group-return-delete').addEventListener('click', () => {
+        handleDeleteGroup(group.id);
+      });
+    }
   } else if (returnBar) {
     returnBar.remove();
     returnBar = null;
@@ -1831,7 +1837,14 @@ function createGroupFolderElement(group) {
   el.innerHTML = `
     <div class="gf-icon">${cells.join('')}<span class="gf-badge">${group.paths.length}</span></div>
     <div class="gf-name">${escapeHtml(group.name)}</div>
+    <button class="gf-delete" title="${t('group.delete')}">×</button>
   `;
+
+  // hover 删除分组（文件夹模式下唯一的删除入口）
+  el.querySelector('.gf-delete').addEventListener('click', (e) => {
+    e.stopPropagation();
+    handleDeleteGroup(group.id);
+  });
 
   // 单击打开组视图
   el.addEventListener('click', (e) => {
@@ -2249,6 +2262,7 @@ async function handleDeleteGroup(groupId) {
 
   groups = groups.filter(g => g.id !== groupId);
   if (currentGroupId === groupId) currentGroupId = null;
+  if (openGroupId === groupId) openGroupId = null;
   saveGroups();
   renderGroups();
   renderFiles();
