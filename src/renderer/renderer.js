@@ -1125,7 +1125,7 @@ async function deleteSelected(permanent) {
   const message = permanent
     ? t('files.deleteConfirmPermanent', { n: selected.length })
     : t('files.deleteConfirm', { n: selected.length });
-  if (!confirm(message)) return;
+  if (!(await confirmDialog(message, { danger: true }))) return;
   let failed = false;
   for (const f of selected) {
     const result = await window.api.deleteFile(f.path, permanent);
@@ -2188,7 +2188,7 @@ const TYPE_CATEGORIES = [
   { name: t('category.code'), test: (f) => ['.js', '.ts', '.jsx', '.tsx', '.py', '.java', '.c', '.cpp', '.cs', '.html', '.css', '.json', '.xml', '.yaml', '.yml', '.go', '.rs', '.sh'].includes(f.extension) },
 ];
 
-function handleAutoGroup() {
+async function handleAutoGroup() {
   if (!files || files.length === 0) return;
 
   const categorized = new Map();
@@ -2231,7 +2231,7 @@ function handleAutoGroup() {
   if (newGroups.length === 0) return;
 
   if (groups.length > 0) {
-    if (!confirm(t('group.clearConfirm'))) return;
+    if (!(await confirmDialog(t('group.clearConfirm'), { danger: true }))) return;
     groups = newGroups;
   } else {
     groups = newGroups;
@@ -2242,10 +2242,10 @@ function handleAutoGroup() {
   renderFiles();
 }
 
-function handleDeleteGroup(groupId) {
+async function handleDeleteGroup(groupId) {
   const group = groups.find(g => g.id === groupId);
   if (!group) return;
-  if (!confirm(t('group.deleteConfirm', { name: group.name }))) return;
+  if (!(await confirmDialog(t('group.deleteConfirm', { name: group.name }), { danger: true }))) return;
 
   groups = groups.filter(g => g.id !== groupId);
   if (currentGroupId === groupId) currentGroupId = null;
@@ -2346,6 +2346,59 @@ function createInlineInput(title, defaultValue) {
   });
 }
 
+// 主题化确认对话框（替代原生 confirm）
+// options.danger: 确认按钮使用危险红色
+function confirmDialog(message, options = {}) {
+  return new Promise((resolve) => {
+    const overlay = document.createElement('div');
+    overlay.className = 'prompt-overlay';
+
+    const dialog = document.createElement('div');
+    dialog.className = 'prompt-dialog';
+
+    const msg = document.createElement('div');
+    msg.className = 'prompt-message';
+    msg.textContent = message;
+
+    const btnRow = document.createElement('div');
+    btnRow.className = 'prompt-buttons';
+
+    const confirmBtn = document.createElement('button');
+    confirmBtn.className = options.danger ? 'prompt-btn prompt-btn-danger' : 'prompt-btn prompt-btn-confirm';
+    confirmBtn.textContent = t('common.ok');
+
+    const cancelBtn = document.createElement('button');
+    cancelBtn.className = 'prompt-btn prompt-btn-cancel';
+    cancelBtn.textContent = t('common.cancel');
+
+    btnRow.appendChild(cancelBtn);
+    btnRow.appendChild(confirmBtn);
+    dialog.appendChild(msg);
+    dialog.appendChild(btnRow);
+    overlay.appendChild(dialog);
+    document.body.appendChild(overlay);
+
+    let resolved = false;
+    const close = (value) => {
+      if (resolved) return;
+      resolved = true;
+      overlay.remove();
+      resolve(value);
+    };
+
+    confirmBtn.addEventListener('click', () => close(true));
+    cancelBtn.addEventListener('click', () => close(false));
+    overlay.addEventListener('click', (e) => {
+      if (e.target === overlay) close(false);
+    });
+    dialog.addEventListener('keydown', (e) => {
+      if (e.key === 'Enter') { e.preventDefault(); close(true); }
+      if (e.key === 'Escape') { e.preventDefault(); close(false); }
+    });
+    confirmBtn.focus();
+  });
+}
+
 // ============ 右键菜单 ============
 async function handleFileContextMenu(e, filePath) {
   if (!filePath) return;
@@ -2416,8 +2469,8 @@ function renderRules() {
     delBtn.textContent = '×';
     delBtn.className = 'danger';
     delBtn.title = t('rule.delete');
-    delBtn.addEventListener('click', () => {
-      if (!confirm(t('rule.deleteConfirm', { name: rule.name }))) return;
+    delBtn.addEventListener('click', async () => {
+      if (!(await confirmDialog(t('rule.deleteConfirm', { name: rule.name }), { danger: true }))) return;
       arrangeRules = arrangeRules.filter(r => r.id !== rule.id);
       saveRules();
       renderRules();
@@ -3002,7 +3055,7 @@ async function handleExportLayout() {
 }
 
 async function handleImportLayout() {
-  const importGroups = confirm(t('layout.importGroups'));
+  const importGroups = await confirmDialog(t('layout.importGroups'));
   const result = await window.api.importLayout(importGroups);
   if (!result || !result.success) return;
   if (importGroups && result.groups) {
