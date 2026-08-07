@@ -2653,6 +2653,7 @@ input:focus-visible,
   --skin-shadow: 10px 12px 30px rgba(161, 130, 120, 0.28), inset 0 1px 0 rgba(255, 255, 255, 0.54);
   --neu-raised: 8px 8px 18px rgba(176, 145, 135, 0.38), -8px -8px 18px rgba(255, 255, 255, 0.72);
   --neu-raised-small: 4px 4px 10px rgba(176, 145, 135, 0.3), -4px -4px 10px rgba(255, 255, 255, 0.66);
+  --neu-tab: 2px 2px 5px rgba(176, 145, 135, 0.28), -2px -2px 5px rgba(255, 255, 255, 0.58);
   --neu-inset: inset 5px 5px 11px rgba(176, 145, 135, 0.3), inset -5px -5px 11px rgba(255, 255, 255, 0.68);
   --neu-inset-accent: inset 5px 5px 11px rgba(176, 145, 135, 0.34), inset -5px -5px 11px rgba(255, 255, 255, 0.5);
 }
@@ -2686,6 +2687,11 @@ input:focus-visible,
   box-shadow: none;
 }
 
+/* 为拟态标签的外部柔光预留垂直空间，避免横向滚动容器裁切阴影 */
+[data-theme="clay"] .groups-list {
+  padding-block: 8px;
+}
+
 [data-theme="clay"] .search-bar,
 [data-theme="clay"] .everything-bar,
 [data-theme="clay"] select,
@@ -2717,6 +2723,12 @@ input:focus-visible,
 [data-theme="clay"] .theme-card:hover {
   transform: translateY(-1px);
   box-shadow: var(--neu-raised);
+}
+
+/* 标签处于横向滚动区域，使用紧凑阴影避免上下边缘被滚动视口裁切 */
+[data-theme="clay"] .group-tab,
+[data-theme="clay"] .group-tab:hover {
+  box-shadow: var(--neu-tab);
 }
 
 [data-theme="clay"] .icon-btn:active,
@@ -3060,6 +3072,7 @@ input:focus-visible,
   --skin-shadow: 10px 12px 30px rgba(7, 7, 11, 0.5), inset 0 1px 0 rgba(255, 255, 255, 0.08);
   --neu-raised: 8px 8px 18px rgba(9, 9, 13, 0.72), -8px -8px 18px rgba(75, 74, 88, 0.3);
   --neu-raised-small: 4px 4px 10px rgba(9, 9, 13, 0.64), -4px -4px 10px rgba(75, 74, 88, 0.26);
+  --neu-tab: 2px 2px 5px rgba(9, 9, 13, 0.55), -2px -2px 5px rgba(75, 74, 88, 0.22);
   --neu-inset: inset 5px 5px 11px rgba(9, 9, 13, 0.62), inset -5px -5px 11px rgba(75, 74, 88, 0.24);
   --neu-inset-accent: inset 5px 5px 11px rgba(9, 9, 13, 0.68), inset -5px -5px 11px rgba(75, 74, 88, 0.2);
 }
