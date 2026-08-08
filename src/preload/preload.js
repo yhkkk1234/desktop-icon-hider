@@ -103,6 +103,7 @@ contextBridge.exposeInMainWorld('api', {
   onAutoHideChanged: (callback) => ipcRenderer.on('auto-hide-changed', (event, data) => callback(data)),
   onAutoHideStatus: (callback) => ipcRenderer.on('auto-hide-status', (event, data) => callback(data)),
   onEdgeChanged: (callback) => ipcRenderer.on('edge-changed', (event, data) => callback(data)),
+  onToggleAutoHide: (callback) => ipcRenderer.on('toggle-auto-hide', (event, data) => callback(data)),
   
   // 监听开机启动变化事件
   onAutoLaunchChanged: (callback) => ipcRenderer.on('auto-launch-changed', (event, data) => callback(data)),

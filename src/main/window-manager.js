@@ -169,25 +169,35 @@ function createMainWindow(store) {
 
 // 边缘自动隐藏功能
 
+// 显示器工作区绝对坐标（多显示器下 workAreaSize 只有宽高、原点可能非 0，
+// 直接使用会把副屏窗口吸附到主屏，必须用 workArea 的 x/y）
+function getWorkArea(display) {
+  const wa = display && display.workArea;
+  if (wa && Number.isFinite(wa.x) && Number.isFinite(wa.y) && Number.isFinite(wa.width) && Number.isFinite(wa.height)) {
+    return wa;
+  }
+  return { x: 0, y: 0, width: display.workAreaSize.width, height: display.workAreaSize.height };
+}
+
 function snapToEdge(window, edge) {
   if (!window || edge === EDGE_TYPES.NONE) return;
   
   const bounds = window.getBounds();
   const display = getDisplayForWindow(window);
-  const { width: screenWidth, height: screenHeight } = display.workAreaSize;
+  const wa = getWorkArea(display);
   
   switch (edge) {
   case EDGE_TYPES.TOP:
-    window.setBounds(bounds.x, 0, bounds.width, bounds.height);
+    window.setBounds(bounds.x, wa.y, bounds.width, bounds.height);
     break;
   case EDGE_TYPES.BOTTOM:
-    window.setBounds(bounds.x, screenHeight - bounds.height, bounds.width, bounds.height);
+    window.setBounds(bounds.x, wa.y + wa.height - bounds.height, bounds.width, bounds.height);
     break;
   case EDGE_TYPES.LEFT:
-    window.setBounds(0, bounds.y, bounds.width, bounds.height);
+    window.setBounds(wa.x, bounds.y, bounds.width, bounds.height);
     break;
   case EDGE_TYPES.RIGHT:
-    window.setBounds(screenWidth - bounds.width, bounds.y, bounds.width, bounds.height);
+    window.setBounds(wa.x + wa.width - bounds.width, bounds.y, bounds.width, bounds.height);
     break;
   }
   
@@ -195,28 +205,45 @@ function snapToEdge(window, edge) {
   scheduleHide(window);
 }
 
+// 检测窗口当前是否已贴近某边缘（基于工作区绝对坐标），返回边缘类型或 NONE
+function detectEdgeAtCurrentPosition(window) {
+  if (!window || window.isDestroyed()) return EDGE_TYPES.NONE;
+  try {
+    const bounds = window.getBounds();
+    const wa = getWorkArea(getDisplayForWindow(window));
+    if (bounds.y <= wa.y + AUTO_HIDE_CONFIG.SNAP_THRESHOLD) return EDGE_TYPES.TOP;
+    if (bounds.y + bounds.height >= wa.y + wa.height - AUTO_HIDE_CONFIG.SNAP_THRESHOLD) return EDGE_TYPES.BOTTOM;
+    if (bounds.x <= wa.x + AUTO_HIDE_CONFIG.SNAP_THRESHOLD) return EDGE_TYPES.LEFT;
+    if (bounds.x + bounds.width >= wa.x + wa.width - AUTO_HIDE_CONFIG.SNAP_THRESHOLD) return EDGE_TYPES.RIGHT;
+    return EDGE_TYPES.NONE;
+  } catch (e) {
+    return EDGE_TYPES.NONE;
+  }
+}
+
 function detectEdgeSnap(window, store) {
   if (!window || !window.autoHideState.enabled) return;
   
+  const detectedEdge = detectEdgeAtCurrentPosition(window);
   const bounds = window.getBounds();
-  const display = getDisplayForWindow(window);
-  const { width: screenWidth, height: screenHeight } = display.workAreaSize;
+  const wa = getWorkArea(getDisplayForWindow(window));
   
-  let detectedEdge = EDGE_TYPES.NONE;
-  
-  // 检测边缘（优先级：上 > 下 > 左 > 右）
-  if (bounds.y <= AUTO_HIDE_CONFIG.SNAP_THRESHOLD) {
-    detectedEdge = EDGE_TYPES.TOP;
-    window.setBounds(bounds.x, 0, bounds.width, bounds.height);
-  } else if (bounds.y + bounds.height >= screenHeight - AUTO_HIDE_CONFIG.SNAP_THRESHOLD) {
-    detectedEdge = EDGE_TYPES.BOTTOM;
-    window.setBounds(bounds.x, screenHeight - bounds.height, bounds.width, bounds.height);
-  } else if (bounds.x <= AUTO_HIDE_CONFIG.SNAP_THRESHOLD) {
-    detectedEdge = EDGE_TYPES.LEFT;
-    window.setBounds(0, bounds.y, bounds.width, bounds.height);
-  } else if (bounds.x + bounds.width >= screenWidth - AUTO_HIDE_CONFIG.SNAP_THRESHOLD) {
-    detectedEdge = EDGE_TYPES.RIGHT;
-    window.setBounds(screenWidth - bounds.width, bounds.y, bounds.width, bounds.height);
+  // 窗口在边缘：吸附到该边缘
+  if (detectedEdge !== EDGE_TYPES.NONE) {
+    switch (detectedEdge) {
+    case EDGE_TYPES.TOP:
+      window.setBounds(bounds.x, wa.y, bounds.width, bounds.height);
+      break;
+    case EDGE_TYPES.BOTTOM:
+      window.setBounds(bounds.x, wa.y + wa.height - bounds.height, bounds.width, bounds.height);
+      break;
+    case EDGE_TYPES.LEFT:
+      window.setBounds(wa.x, bounds.y, bounds.width, bounds.height);
+      break;
+    case EDGE_TYPES.RIGHT:
+      window.setBounds(wa.x + wa.width - bounds.width, bounds.y, bounds.width, bounds.height);
+      break;
+    }
   }
 
   if (detectedEdge !== window.autoHideState.currentEdge) {
@@ -284,22 +311,22 @@ function hideWindow(window) {
   
   const bounds = window.getBounds();
   const display = getDisplayForWindow(window);
-  const { width: screenWidth, height: screenHeight } = display.workAreaSize;
+  const wa = getWorkArea(display);
   
   let newBounds = { ...bounds };
   
   switch (window.autoHideState.currentEdge) {
   case EDGE_TYPES.TOP:
-    newBounds.y = -bounds.height + 2; // 只露出2像素
+    newBounds.y = wa.y - bounds.height + 2; // 只露出2像素
     break;
   case EDGE_TYPES.BOTTOM:
-    newBounds.y = screenHeight - 2; // 只露出2像素
+    newBounds.y = wa.y + wa.height - 2; // 只露出2像素
     break;
   case EDGE_TYPES.LEFT:
-    newBounds.x = -bounds.width + 2; // 只露出2像素
+    newBounds.x = wa.x - bounds.width + 2; // 只露出2像素
     break;
   case EDGE_TYPES.RIGHT:
-    newBounds.x = screenWidth - 2; // 只露出2像素
+    newBounds.x = wa.x + wa.width - 2; // 只露出2像素
     break;
   default:
     return;
@@ -341,22 +368,22 @@ function showWindow(window) {
   
   const bounds = window.getBounds();
   const display = getDisplayForWindow(window);
-  const { width: screenWidth, height: screenHeight } = display.workAreaSize;
+  const wa = getWorkArea(display);
   
   let newBounds = { ...bounds };
   
   switch (window.autoHideState.currentEdge) {
   case EDGE_TYPES.TOP:
-    newBounds.y = 0;
+    newBounds.y = wa.y;
     break;
   case EDGE_TYPES.BOTTOM:
-    newBounds.y = screenHeight - bounds.height;
+    newBounds.y = wa.y + wa.height - bounds.height;
     break;
   case EDGE_TYPES.LEFT:
-    newBounds.x = 0;
+    newBounds.x = wa.x;
     break;
   case EDGE_TYPES.RIGHT:
-    newBounds.x = screenWidth - bounds.width;
+    newBounds.x = wa.x + wa.width - bounds.width;
     break;
   default:
     return;
@@ -530,23 +557,23 @@ function checkMousePosition(window) {
     const cursorPos = screen.getCursorScreenPoint();
     const bounds = window.getBounds();
     const display = getDisplayForWindow(window);
-    const { width: screenWidth, height: screenHeight } = display.workAreaSize;
+    const wa = getWorkArea(display);
     
     // 计算窗口正常显示时的位置
     let windowDisplayBounds = { ...bounds };
     
     switch (window.autoHideState.currentEdge) {
     case EDGE_TYPES.TOP:
-      windowDisplayBounds.y = 0;
+      windowDisplayBounds.y = wa.y;
       break;
     case EDGE_TYPES.BOTTOM:
-      windowDisplayBounds.y = screenHeight - bounds.height;
+      windowDisplayBounds.y = wa.y + wa.height - bounds.height;
       break;
     case EDGE_TYPES.LEFT:
-      windowDisplayBounds.x = 0;
+      windowDisplayBounds.x = wa.x;
       break;
     case EDGE_TYPES.RIGHT:
-      windowDisplayBounds.x = screenWidth - bounds.width;
+      windowDisplayBounds.x = wa.x + wa.width - bounds.width;
       break;
     default:
       windowDisplayBounds = bounds;
@@ -651,8 +678,12 @@ function setAutoHideEnabled(window, enabled, store) {
     if (enabled) {
       // 启用自动隐藏
       startAutoHide(window);
-      // 已配置边缘时主动吸附，避免隐藏时窗口从当前位置直接飞出屏幕
-      if (window.autoHideState.currentEdge !== EDGE_TYPES.NONE) {
+      // 窗口当前已贴近边缘：直接吸附并安排隐藏（此前仅对"已配置边缘"主动吸附，
+      // 导致窗口已在边缘但从未配置过边缘时，开启后必须手动拖动一下才隐藏）
+      if (detectEdgeAtCurrentPosition(window) !== EDGE_TYPES.NONE) {
+        detectEdgeSnap(window, store);
+      } else if (window.autoHideState.currentEdge !== EDGE_TYPES.NONE) {
+        // 已配置边缘但窗口不在边缘：主动吸附到配置的边缘，避免隐藏时从当前位置直接飞出屏幕
         snapToEdge(window, window.autoHideState.currentEdge);
       }
       window.webContents.send('auto-hide-status', { enabled: true });

@@ -177,7 +177,7 @@ foreach ($item in $folder.Items()) {
   $items += @{ name = $item.Name; isDirectory = [bool]$item.IsFolder; path = $p }
 }
 $items | ConvertTo-Json -Depth 2 -Compress`;
-    const tempFile = path.join(os.tmpdir(), `temp-sysfolder-${process.pid}.ps1`);
+    const tempFile = path.join(os.tmpdir(), `temp-sysfolder-${process.pid}-${Date.now()}.ps1`);
     fs.writeFileSync(tempFile, psScript, 'utf8');
     let result = null;
     try {
@@ -281,11 +281,13 @@ async function pasteClipboard({ mode, paths, targetDir }) {
   for (const src of paths) {
     const name = path.basename(src);
     let dest = path.join(targetDir, name);
-    if (src.toLowerCase() === dest.toLowerCase() && path.dirname(src).toLowerCase() === targetDir.toLowerCase()) {
+    // Windows 大小写不敏感：目标与源为同一文件（targetDir 与源目录大小写可能不同）时视为原地粘贴
+    const isSamePath = src.toLowerCase() === dest.toLowerCase();
+    if (isSamePath) {
       dest = src;
     }
     try {
-      if (src === dest) {
+      if (isSamePath) {
         results.push({ name, ok: true, skipped: true });
         continue;
       }
@@ -337,7 +339,7 @@ foreach ($item in $desktop.Items()) {
 }
 $items | ConvertTo-Json -Depth 3`;
     
-    const tempFile = path.join(os.tmpdir(), `temp-system-icons-${process.pid}.ps1`);
+    const tempFile = path.join(os.tmpdir(), `temp-system-icons-${process.pid}-${Date.now()}.ps1`);
     fs.writeFileSync(tempFile, psScript, 'utf8');
     
     let result = null;
@@ -1355,8 +1357,17 @@ ipcMain.handle('import-layout', async (event, importGroups) => {
 ipcMain.handle('rename-file', async (event, oldPath, newName) => {
   try {
     if (!isAllowedPath(oldPath)) return { success: false, error: '路径不允许' };
+    if (typeof newName !== 'string') return { success: false, error: '无效的文件名' };
+    const trimmed = newName.trim();
+    // Windows 文件名非法字符（含路径分隔符，防止穿越到桌面范围外）
+    const invalidChars = /[<>:"/\\|?*]/;
+    const hasControlChar = [...trimmed].some(ch => ch.charCodeAt(0) < 32);
+    if (!trimmed || trimmed === '.' || trimmed === '..' || invalidChars.test(trimmed) || hasControlChar) {
+      return { success: false, error: '文件名包含非法字符' };
+    }
     const dir = path.dirname(oldPath);
-    const newPath = path.join(dir, newName);
+    const newPath = path.join(dir, trimmed);
+    if (!isAllowedPath(newPath)) return { success: false, error: '路径不允许' };
     if (oldPath === newPath) return { success: true };
     // Windows 大小写不敏感：仅大小写变化时允许重命名
     const isCaseOnlyChange = oldPath.toLowerCase() === newPath.toLowerCase();

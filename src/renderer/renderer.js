@@ -401,6 +401,12 @@ document.addEventListener('DOMContentLoaded', () => {
     edgeSelect.value = autoHideEdge;
   });
 
+  // 监听托盘"自动隐藏"开关
+  window.api.onToggleAutoHide((enabled) => {
+    autoHideToggle.checked = !!enabled;
+    handleAutoHideToggle();
+  });
+
   window.api.onAutoLaunchChanged((data) => {
     autoLaunchEnabled = data.enabled;
     updateAutoLaunchUI();
@@ -465,6 +471,11 @@ function updateCollapseState() {
   // 折叠时隐藏小组件层
   if (widgetsLayer) {
     widgetsLayer.style.display = (isCollapsed || !showWidgets) ? 'none' : 'block';
+  }
+  // 折叠时关闭设置面板（窗口只剩 40px 头部，面板会被裁切）
+  if (isCollapsed && settingsPanel && settingsPanel.style.display !== 'none') {
+    settingsPanel.style.display = 'none';
+    settingsBtn.title = t('settings.show');
   }
   scheduleIconLayout();
 }
@@ -1052,6 +1063,8 @@ function handleFilesListContextMenu(e) {
     handleFileContextMenu(e, path);
   } else {
     e.preventDefault();
+    // 阻止冒泡到 contentEl 的 contextmenu，避免同一右键触发两次菜单
+    e.stopPropagation();
     handleDesktopContextMenu(e);
   }
 }
@@ -1239,7 +1252,7 @@ function handleKeyDown(e) {
   }
 
   // F5 刷新
-  if (e.key === 'F5') {
+  if (e.key === 'F5' && !isInput) {
     e.preventDefault();
     debouncedHandleRefresh(0);
     return;
@@ -2127,7 +2140,7 @@ function addPathsToGroup(group, paths) {
 function getTypeCategoryName(file) {
   if (!file) return null;
   for (const cat of TYPE_CATEGORIES) {
-    if (cat.test(file)) return cat.name;
+    if (cat.test(file)) return t(cat.nameKey);
   }
   return null;
 }
@@ -2404,15 +2417,16 @@ async function handleAddGroup() {
   renderFiles();
 }
 
+// 分类使用 i18n key 而非直接翻译文本：模块加载时求值会导致切换语言后名称不更新
 const TYPE_CATEGORIES = [
-  { name: t('category.folder'), test: (f) => f.isDirectory },
-  { name: t('category.docs'), test: (f) => ['.txt', '.doc', '.docx', '.pdf', '.rtf', '.odt', '.wps'].includes(f.extension) },
-  { name: t('category.image'), test: (f) => ['.jpg', '.jpeg', '.png', '.gif', '.bmp', '.webp', '.svg', '.ico', '.tiff'].includes(f.extension) },
-  { name: t('category.video'), test: (f) => ['.mp4', '.avi', '.mkv', '.mov', '.wmv', '.flv', '.webm', '.m4v'].includes(f.extension) },
-  { name: t('category.audio'), test: (f) => ['.mp3', '.wav', '.flac', '.aac', '.ogg', '.wma', '.m4a'].includes(f.extension) },
-  { name: t('category.archive'), test: (f) => ['.zip', '.rar', '.7z', '.tar', '.gz', '.bz2'].includes(f.extension) },
-  { name: t('category.app'), test: (f) => ['.exe', '.msi', '.bat', '.cmd', '.ps1', '.app'].includes(f.extension) },
-  { name: t('category.code'), test: (f) => ['.js', '.ts', '.jsx', '.tsx', '.py', '.java', '.c', '.cpp', '.cs', '.html', '.css', '.json', '.xml', '.yaml', '.yml', '.go', '.rs', '.sh'].includes(f.extension) },
+  { nameKey: 'category.folder', test: (f) => f.isDirectory },
+  { nameKey: 'category.docs', test: (f) => ['.txt', '.doc', '.docx', '.pdf', '.rtf', '.odt', '.wps'].includes(f.extension) },
+  { nameKey: 'category.image', test: (f) => ['.jpg', '.jpeg', '.png', '.gif', '.bmp', '.webp', '.svg', '.ico', '.tiff'].includes(f.extension) },
+  { nameKey: 'category.video', test: (f) => ['.mp4', '.avi', '.mkv', '.mov', '.wmv', '.flv', '.webm', '.m4v'].includes(f.extension) },
+  { nameKey: 'category.audio', test: (f) => ['.mp3', '.wav', '.flac', '.aac', '.ogg', '.wma', '.m4a'].includes(f.extension) },
+  { nameKey: 'category.archive', test: (f) => ['.zip', '.rar', '.7z', '.tar', '.gz', '.bz2'].includes(f.extension) },
+  { nameKey: 'category.app', test: (f) => ['.exe', '.msi', '.bat', '.cmd', '.ps1', '.app'].includes(f.extension) },
+  { nameKey: 'category.code', test: (f) => ['.js', '.ts', '.jsx', '.tsx', '.py', '.java', '.c', '.cpp', '.cs', '.html', '.css', '.json', '.xml', '.yaml', '.yml', '.go', '.rs', '.sh'].includes(f.extension) },
 ];
 
 async function handleAutoGroup() {
@@ -2426,8 +2440,9 @@ async function handleAutoGroup() {
     let matched = false;
     for (const cat of TYPE_CATEGORIES) {
       if (cat.test(file)) {
-        if (!categorized.has(cat.name)) categorized.set(cat.name, []);
-        categorized.get(cat.name).push(file.path);
+        const catName = t(cat.nameKey);
+        if (!categorized.has(catName)) categorized.set(catName, []);
+        categorized.get(catName).push(file.path);
         matched = true;
         break;
       }
@@ -3774,10 +3789,28 @@ function formatShortcut(e) {
   const key = e.key;
   if (['Control', 'Alt', 'Shift', 'Meta', 'Escape'].includes(key)) return null;
   let main = '';
-  if (key.length === 1) main = key.toUpperCase();
-  else if (key.startsWith('F') && key.length <= 3) main = key;
-  else if (key === ' ') main = 'Space';
-  else main = key;
+  if (key.length === 1) {
+    if (/^[a-zA-Z0-9]$/.test(key)) {
+      main = key.toUpperCase();
+    } else if (key === ' ') {
+      main = 'Space';
+    } else if (key === '+') {
+      // '+' 在 accelerator 中是修饰符分隔符，必须用命名键
+      main = 'Plus';
+    } else if (key === '-') {
+      main = 'Minus';
+    } else {
+      // 其他符号键无法安全映射为 Electron accelerator，拒绝
+      return null;
+    }
+  } else if (key.startsWith('F') && key.length <= 3) {
+    main = key;
+  } else if (key === 'ArrowUp') main = 'Up';
+  else if (key === 'ArrowDown') main = 'Down';
+  else if (key === 'ArrowLeft') main = 'Left';
+  else if (key === 'ArrowRight') main = 'Right';
+  else if (['Home', 'End', 'PageUp', 'PageDown', 'Insert', 'Delete', 'Tab', 'Backspace'].includes(key)) main = key;
+  else return null;
   if (parts.length === 0) return null;
   parts.push(main);
   return parts.join('+');
