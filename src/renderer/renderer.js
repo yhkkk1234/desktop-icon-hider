@@ -951,11 +951,19 @@ let lastClickY = 0;
 let dblClickHandled = false;
 
 function handleFilesListClick(e) {
-  const item = e.target.closest('.file-item');
-  const path = item ? item.dataset.path : null;
+  let item = e.target.closest('.file-item');
   const now = Date.now();
   const ctrl = e.ctrlKey || e.metaKey;
   const shift = e.shiftKey;
+
+  // 点击兜底：若点击瞬间恰逢列表 DOM 重建（target 已被移除、isConnected 为 false 导致
+  // closest 失效），按鼠标坐标重新查找新渲染的图标，避免单击偶发被吞、选中延迟。
+  // 图标若因布局变化移位，elementFromPoint 命中的不再是旧位置，自然返回 null，不会误选。
+  if (!item && e.target instanceof Node && !e.target.isConnected) {
+    const atPoint = document.elementFromPoint(e.clientX, e.clientY);
+    if (atPoint) item = atPoint.closest('.file-item');
+  }
+  const path = item ? item.dataset.path : null;
 
   // 快速连点同一图标视为双击：直接打开（Ctrl/Shift 多选时保持原语义）
   if (!ctrl && !shift) {
@@ -963,7 +971,11 @@ function handleFilesListClick(e) {
       lastClickPath = null;
       lastClickTime = 0;
       dblClickHandled = true;
-      if (path) window.api.openFile(path);
+      if (path) {
+        // 双击打开的同时补上选中态：首次单击若被 DOM 重建吞掉，这里兜底显示选中
+        selectSingle(path);
+        window.api.openFile(path);
+      }
       return;
     }
     // 双击后鼠标快速移出图标：第二次点击偏出落到空白处，按位置补偿视为双击
@@ -973,7 +985,10 @@ function handleFilesListClick(e) {
       lastClickPath = null;
       lastClickTime = 0;
       dblClickHandled = true;
-      if (p) window.api.openFile(p);
+      if (p) {
+        selectSingle(p);
+        window.api.openFile(p);
+      }
       return;
     }
     if (path) {
@@ -1081,6 +1096,14 @@ function getSelectedFiles() {
 function clearSelection() {
   selectedPaths.clear();
   updateSelectionUI();
+}
+
+// 单选一个图标（清空其他选择并同步选中样式）
+function selectSingle(path) {
+  clearSelection();
+  selectedPaths.add(path);
+  updateSelectionUI();
+  updateItemSelectedClass();
 }
 
 function updateItemSelectedClass() {
@@ -1690,6 +1713,12 @@ function renderFiles() {
     return;
   }
 
+  // 标签模式不渲染分组元素，清掉从文件夹模式切换残留的旧节点
+  // （增量渲染不再全量重建，需手动移除）
+  for (const el of filesList.querySelectorAll('.group-folder, .group-return-bar')) {
+    el.remove();
+  }
+
   if (files.length === 0) {
     filesList.innerHTML = '<div class="empty">' + t('files.empty') + '</div>';
     layoutIconsAroundWidgets();
@@ -1906,8 +1935,17 @@ function renderFileItems(visibleFiles) {
     }
   }
 
-  filesList.innerHTML = '';
-  filesList.appendChild(fragment);
+  // 增量重排：合并复用节点与新建节点，按 visibleFiles 顺序逐个 append
+  // （已有节点自动从原位置移动），避免 innerHTML 全量重建——点击瞬间重建会
+  // 让 click 事件 target 失效、单击偶发被吞（表现为选中有延迟）
+  const elMap = new Map(existingMap);
+  for (const el of fragment.children) {
+    if (el.dataset.path) elMap.set(el.dataset.path, el);
+  }
+  for (const file of visibleFiles) {
+    const el = elMap.get(file.path);
+    if (el) filesList.appendChild(el);
+  }
 
   if (needsIconLoad) {
     loadIconsAsync();
@@ -1920,6 +1958,12 @@ function renderFilesFolderMode() {
   rebuildFilesMap();
 
   const groupView = openGroupId !== null;
+
+  // 清理旧分组文件夹元素：增量渲染不再全量重建 DOM，进入组视图/主视图前
+  // 先移除上一轮的主视图分组方块，随后再按需重建
+  for (const el of filesList.querySelectorAll('.group-folder')) {
+    el.remove();
+  }
 
   // 组视图：顶部返回条
   let returnBar = filesList.querySelector('.group-return-bar');

@@ -139,28 +139,95 @@ function stopDesktopWatchers() {
   fsWatchers = [];
 }
 
+// ============ 异步 PowerShell 执行 ============
+// spawn 版，不阻塞主进程。execSync 会卡住整个应用：悬停预览系统文件夹（此电脑等）
+// 或刷新系统图标时，主进程可能被阻塞数秒，期间所有 IPC（点击、刷新、图标加载）全部排队。
+function execPowerShellAsync(psScript, extraEnv = {}, timeoutMs = 8000) {
+  return new Promise((resolve) => {
+    const tempFile = path.join(os.tmpdir(), `temp-ps-${process.pid}-${Date.now()}-${Math.random().toString(36).slice(2, 8)}.ps1`);
+    try {
+      fs.writeFileSync(tempFile, psScript, 'utf8');
+    } catch (e) {
+      resolve(null);
+      return;
+    }
+    let output = '';
+    let settled = false;
+    const child = spawn('powershell', ['-NoProfile', '-ExecutionPolicy', 'Bypass', '-File', tempFile], {
+      windowsHide: true,
+      env: { ...process.env, ...extraEnv }
+    });
+    const finish = (result) => {
+      if (settled) return;
+      settled = true;
+      clearTimeout(timeout);
+      try { fs.unlinkSync(tempFile); } catch (e) { /* 忽略 */ }
+      resolve(result);
+    };
+    const timeout = setTimeout(() => {
+      try { child.kill(); } catch (e) { /* 忽略 */ }
+      finish(null);
+    }, timeoutMs);
+    child.stdout.on('data', (d) => { output += d.toString('utf8'); });
+    child.stderr.on('data', () => { /* 忽略 */ });
+    child.on('error', () => finish(null));
+    child.on('close', () => finish(output));
+  });
+}
+
+// 预览枚举/解码缓存：悬停同一目标时避免重复枚举目录、重复启动进程（系统文件夹枚举开销大）
+let previewCacheMap = new Map();
+const PREVIEW_CACHE_TTL = 60 * 1000;
+
+function getPreviewCache(key) {
+  const hit = previewCacheMap.get(key);
+  if (!hit) return null;
+  if (Date.now() - hit.time >= PREVIEW_CACHE_TTL) {
+    previewCacheMap.delete(key);
+    return null;
+  }
+  return hit.data;
+}
+
+function setPreviewCache(key, data) {
+  previewCacheMap.set(key, { time: Date.now(), data });
+  if (previewCacheMap.size > 300) {
+    const now = Date.now();
+    for (const [k, v] of previewCacheMap) {
+      if (now - v.time >= PREVIEW_CACHE_TTL) previewCacheMap.delete(k);
+    }
+  }
+}
+
 // ============ 文件夹预览 ============
 async function listDirectory(dirPath) {
   if (!dirPath || typeof dirPath !== 'string') return [];
+  const cacheKey = 'dir:' + dirPath;
+  const cached = getPreviewCache(cacheKey);
+  if (cached) return cached;
+  let result;
   // 系统虚拟文件夹（此电脑、回收站等 `::` 路径）用 Shell COM 枚举
   if (dirPath.startsWith('::')) {
-    return await listSystemFolder(dirPath);
+    result = await listSystemFolder(dirPath);
+  } else {
+    try {
+      const stats = await fs.promises.stat(dirPath);
+      if (!stats.isDirectory()) return [];
+      const entries = await fs.promises.readdir(dirPath, { withFileTypes: true });
+      result = entries
+        .filter(e => e.name !== 'desktop.ini')
+        .slice(0, 60)
+        .map(e => ({
+          name: e.name,
+          isDirectory: e.isDirectory(),
+          path: path.join(dirPath, e.name)
+        }));
+    } catch (e) {
+      return [];
+    }
   }
-  try {
-    const stats = await fs.promises.stat(dirPath);
-    if (!stats.isDirectory()) return [];
-    const entries = await fs.promises.readdir(dirPath, { withFileTypes: true });
-    return entries
-      .filter(e => e.name !== 'desktop.ini')
-      .slice(0, 60)
-      .map(e => ({
-        name: e.name,
-        isDirectory: e.isDirectory(),
-        path: path.join(dirPath, e.name)
-      }));
-  } catch (e) {
-    return [];
-  }
+  if (result) setPreviewCache(cacheKey, result);
+  return result;
 }
 
 async function listSystemFolder(displayPath) {
@@ -177,22 +244,7 @@ foreach ($item in $folder.Items()) {
   $items += @{ name = $item.Name; isDirectory = [bool]$item.IsFolder; path = $p }
 }
 $items | ConvertTo-Json -Depth 2 -Compress`;
-    const tempFile = path.join(os.tmpdir(), `temp-sysfolder-${process.pid}-${Date.now()}.ps1`);
-    fs.writeFileSync(tempFile, psScript, 'utf8');
-    let result = null;
-    try {
-      result = execSync(
-        `powershell -NoProfile -ExecutionPolicy Bypass -File "${tempFile}"`,
-        {
-          timeout: 8000,
-          encoding: 'utf8',
-          maxBuffer: 1024 * 1024,
-          env: { ...process.env, DIH_SYS_PATH: displayPath }
-        }
-      );
-    } finally {
-      try { fs.unlinkSync(tempFile); } catch (e) { /* 忽略 */ }
-    }
+    const result = await execPowerShellAsync(psScript, { DIH_SYS_PATH: displayPath }, 8000);
     if (!result || result.trim() === 'null' || result.trim() === '') return [];
     const items = JSON.parse(result.trim());
     if (!Array.isArray(items)) return [];
@@ -212,6 +264,9 @@ const IMAGE_PREVIEW_MAX_DIM = 480;
 
 async function getImagePreview(filePath) {
   if (!filePath || typeof filePath !== 'string') return null;
+  const cacheKey = 'img:' + filePath;
+  const cached = getPreviewCache(cacheKey);
+  if (cached) return cached;
   try {
     const stats = await fs.promises.stat(filePath);
     if (!stats.isFile()) return null;
@@ -221,7 +276,9 @@ async function getImagePreview(filePath) {
     if (ext === '.svg') {
       const text = await fs.promises.readFile(filePath, 'utf8');
       const base64 = Buffer.from(text, 'utf8').toString('base64');
-      return `data:image/svg+xml;base64,${base64}`;
+      const dataUrl = `data:image/svg+xml;base64,${base64}`;
+      setPreviewCache(cacheKey, dataUrl);
+      return dataUrl;
     }
     const img = nativeImage.createFromPath(filePath);
     if (img.isEmpty()) return null;
@@ -236,7 +293,9 @@ async function getImagePreview(filePath) {
         quality: 'best'
       });
     }
-    return finalImg.toDataURL();
+    const dataUrl = finalImg.toDataURL();
+    setPreviewCache(cacheKey, dataUrl);
+    return dataUrl;
   } catch (e) {
     return null;
   }
@@ -324,6 +383,16 @@ function getSystemIcons() {
   if (systemIconsCache && (now - systemIconsCacheTime) < SYSTEM_ICONS_CACHE_TTL) {
     return systemIconsCache;
   }
+  // 缓存未命中时先返回空（UI 先行显示），再异步枚举，完成后通过回调刷新缓存。
+  // 避免 execSync 同步阻塞主进程（此电脑/回收站等枚举可耗时数秒）
+  getSystemIconsAsync();
+  return [];
+}
+
+let systemIconsLoading = false;
+async function getSystemIconsAsync() {
+  if (systemIconsLoading) return;
+  systemIconsLoading = true;
   try {
     const psScript = `[Console]::OutputEncoding = [System.Text.Encoding]::UTF8
 $shell = New-Object -ComObject Shell.Application
@@ -338,31 +407,16 @@ foreach ($item in $desktop.Items()) {
   }
 }
 $items | ConvertTo-Json -Depth 3`;
-    
-    const tempFile = path.join(os.tmpdir(), `temp-system-icons-${process.pid}-${Date.now()}.ps1`);
-    fs.writeFileSync(tempFile, psScript, 'utf8');
-    
-    let result = null;
-    try {
-      result = execSync(
-        `powershell -ExecutionPolicy Bypass -File "${tempFile}"`,
-        { timeout: 10000, encoding: 'utf8', maxBuffer: 1024 * 1024 }
-      );
-    } finally {
-      try { fs.unlinkSync(tempFile); } catch (e) { /* 临时文件可能已被清理，忽略 */ }
-    }
-    
+    const result = await execPowerShellAsync(psScript, {}, 10000);
     if (!result || result.trim() === 'null') {
-      return [];
+      systemIconsLoading = false;
+      return;
     }
-    
     const items = JSON.parse(result);
-    
     const resultItems = [];
     for (const item of items) {
       const itemPath = item.Path || '';
       const isVirtual = !itemPath.match(/^[A-Z]:\\Users\\[^\\]+\\Desktop\\/i);
-      
       if (isVirtual && (itemPath.startsWith('::') || itemPath.includes('::'))) {
         resultItems.push({
           name: item.Name,
@@ -374,11 +428,15 @@ $items | ConvertTo-Json -Depth 3`;
       }
     }
     systemIconsCache = resultItems;
-    systemIconsCacheTime = now;
-    return resultItems;
+    systemIconsCacheTime = Date.now();
+    // 通知渲染进程刷新，把异步枚举出的系统图标补进列表
+    if (mainWindow && !mainWindow.isDestroyed() && mainWindow.webContents) {
+      mainWindow.webContents.send('desktop-changed');
+    }
   } catch (e) {
     console.error('获取系统图标失败:', e.message);
-    return [];
+  } finally {
+    systemIconsLoading = false;
   }
 }
 
