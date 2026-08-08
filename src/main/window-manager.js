@@ -313,16 +313,31 @@ function hideWindow(window) {
   });
 }
 
-function showWindow(window) {
-  if (!window || !window.autoHideState.isHidden) return;
-  
-  // 鼠标移到隐藏线唤出 = 主动意图使用桌面：恢复置顶。
-  // 打开应用让位（setAlwaysOnTop(false)）后，滑出再唤出时若保持让位，
-  // 窗口会停留在打开的应用（尤其全屏应用）后面，反直觉；
-  // 在此恢复置顶让窗口一滑入即浮现在最前。
+// 恢复置顶（含"置顶能力解锁"）：窗口滑出屏幕（隐藏）后，Windows 会间歇性锁定该窗口
+// 的置顶设置（实测 setAlwaysOnTop 与 SetWindowPos(HWND_TOPMOST) 均无效，窗口唤出后
+// 停留在普通 Z 序、被打开的全屏应用盖住，表现成"无法呼出"）。
+// 最小化→还原可解除锁定；窗口在屏幕外（隐藏/被盖）时执行无视觉影响。
+function ensureAlwaysOnTop(window) {
+  if (!window || window.isDestroyed()) return;
   try {
     window.setAlwaysOnTop(true, 'floating');
   } catch (e) { /* 忽略 */ }
+  if (!window.isAlwaysOnTop()) {
+    try {
+      window.minimize();
+      window.restore();
+    } catch (e) { /* 忽略 */ }
+    try {
+      window.setAlwaysOnTop(true, 'floating');
+    } catch (e) { /* 忽略 */ }
+  }
+}
+
+function showWindow(window) {
+  if (!window || !window.autoHideState.isHidden) return;
+  
+  // 此刻窗口尚在屏幕外，解锁+置顶全程不可见、无闪烁
+  ensureAlwaysOnTop(window);
   
   const bounds = window.getBounds();
   const display = getDisplayForWindow(window);
@@ -350,6 +365,25 @@ function showWindow(window) {
   // 使用动画效果移动窗口
   animateWindowMove(window, bounds, newBounds, AUTO_HIDE_CONFIG.ANIMATION_DURATION, () => {
     window.autoHideState.isHidden = false;
+    // 鼠标移到隐藏线唤出 = 主动意图使用桌面：恢复置顶。
+    // 注意：必须等窗口完全滑入屏幕后再设置，Windows 上对完全位于屏幕外的
+    // 窗口 setAlwaysOnTop(true) 无效（实测 after=false），会导致唤出后仍被
+    // 打开的应用（尤其全屏应用）盖住，表现成"无法呼出"。
+    try {
+      window.setAlwaysOnTop(true, 'floating');
+    } catch (e) { /* 忽略 */ }
+    try {
+      window.moveTop();
+    } catch (e) { /* 忽略 */ }
+    // 前台锁定破解：应用长时间未接收用户输入时（如"软件启动后第一次"唤出），
+    // setAlwaysOnTop/moveTop/focus 都会被 Windows 拒绝。滑入后窗口立即接收
+    // 鼠标移动输入，短暂延迟再 focus() 即可获得前台权限，窗口浮到最前。
+    setTimeout(() => {
+      if (!window || window.isDestroyed()) return;
+      try {
+        window.focus();
+      } catch (e) { /* 忽略 */ }
+    }, 200);
     // 通知渲染进程
     window.webContents.send('auto-hide-changed', { isHidden: false });
   });
@@ -547,6 +581,24 @@ function checkMousePosition(window) {
       break;
     }
     
+    // 鼠标移入边缘区域 = 主动意图使用桌面：无论窗口是否隐藏都恢复置顶
+    // （窗口未隐藏但处于"打开应用让位"的不置顶状态时同样生效，全屏应用也能被唤出）
+    // 仅当鼠标位置发生变化时判定，避免"打开应用时鼠标恰好停在边缘"导致刚让位就被恢复
+    // 注：窗口滑出（屏幕外）时 setAlwaysOnTop 无效，此处仅覆盖屏幕内场景；
+    //     屏幕外唤出场景由 showWindow 滑入完成后置顶兜底
+    if (isInEdgeZone && !window.isAlwaysOnTop()) {
+      const lastPos = window.autoHideState.lastCursorPos;
+      const moved = !lastPos || lastPos.x !== cursorPos.x || lastPos.y !== cursorPos.y;
+      if (moved) {
+        // 含"置顶能力解锁"（窗口被全屏应用盖住时移入边缘同样需要解锁后置顶才能浮出）
+        ensureAlwaysOnTop(window);
+        try {
+          window.moveTop();
+        } catch (e) { /* 忽略 */ }
+      }
+    }
+    window.autoHideState.lastCursorPos = { x: cursorPos.x, y: cursorPos.y };
+    
     if (window.autoHideState.isHidden) {
       // 窗口处于隐藏状态
       // 只有鼠标在窗口显示位置的边缘区域时才显示窗口
@@ -643,3 +695,4 @@ module.exports = {
   AUTO_HIDE_CONFIG,
   EDGE_TYPES
 };
+

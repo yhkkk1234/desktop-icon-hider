@@ -779,10 +779,20 @@ ipcMain.handle('refresh-files', async () => {
 ipcMain.handle('open-file', async (event, filePath) => {
   if (!isAllowedPath(filePath)) return { success: false, error: '路径不允许' };
   try {
-    const errorMessage = await shell.openPath(filePath);
-    if (!errorMessage) yieldTopmost();
-    return { success: !errorMessage, error: errorMessage || null };
+    // shell.openPath 在部分 Windows 环境会永久挂起（ShellExecuteEx 同步等待，
+    // 文件打不开、Promise 永不 resolve，导致让位不执行、窗口盖住新打开的应用）。
+    // 改用 cmd start 异步打开：立即返回，由系统关联程序正常打开文件
+    // （支持空格/中文/括号/& 等字符；注意不能对路径做 ^ 转义——^ 在 cmd 引号内
+    // 是字面量，转义会导致"新建文本文档 (5).txt"这类文件名被篡改而找不到文件）。
+    const child = spawn('cmd.exe', ['/c start "" "' + String(filePath) + '"'], {
+      shell: true,
+      windowsHide: true
+    });
+    child.unref();
+    yieldTopmost();
+    return { success: true };
   } catch (e) {
+    yieldTopmost();
     return { success: false, error: e.message };
   }
 });
