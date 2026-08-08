@@ -659,9 +659,15 @@ function createWindow() {
     });
     
     mainWindow.on('show', () => {
+      restoreTopmost();
       if (tray) {
         updateTrayMenu(mainWindow, store);
       }
+    });
+    
+    // 回到应用（获得焦点）时恢复置顶
+    mainWindow.on('focus', () => {
+      restoreTopmost();
     });
     
     mainWindow.on('hide', () => {
@@ -774,6 +780,7 @@ ipcMain.handle('open-file', async (event, filePath) => {
   if (!isAllowedPath(filePath)) return { success: false, error: '路径不允许' };
   try {
     const errorMessage = await shell.openPath(filePath);
+    if (!errorMessage) yieldTopmost();
     return { success: !errorMessage, error: errorMessage || null };
   } catch (e) {
     return { success: false, error: e.message };
@@ -784,6 +791,7 @@ ipcMain.handle('open-in-explorer', (event, filePath) => {
   if (!isAllowedPath(filePath)) return false;
   try {
     shell.showItemInFolder(filePath);
+    yieldTopmost();
     return true;
   } catch (e) {
     return false;
@@ -1121,7 +1129,9 @@ ipcMain.handle('check-everything', async () => {
 });
 
 ipcMain.handle('open-everything-search', async (event, keyword) => {
-  return openEverythingSearch(keyword);
+  const result = openEverythingSearch(keyword);
+  if (result && result.ok) yieldTopmost();
+  return result;
 });
 
 ipcMain.handle('set-everything-enabled', async (event, enabled) => {
@@ -1133,6 +1143,7 @@ ipcMain.handle('open-external', async (event, url) => {
   try {
     if (typeof url === 'string' && /^https?:\/\//.test(url)) {
       shell.openExternal(url);
+      yieldTopmost();
       return true;
     }
   } catch (e) { /* 忽略 */ }
@@ -1585,6 +1596,21 @@ ipcMain.handle('set-auto-launch', async (event, enabled) => {
   }
 });
 
+// ============ 置顶让位机制 ============
+// 打开外部程序/文件/浏览器时临时取消置顶，让目标窗口显示在最前；
+// 应用窗口重新获得焦点或显示时恢复置顶（回到桌面 = 想要置顶）。
+function yieldTopmost() {
+  if (mainWindow && !mainWindow.isDestroyed()) {
+    mainWindow.setAlwaysOnTop(false);
+  }
+}
+
+function restoreTopmost() {
+  if (mainWindow && !mainWindow.isDestroyed()) {
+    mainWindow.setAlwaysOnTop(true, 'floating');
+  }
+}
+
 // 右键菜单活动状态：仅当菜单确实显示过时才执行 cancel，避免每次右键多启动一个进程
 let contextMenuActive = false;
 
@@ -1602,23 +1628,17 @@ ipcMain.handle('show-desktop-context-menu', async (event, x, y) => {
     const result = await showDesktopContextMenu(Math.round(x), Math.round(y));
     contextMenuActive = false;
     
-    if (mainWindow && !mainWindow.isDestroyed()) {
-      mainWindow.setAlwaysOnTop(true, 'floating');
-    }
+    // 菜单结束后不恢复置顶：若菜单打开了程序，让位保持；置顶由 focus/show 事件接管
     return result;
   } catch (error) {
     contextMenuActive = false;
     console.error('显示桌面右键菜单失败:', error);
-    if (mainWindow && !mainWindow.isDestroyed()) {
-      mainWindow.setAlwaysOnTop(true, 'floating');
-    }
     return false;
   }
 });
 
 ipcMain.handle('cancel-desktop-context-menu', async () => {
   if (mainWindow && !mainWindow.isDestroyed()) {
-    mainWindow.setAlwaysOnTop(true, 'floating');
     try {
       await cancelDesktopContextMenu();
     } catch (e) { /* 忽略错误 */ }
@@ -1641,16 +1661,11 @@ ipcMain.handle('show-file-context-menu', async (event, filePath, x, y) => {
     const result = await showFileContextMenu(filePath, Math.round(x), Math.round(y));
     contextMenuActive = false;
     
-    if (mainWindow && !mainWindow.isDestroyed()) {
-      mainWindow.setAlwaysOnTop(true, 'floating');
-    }
+    // 菜单结束后不恢复置顶：若菜单打开了程序，让位保持；置顶由 focus/show 事件接管
     return result;
   } catch (error) {
     contextMenuActive = false;
     console.error('显示文件右键菜单失败:', error);
-    if (mainWindow && !mainWindow.isDestroyed()) {
-      mainWindow.setAlwaysOnTop(true, 'floating');
-    }
     return false;
   }
 });

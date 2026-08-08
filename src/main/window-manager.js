@@ -316,6 +316,14 @@ function hideWindow(window) {
 function showWindow(window) {
   if (!window || !window.autoHideState.isHidden) return;
   
+  // 鼠标移到隐藏线唤出 = 主动意图使用桌面：恢复置顶。
+  // 打开应用让位（setAlwaysOnTop(false)）后，滑出再唤出时若保持让位，
+  // 窗口会停留在打开的应用（尤其全屏应用）后面，反直觉；
+  // 在此恢复置顶让窗口一滑入即浮现在最前。
+  try {
+    window.setAlwaysOnTop(true, 'floating');
+  } catch (e) { /* 忽略 */ }
+  
   const bounds = window.getBounds();
   const display = getDisplayForWindow(window);
   const { width: screenWidth, height: screenHeight } = display.workAreaSize;
