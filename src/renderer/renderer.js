@@ -293,8 +293,9 @@ document.addEventListener('DOMContentLoaded', () => {
     handleDesktopContextMenu(e);
   });
 
-  // 框选支持
-  filesList.addEventListener('mousedown', handleBoxSelectStart);
+  // 框选支持（监听整个内容区而非仅 filesList：filesList 高度只包住图标行，
+  // 图标外的空白区域 mousedown 不经过它，导致"单击空白取消选择"在远处失效）
+  contentEl.addEventListener('mousedown', handleBoxSelectStart);
   document.addEventListener('mousemove', handleBoxSelectMove);
   document.addEventListener('mouseup', handleBoxSelectEnd);
 
