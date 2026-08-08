@@ -930,13 +930,51 @@ function ensureFilesListEvents() {
 }
 
 // ============ 多选 ============
+// 双击自检：图标异步加载（emoji→img 替换）会使两次 click 的 target 不同，
+// 导致原生 dblclick 事件丢失、文件夹/文件打不开（有几率失效）。
+// 此处自行判定双击（同一路径、间隔 <500ms 视为双击），不依赖 DOM 稳定性。
+let lastClickPath = null;
+let lastClickTime = 0;
+let lastClickX = 0;
+let lastClickY = 0;
+let dblClickHandled = false;
+
 function handleFilesListClick(e) {
   const item = e.target.closest('.file-item');
-  if (!item) return;
-  e.stopPropagation();
-  const path = item.dataset.path;
+  const path = item ? item.dataset.path : null;
+  const now = Date.now();
   const ctrl = e.ctrlKey || e.metaKey;
   const shift = e.shiftKey;
+
+  // 快速连点同一图标视为双击：直接打开（Ctrl/Shift 多选时保持原语义）
+  if (!ctrl && !shift) {
+    if (path && path === lastClickPath && now - lastClickTime < 500) {
+      lastClickPath = null;
+      lastClickTime = 0;
+      dblClickHandled = true;
+      if (path) window.api.openFile(path);
+      return;
+    }
+    // 双击后鼠标快速移出图标：第二次点击偏出落到空白处，按位置补偿视为双击
+    if (!item && lastClickPath && now - lastClickTime < 500 &&
+        Math.abs(e.clientX - lastClickX) < 30 && Math.abs(e.clientY - lastClickY) < 30) {
+      const p = lastClickPath;
+      lastClickPath = null;
+      lastClickTime = 0;
+      dblClickHandled = true;
+      if (p) window.api.openFile(p);
+      return;
+    }
+    if (path) {
+      lastClickPath = path;
+      lastClickTime = now;
+      lastClickX = e.clientX;
+      lastClickY = e.clientY;
+    }
+  }
+
+  if (!item) return;
+  e.stopPropagation();
 
   if (ctrl) {
     // Ctrl+点击：切换选中
@@ -989,6 +1027,11 @@ function handleFilesListDblClick(e) {
   if (!item) return;
   e.preventDefault();
   e.stopPropagation();
+  // click 自检已打开过（图标替换场景下原生 dblclick 可能仍会生成），避免重复打开
+  if (dblClickHandled) {
+    dblClickHandled = false;
+    return;
+  }
   const filePath = item.dataset.path;
   if (filePath) window.api.openFile(filePath);
 }

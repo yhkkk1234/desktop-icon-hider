@@ -781,14 +781,27 @@ ipcMain.handle('open-file', async (event, filePath) => {
   try {
     // shell.openPath 在部分 Windows 环境会永久挂起（ShellExecuteEx 同步等待，
     // 文件打不开、Promise 永不 resolve，导致让位不执行、窗口盖住新打开的应用）。
-    // 改用 cmd start 异步打开：立即返回，由系统关联程序正常打开文件
-    // （支持空格/中文/括号/& 等字符；注意不能对路径做 ^ 转义——^ 在 cmd 引号内
-    // 是字面量，转义会导致"新建文本文档 (5).txt"这类文件名被篡改而找不到文件）。
-    const child = spawn('cmd.exe', ['/c start "" "' + String(filePath) + '"'], {
-      shell: true,
-      windowsHide: true
-    });
-    child.unref();
+    if (filePath.startsWith('::')) {
+      // 系统虚拟文件夹（此电脑/回收站/网络等）：必须用显式空标题的 start。
+      // 无 shell 写法会把 `::{CLSID}` 当作窗口标题而静默失败；
+      // explorer.exe 直开实测 exit 1 失败。`::` 路径只含 {}、-、数字，
+      // 无 % & 等 cmd 特殊字符，shell:true 拼接安全。
+      const child = spawn('cmd.exe', ['/c start "" "' + String(filePath) + '"'], {
+        shell: true,
+        windowsHide: true
+      });
+      child.unref();
+    } else {
+      // 普通路径：改用 cmd start 异步打开：立即返回，由系统关联程序正常打开文件。
+      // 注意：不能带 shell:true——手动拼接的命令行会被 cmd 二次解析，
+      // 路径中的 %VAR%（如 %TEMP%）会被环境变量展开污染、& 等字符有注入风险
+      // （实测含 %TEMP% 的文件夹打不开）。参数数组交给 libuv 转义后，
+      // 空格/中文/括号/&/% 均安全（支持 `start "" "path"` 的等价语义）。
+      const child = spawn('cmd.exe', ['/c', 'start', '', String(filePath)], {
+        windowsHide: true
+      });
+      child.unref();
+    }
     yieldTopmost();
     return { success: true };
   } catch (e) {
@@ -1617,7 +1630,20 @@ function yieldTopmost() {
 
 function restoreTopmost() {
   if (mainWindow && !mainWindow.isDestroyed()) {
-    mainWindow.setAlwaysOnTop(true, 'floating');
+    try {
+      mainWindow.setAlwaysOnTop(true, 'floating');
+    } catch (e) { /* 忽略 */ }
+    if (!mainWindow.isAlwaysOnTop()) {
+      // Windows 会间歇性锁定窗口的置顶设置（setAlwaysOnTop 失效，窗口停在普通 Z 序）。
+      // 最小化→还原可解除锁定；该场景罕见，闪烁可接受。
+      try {
+        mainWindow.minimize();
+        mainWindow.restore();
+      } catch (e) { /* 忽略 */ }
+      try {
+        mainWindow.setAlwaysOnTop(true, 'floating');
+      } catch (e) { /* 忽略 */ }
+    }
   }
 }
 
