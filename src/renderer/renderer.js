@@ -951,6 +951,13 @@ let lastClickX = 0;
 let lastClickY = 0;
 let dblClickHandled = false;
 
+// 最近一次 mousedown 是否落在图标上：点击兜底仅在此为 true 时启用，
+// 排除"点击按钮/其他控件后自身被渲染移除"的冒泡点击（如分组返回条），避免误选中
+let mousedownOnIcon = false;
+document.addEventListener('mousedown', (e) => {
+  mousedownOnIcon = !!(e.target instanceof Element && e.target.closest('.file-item'));
+}, true);
+
 function handleFilesListClick(e) {
   let item = e.target.closest('.file-item');
   const now = Date.now();
@@ -959,8 +966,8 @@ function handleFilesListClick(e) {
 
   // 点击兜底：若点击瞬间恰逢列表 DOM 重建（target 已被移除、isConnected 为 false 导致
   // closest 失效），按鼠标坐标重新查找新渲染的图标，避免单击偶发被吞、选中延迟。
-  // 图标若因布局变化移位，elementFromPoint 命中的不再是旧位置，自然返回 null，不会误选。
-  if (!item && e.target instanceof Node && !e.target.isConnected) {
+  // 仅当按下时确实点在图标上才兜底，否则不误选按钮等交互控件冒泡的点击。
+  if (!item && e.target instanceof Node && !e.target.isConnected && mousedownOnIcon) {
     const atPoint = document.elementFromPoint(e.clientX, e.clientY);
     if (atPoint) item = atPoint.closest('.file-item');
   }
@@ -1979,12 +1986,15 @@ function renderFilesFolderMode() {
       <span class="group-return-count">(${(group ? group.paths : []).length})</span>
       <button class="group-return-delete">${t('group.delete')}</button>
     `;
-    returnBar.querySelector('.group-back-btn').addEventListener('click', () => {
+    returnBar.querySelector('.group-back-btn').addEventListener('click', (e) => {
+      // 阻止冒泡：返回条渲染后即被移除，冒泡到 filesList 会触发点击兜底误选中下方图标
+      e.stopPropagation();
       openGroupId = null;
       renderFiles();
     });
     if (group) {
-      returnBar.querySelector('.group-return-delete').addEventListener('click', () => {
+      returnBar.querySelector('.group-return-delete').addEventListener('click', (e) => {
+        e.stopPropagation();
         handleDeleteGroup(group.id);
       });
     }
