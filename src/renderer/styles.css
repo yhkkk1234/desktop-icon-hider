@@ -2296,6 +2296,22 @@ body.icons-locked .file-item.draggable:active {
   }
 }
 
+/* 晴天动态太阳：☀️ emoji 缓慢旋转（纯 transform 动画，GPU 合成无主线程参与） */
+.weather-emoji-sun {
+  display: inline-block;
+  animation: wf-sun-spin 24s linear infinite;
+  will-change: transform;
+}
+
+@keyframes wf-sun-spin {
+  from {
+    transform: rotate(0deg);
+  }
+  to {
+    transform: rotate(360deg);
+  }
+}
+
 /* 系统"减少动态效果"：降级为纯背景，不渲染粒子 */
 @media (prefers-reduced-motion: reduce) {
   .wf-cloud,
@@ -2305,6 +2321,10 @@ body.icons-locked .file-item.draggable:active {
   .wf-bolt {
     animation: none !important;
     display: none;
+  }
+  /* 太阳保留静态显示，仅停转 */
+  .weather-emoji-sun {
+    animation: none !important;
   }
 }
 

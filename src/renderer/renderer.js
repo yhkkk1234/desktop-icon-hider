@@ -3513,9 +3513,14 @@ async function updateWeatherNode(node) {
     const todayLine = (result.todayMax !== null && result.todayMin !== null)
       ? `<div class="weather-today">${t('widget.today')} ↑${result.todayMax}° ↓${result.todayMin}°</div>`
       : '';
+    // 晴天且动态背景开启：太阳 emoji 缓慢旋转，其余天气仍用 emoji，
+    // 避免背景层重复出现第二个太阳
+    const emojiHtml = (Number(result.code) === 0 && weatherFxEnabled)
+      ? `<span class="weather-emoji weather-emoji-sun">${result.emoji}</span>`
+      : `<span class="weather-emoji">${result.emoji}</span>`;
     body.innerHTML = `
       <div class="weather-main">
-        <span class="weather-emoji">${result.emoji}</span>
+        ${emojiHtml}
         <span class="weather-temp">${result.temp}°C</span>
       </div>
       ${todayLine}
@@ -3541,7 +3546,7 @@ async function updateWeatherNode(node) {
 // 粒子仅在生成时创建一次 DOM，动画期间主线程零参与，性能开销极小。
 function weatherFxForCode(code) {
   const c = Number(code);
-  if (c === 0) return { kind: 'none', intensity: 0 }; // 晴
+  if (c === 0) return { kind: 'none', intensity: 0 }; // 晴：无背景粒子，太阳动效渲染在天气图标上
   if (c === 1) return { kind: 'clouds', intensity: 1 }; // 基本晴朗：少量淡云
   if (c === 2) return { kind: 'clouds', intensity: 2 }; // 多云
   if (c === 3) return { kind: 'clouds', intensity: 3 }; // 阴：云多且暗
