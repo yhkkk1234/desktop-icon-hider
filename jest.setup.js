@@ -60,12 +60,3 @@ jest.mock('electron-store', () => {
     set: jest.fn()
   }));
 });
-
-// Mock electron-auto-launch
-jest.mock('electron-auto-launch', () => {
-  return jest.fn().mockImplementation(() => ({
-    enable: jest.fn(),
-    disable: jest.fn(),
-    isEnabled: jest.fn(() => Promise.resolve(false))
-  }));
-});

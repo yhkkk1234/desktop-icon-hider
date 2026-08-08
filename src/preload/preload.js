@@ -115,6 +115,9 @@ contextBridge.exposeInMainWorld('api', {
   
   // 监听全局快捷键触发的刷新
   onRefreshFiles: (callback) => ipcRenderer.on('refresh-files', () => callback()),
+
+  // 监听全局快捷键触发的组件显隐切换
+  onToggleWidgets: (callback) => ipcRenderer.on('toggle-widgets', () => callback()),
   
   // 监听桌面文件变化
   onDesktopChanged: (callback) => ipcRenderer.on('desktop-changed', () => callback()),

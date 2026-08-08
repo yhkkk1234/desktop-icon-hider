@@ -52,7 +52,8 @@ const store = new Store({
     weatherCity: null, // { name, lat, lon }
     shortcuts: {
       toggleWindow: 'CommandOrControl+Alt+D',
-      refresh: 'CommandOrControl+Alt+R'
+      refresh: 'CommandOrControl+Alt+R',
+      toggleWidgets: 'CommandOrControl+Alt+W'
     }
   }
 });
@@ -992,15 +993,18 @@ ipcMain.handle('set-shortcuts', async (event, shortcuts) => {
     if (!shortcuts || typeof shortcuts !== 'object') return false;
     const sanitized = {
       toggleWindow: String(shortcuts.toggleWindow || DEFAULT_SHORTCUTS.TOGGLE_WINDOW),
-      refresh: String(shortcuts.refresh || DEFAULT_SHORTCUTS.REFRESH)
+      refresh: String(shortcuts.refresh || DEFAULT_SHORTCUTS.REFRESH),
+      toggleWidgets: String(shortcuts.toggleWidgets || DEFAULT_SHORTCUTS.TOGGLE_WIDGETS)
     };
-    // 两个快捷键相同会导致其中一个注册失败
-    if (sanitized.toggleWindow === sanitized.refresh) return false;
+    // 快捷键相同会导致注册冲突
+    const values = [sanitized.toggleWindow, sanitized.refresh, sanitized.toggleWidgets];
+    if (new Set(values).size !== values.length) return false;
 
     globalShortcut.unregisterAll();
     const reg1 = globalShortcut.register(sanitized.toggleWindow, handleGlobalToggleWindow);
     const reg2 = globalShortcut.register(sanitized.refresh, handleGlobalRefresh);
-    if (!reg1 || !reg2) {
+    const reg3 = globalShortcut.register(sanitized.toggleWidgets, handleGlobalToggleWidgets);
+    if (!reg1 || !reg2 || !reg3) {
       // 注册失败（非法/被占用）：恢复旧快捷键，不保存新配置
       globalShortcut.unregisterAll();
       registerGlobalShortcuts();
@@ -1690,6 +1694,11 @@ app.whenReady().then(async () => {
     createWindow();
     tray = createTray(mainWindow, store);
     
+    // 开机自启（--hidden）时不显示窗口，避免抢占焦点；托盘与快捷键随时可唤出
+    if (process.argv.includes('--hidden') && mainWindow && !mainWindow.isDestroyed()) {
+      mainWindow.hide();
+    }
+    
     // 监听桌面文件变化，自动刷新
     startDesktopWatchers();
     
@@ -1755,7 +1764,8 @@ app.on('will-quit', () => {
 // ============ 全局快捷键 ============
 const DEFAULT_SHORTCUTS = {
   TOGGLE_WINDOW: 'CommandOrControl+Alt+D',
-  REFRESH: 'CommandOrControl+Alt+R'
+  REFRESH: 'CommandOrControl+Alt+R',
+  TOGGLE_WIDGETS: 'CommandOrControl+Alt+W'
 };
 
 // 显示/隐藏窗口
@@ -1777,10 +1787,18 @@ function handleGlobalRefresh() {
   }
 }
 
+// 切换组件显隐
+function handleGlobalToggleWidgets() {
+  if (mainWindow && !mainWindow.isDestroyed() && mainWindow.webContents) {
+    mainWindow.webContents.send('toggle-widgets');
+  }
+}
+
 function registerGlobalShortcuts() {
   const shortcuts = store.get('shortcuts', {});
   const toggleKey = shortcuts.toggleWindow || DEFAULT_SHORTCUTS.TOGGLE_WINDOW;
   const refreshKey = shortcuts.refresh || DEFAULT_SHORTCUTS.REFRESH;
+  const widgetsKey = shortcuts.toggleWidgets || DEFAULT_SHORTCUTS.TOGGLE_WIDGETS;
 
   // 自定义快捷键：显示/隐藏窗口
   const reg1 = globalShortcut.register(toggleKey, handleGlobalToggleWindow);
@@ -1792,5 +1810,11 @@ function registerGlobalShortcuts() {
   const reg2 = globalShortcut.register(refreshKey, handleGlobalRefresh);
   if (!reg2) {
     console.warn('全局快捷键注册失败:', refreshKey);
+  }
+
+  // 自定义快捷键：显示/隐藏组件
+  const reg3 = globalShortcut.register(widgetsKey, handleGlobalToggleWidgets);
+  if (!reg3) {
+    console.warn('全局快捷键注册失败:', widgetsKey);
   }
 }

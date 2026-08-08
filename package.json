@@ -32,7 +32,6 @@
     "sharp": "^0.34.5"
   },
   "dependencies": {
-    "electron-auto-launch": "^5.0.7",
     "electron-store": "^8.2.0"
   }
 }

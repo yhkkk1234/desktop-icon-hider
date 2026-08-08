@@ -397,6 +397,10 @@
           <label for="shortcut-refresh-input" data-i18n="settings.shortcutRefresh">刷新文件:</label>
           <input type="text" id="shortcut-refresh-input" class="shortcut-input" placeholder="Ctrl+Alt+R">
         </div>
+        <div class="setting-item">
+          <label for="shortcut-widgets-input" data-i18n="settings.shortcutWidgets">显示/隐藏组件:</label>
+          <input type="text" id="shortcut-widgets-input" class="shortcut-input" placeholder="Ctrl+Alt+W">
+        </div>
         <div class="setting-description" data-i18n="settings.shortcutsDesc">
           点击输入框后按下新的组合键即可修改。修改后立即生效。
         </div>
@@ -495,6 +499,12 @@
         <button id="add-widget-btn" class="add-group-btn" title="添加小组件" data-i18n-title="widget.add">
           <svg class="ui-icon" viewBox="0 0 24 24" aria-hidden="true">
             <path d="M9 4.5h2.2a2.3 2.3 0 1 1 4.6 0H18a2 2 0 0 1 2 2v2.2a2.3 2.3 0 1 0 0 4.6V16a2 2 0 0 1-2 2h-2.2a2.3 2.3 0 1 0-4.6 0H7a2 2 0 0 1-2-2v-2.7a2.3 2.3 0 1 0 0-4.6V6.5a2 2 0 0 1 2-2H9z"></path>
+          </svg>
+        </button>
+        <button id="toggle-widgets-btn" class="add-group-btn" title="显示/隐藏组件" data-i18n-title="widget.toggleBtn">
+          <svg class="ui-icon" viewBox="0 0 24 24" aria-hidden="true">
+            <path d="M2.5 12S6 5.5 12 5.5 21.5 12 21.5 12 18 18.5 12 18.5 2.5 12 2.5 12z"></path>
+            <circle cx="12" cy="12" r="2.8"></circle>
           </svg>
         </button>
         <div id="widget-menu" class="widget-menu" style="display:none;">

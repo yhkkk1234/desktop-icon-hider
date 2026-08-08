@@ -1,13 +1,44 @@
 const { Tray, Menu, app, nativeImage } = require('electron');
 const path = require('path');
-const AutoLaunch = require('electron-auto-launch');
+const { execFileSync } = require('child_process');
 
 let tray = null;
 
-const autoLauncher = new AutoLaunch({
-  name: 'Desktop Icon Hider',
-  isHidden: true
-});
+// 开机自启：直接管理注册表 Run 键。
+// 不用 electron-auto-launch（Windows 上强制以 exe 名做键名，开发模式会注册成裸 electron.exe 导致开机无效）；
+// 也不用 app.setLoginItemSettings（开发模式下写入键名 electron.app.Electron 与读取键名不一致，状态永远读不到）。
+const AUTO_LAUNCH_KEY = 'HKCU\\Software\\Microsoft\\Windows\\CurrentVersion\\Run';
+const AUTO_LAUNCH_NAME = 'Desktop Icon Hider';
+
+function getLaunchCommand() {
+  // 打包版：应用 exe 自身；开发模式：electron.exe + 应用路径参数
+  const args = ['--hidden'];
+  if (!app.isPackaged) args.push(app.getAppPath());
+  return `"${process.execPath}" ${args.join(' ')}`;
+}
+
+const autoLauncher = {
+  async enable() {
+    execFileSync('reg', ['add', AUTO_LAUNCH_KEY, '/v', AUTO_LAUNCH_NAME, '/t', 'REG_SZ', '/d', getLaunchCommand(), '/f']);
+    return true;
+  },
+  async disable() {
+    try {
+      execFileSync('reg', ['delete', AUTO_LAUNCH_KEY, '/v', AUTO_LAUNCH_NAME, '/f']);
+    } catch (e) {
+      // 键不存在时忽略
+    }
+    return true;
+  },
+  async isEnabled() {
+    try {
+      execFileSync('reg', ['query', AUTO_LAUNCH_KEY, '/v', AUTO_LAUNCH_NAME]);
+      return true;
+    } catch (e) {
+      return false;
+    }
+  }
+};
 
 function createTray(mainWindow, store) {
   try {

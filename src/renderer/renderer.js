@@ -67,10 +67,10 @@ let selectionToolbar, selectionCount, selOpenBtn, selCopyBtn, selCutBtn, selPast
 let folderPreview, boxSelectEl;
 let iconsLockToggle, rulesList, addRuleBtn, applyRulesBtn;
 let startupDelayInput, languageSelect;
-let shortcutToggleInput, shortcutRefreshInput;
+let shortcutToggleInput, shortcutRefreshInput, shortcutWidgetsInput;
 let exportLayoutBtn, importLayoutBtn, quitAppBtn;
 let groupModeSelect, groupsBar, thumbStyleSelect;
-let widgetsLayer, addWidgetBtn, widgetMenu, showWidgetsToggle, widgetsAvoidToggle, weatherFxToggle;
+let widgetsLayer, addWidgetBtn, widgetMenu, showWidgetsToggle, widgetsAvoidToggle, weatherFxToggle, toggleWidgetsBtn;
 let everythingBar, everythingInput, everythingGo, everythingToggle, everythingStatus, everythingDownloadBtn, everythingAdminWarn;
 let folderPreviewToggle;
 let bgLayer, bgImage, bgToggle, selectBgBtn, clearBgBtn, bgBlurSlider, bgBlurValue, bgDimSlider, bgDimValue;
@@ -127,6 +127,7 @@ document.addEventListener('DOMContentLoaded', () => {
   languageSelect = document.getElementById('language-select');
   shortcutToggleInput = document.getElementById('shortcut-toggle-input');
   shortcutRefreshInput = document.getElementById('shortcut-refresh-input');
+  shortcutWidgetsInput = document.getElementById('shortcut-widgets-input');
   exportLayoutBtn = document.getElementById('export-layout-btn');
   importLayoutBtn = document.getElementById('import-layout-btn');
   quitAppBtn = document.getElementById('quit-app-btn');
@@ -139,6 +140,7 @@ document.addEventListener('DOMContentLoaded', () => {
   showWidgetsToggle = document.getElementById('show-widgets-toggle');
   widgetsAvoidToggle = document.getElementById('widgets-avoid-toggle');
   weatherFxToggle = document.getElementById('weather-fx-toggle');
+  toggleWidgetsBtn = document.getElementById('toggle-widgets-btn');
   everythingBar = document.getElementById('everything-bar');
   everythingInput = document.getElementById('everything-input');
   everythingGo = document.getElementById('everything-go');
@@ -210,6 +212,10 @@ document.addEventListener('DOMContentLoaded', () => {
   // 快捷键录制
   bindShortcutRecorder(shortcutToggleInput, 'toggleWindow');
   bindShortcutRecorder(shortcutRefreshInput, 'refresh');
+  bindShortcutRecorder(shortcutWidgetsInput, 'toggleWidgets');
+
+  // 一键显示/隐藏组件（分组栏按钮）
+  toggleWidgetsBtn.addEventListener('click', toggleWidgetsVisibility);
 
   // 搜索栏事件
   searchInput.addEventListener('input', handleSearchInput);
@@ -417,6 +423,11 @@ document.addEventListener('DOMContentLoaded', () => {
   // 监听全局快捷键触发的刷新 (Ctrl+Alt+R)
   window.api.onRefreshFiles(() => {
     debouncedHandleRefresh(0);
+  });
+
+  // 监听全局快捷键触发的组件显隐切换 (Ctrl+Alt+W)
+  window.api.onToggleWidgets(() => {
+    toggleWidgetsVisibility();
   });
 
   // 监听桌面文件变化（自动刷新）
@@ -3576,6 +3587,15 @@ async function handleShowWidgetsToggle() {
   renderWidgets();
 }
 
+// 一键显示/隐藏全部组件（分组栏按钮 / 全局快捷键 Ctrl+Alt+W）
+async function toggleWidgetsVisibility() {
+  showWidgets = !showWidgets;
+  if (showWidgetsToggle) showWidgetsToggle.checked = showWidgets;
+  await window.api.setShowWidgets(showWidgets);
+  renderWidgets();
+  showToast(showWidgets ? t('widget.shown') : t('widget.hidden'));
+}
+
 // ============ Everything 搜索 ============
 function updateEverythingUI() {
   if (everythingToggle) everythingToggle.checked = everythingEnabled;
@@ -3724,6 +3744,7 @@ function updateShortcutInputs() {
   if (!shortcuts) shortcuts = {};
   shortcutToggleInput.value = shortcuts.toggleWindow || 'CommandOrControl+Alt+D';
   shortcutRefreshInput.value = shortcuts.refresh || 'CommandOrControl+Alt+R';
+  shortcutWidgetsInput.value = shortcuts.toggleWidgets || 'CommandOrControl+Alt+W';
 }
 
 // ============ Toast 提示 ============
