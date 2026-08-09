@@ -1,4 +1,7 @@
 const { BrowserWindow, screen } = require('electron');
+const { spawn } = require('child_process');
+const fs = require('fs');
+const os = require('os');
 const path = require('path');
 
 const WINDOW_CONFIG = {
@@ -22,6 +25,111 @@ const EDGE_TYPES = {
   RIGHT: 'right',
   NONE: 'none'
 };
+
+// ============ 全屏应用检测 ============
+// 前台窗口全屏（覆盖整个显示器，如全屏 IDE/视频/游戏）时，边缘自动隐藏/唤出与
+// 置顶解锁的 minimize/restore 会造成窗口闪烁、打扰全屏使用。此处用 spawn 异步
+// 查询（每 1.5s 缓存刷新，不阻塞主进程），失败时默认"非全屏"降级安全。
+// 关键：通过窗口 HWND 在 PowerShell 内比对"前台全屏窗口"与"本窗口"所在显示器
+// （MonitorFromWindow 同屏判定，全程物理像素域，避免多屏 DPI 缩放下 DIP/物理混算
+// 产生的假相交），第二屏的全屏应用不会误禁第一屏窗口的边缘唤出。
+let fullscreenForeground = false;
+let fullscreenMonitorKey = null;
+let fullscreenCheckedAt = 0;
+let fullscreenChecking = false;
+const FULLSCREEN_CHECK_INTERVAL = 1500;
+
+function getWindowHwnd(win) {
+  try {
+    const buf = win.getNativeWindowHandle();
+    if (buf && buf.length >= 8) return buf.readBigUInt64LE(0).toString();
+    if (buf && buf.length >= 4) return buf.readUInt32LE(0).toString();
+  } catch (e) { /* 忽略 */ }
+  return null;
+}
+
+function isFullscreenAppForeground(win) {
+  let key = null;
+  if (win && !win.isDestroyed()) {
+    try {
+      const disp = screen.getDisplayMatching(win.getBounds());
+      key = `${disp.bounds.x},${disp.bounds.y},${disp.bounds.width},${disp.bounds.height}`;
+    } catch (e) { /* 忽略 */ }
+  }
+  const now = Date.now();
+  if (key !== fullscreenMonitorKey || (now - fullscreenCheckedAt > FULLSCREEN_CHECK_INTERVAL && !fullscreenChecking)) {
+    refreshFullscreenForeground(win, key);
+  }
+  return fullscreenForeground;
+}
+
+const FULLSCREEN_PS_SCRIPT = `Add-Type -TypeDefinition 'using System; using System.Runtime.InteropServices;
+public struct FSRect { public int L, T, R, B; }
+public struct FSMonitorInfo { public int cbSize; public FSRect rcMonitor; public FSRect rcWork; public uint dwFlags; }
+public class FSWin {
+  [DllImport("user32.dll")] public static extern IntPtr GetForegroundWindow();
+  [DllImport("user32.dll")] public static extern bool GetWindowRect(IntPtr h, out FSRect r);
+  [DllImport("user32.dll")] public static extern IntPtr MonitorFromWindow(IntPtr h, uint flags);
+  [DllImport("user32.dll")] public static extern bool GetMonitorInfo(IntPtr m, ref FSMonitorInfo mi);
+  [DllImport("user32.dll", CharSet = CharSet.Unicode)] public static extern int GetClassName(IntPtr h, System.Text.StringBuilder sb, int max);
+  [DllImport("user32.dll")] public static extern int GetWindowLong(IntPtr h, int index);
+}'
+$h = [FSWin]::GetForegroundWindow()
+if ($h -eq [IntPtr]::Zero) { 'false'; exit 0 }
+$sb = New-Object System.Text.StringBuilder 256
+[FSWin]::GetClassName($h, $sb, 256) | Out-Null
+if ($sb.ToString() -eq 'Progman' -or $sb.ToString() -eq 'WorkerW') { 'false'; exit 0 }
+$style = [FSWin]::GetWindowLong($h, -16)
+if (($style -band 0x01000000) -ne 0) { 'false'; exit 0 }
+$r = New-Object FSRect
+[FSWin]::GetWindowRect($h, [ref]$r) | Out-Null
+$mi = New-Object FSMonitorInfo
+$mi.cbSize = [System.Runtime.InteropServices.Marshal]::SizeOf($mi)
+$mon = [FSWin]::MonitorFromWindow($h, 2)
+if ($mon -eq [IntPtr]::Zero) { 'false'; exit 0 }
+[FSWin]::GetMonitorInfo($mon, [ref]$mi) | Out-Null
+$w = $r.R - $r.L
+$ht = $r.B - $r.T
+$mw = $mi.rcMonitor.R - $mi.rcMonitor.L
+$mh = $mi.rcMonitor.B - $mi.rcMonitor.T
+$winHwndStr = $env:DIH_WIN_HWND
+if ($winHwndStr) {
+  $winMon = [FSWin]::MonitorFromWindow([IntPtr]::new([long]$winHwndStr), 2)
+  $fgMon = [FSWin]::MonitorFromWindow($h, 2)
+  if ($winMon -ne $fgMon) { 'false'; exit 0 }
+}
+if ($w -ge $mw -and $ht -ge $mh) { 'true' } else { 'false' }`;
+
+function refreshFullscreenForeground(win, monitorKey) {
+  fullscreenCheckedAt = Date.now();
+  fullscreenChecking = true;
+  fullscreenMonitorKey = monitorKey;
+  const tempFile = path.join(os.tmpdir(), `temp-fscheck-${process.pid}-${Date.now()}.ps1`);
+  try {
+    fs.writeFileSync(tempFile, FULLSCREEN_PS_SCRIPT, 'utf8');
+  } catch (e) {
+    fullscreenChecking = false;
+    return;
+  }
+  const child = spawn('powershell', ['-NoProfile', '-ExecutionPolicy', 'Bypass', '-File', tempFile], {
+    windowsHide: true,
+    env: { ...process.env, DIH_WIN_HWND: win && !win.isDestroyed() ? (getWindowHwnd(win) || '') : '' }
+  });
+  let output = '';
+  const finish = () => {
+    fullscreenChecking = false;
+    try { fs.unlinkSync(tempFile); } catch (e) { /* 忽略 */ }
+    fullscreenForeground = output.trim().toLowerCase() === 'true';
+  };
+  child.stdout.on('data', (d) => { output += d.toString('utf8'); });
+  child.on('error', () => finish());
+  child.on('close', () => finish());
+}
+
+// 置顶解锁限频：Windows 置顶锁定期（如全屏应用抢置顶）内反复触发 minimize/restore
+// 会造成窗口闪烁，8 秒内只允许一次破坏性解锁
+let lastTopmostUnlockTime = 0;
+const TOPMOST_UNLOCK_INTERVAL = 8 * 1000;
 
 let autoHideState = {
   enabled: false,
@@ -350,6 +458,10 @@ function ensureAlwaysOnTop(window) {
     window.setAlwaysOnTop(true, 'floating');
   } catch (e) { /* 忽略 */ }
   if (!window.isAlwaysOnTop()) {
+    // 限频：置顶锁定期内反复调用会每次 minimize/restore 造成窗口闪烁
+    const now = Date.now();
+    if (now - lastTopmostUnlockTime < TOPMOST_UNLOCK_INTERVAL) return;
+    lastTopmostUnlockTime = now;
     try {
       window.minimize();
       window.restore();
@@ -553,6 +665,12 @@ function checkMousePosition(window) {
     return;
   }
   
+  // 全屏应用在本窗口所在显示器前台（如全屏 IDE/视频/游戏）：跳过边缘隐藏/唤出与置顶解锁，
+  // 避免窗口反复滑出滑入或 minimize/restore 闪烁打扰全屏使用
+  if (isFullscreenAppForeground(window)) {
+    return;
+  }
+  
   try {
     const cursorPos = screen.getCursorScreenPoint();
     const bounds = window.getBounds();
@@ -722,6 +840,7 @@ module.exports = {
   createMainWindow,
   setAutoHideEnabled,
   getAutoHideStatus,
+  isFullscreenAppForeground,
   WINDOW_CONFIG,
   AUTO_HIDE_CONFIG,
   EDGE_TYPES

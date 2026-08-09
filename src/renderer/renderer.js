@@ -1489,6 +1489,9 @@ function startPreviewTimer(file, item) {
   previewTimer = setTimeout(async () => {
     previewTimer = null;
     if (previewPath !== file.path) return;
+    // 鼠标已离开图标/预览面板（隐藏计时器已挂起）时不显示，避免"预览窗闪现"：
+    // 350ms 预览计时器与 250ms 隐藏计时器竞态时，异步枚举返回后立即被取消
+    if (previewHideTimer) return;
     if (file.isDirectory) {
       const entries = await window.api.listDirectory(file.path);
       if (previewPath !== file.path) return;
@@ -1961,9 +1964,17 @@ function renderFileItems(visibleFiles) {
 }
 
 // ============ 文件夹模式（手机桌面风格分组） ============
+// 组视图打开时刻：双击分组方块时第二击可能误落在返回按钮上造成"打开即退出"，
+// 返回按钮忽略打开后 400ms 内的点击（该窗口内不可能有真实返回意图）
+let groupViewOpenedAt = 0;
 function renderFilesFolderMode() {
   sortFiles();
   rebuildFilesMap();
+
+  // 幽灵组防护：openGroupId 指向的分组不存在时自动回到主视图，避免渲染残留的幽灵组视图
+  if (openGroupId !== null && !groups.some(g => g.id === openGroupId)) {
+    openGroupId = null;
+  }
 
   const groupView = openGroupId !== null;
 
@@ -1989,6 +2000,11 @@ function renderFilesFolderMode() {
     returnBar.querySelector('.group-back-btn').addEventListener('click', (e) => {
       // 阻止冒泡：返回条渲染后即被移除，冒泡到 filesList 会触发点击兜底误选中下方图标
       e.stopPropagation();
+      // 合成/幽灵点击不处理（真实用户点击必然 isTrusted=true）
+      if (!e.isTrusted) return;
+      // 防误触：双击分组方块时第二击可能落在返回按钮上（方块与返回条同处第一行），
+      // 打开后 400ms 内的点击视为误触直接忽略
+      if (Date.now() - groupViewOpenedAt < 400) return;
       openGroupId = null;
       renderFiles();
     });
@@ -2131,6 +2147,9 @@ function createGroupFolderElement(group) {
   // 单击打开组视图
   el.addEventListener('click', (e) => {
     e.stopPropagation();
+    // 合成/幽灵点击不处理（真实用户点击必然 isTrusted=true）
+    if (!e.isTrusted) return;
+    groupViewOpenedAt = Date.now();
     openGroupId = group.id;
     currentGroupId = group.id;
     clearSelection();
@@ -2467,6 +2486,7 @@ async function handleAddGroup() {
   if (groupDisplayMode === 'folder') {
     // 文件夹模式：直接打开新建的分组
     openGroupId = newGroup.id;
+    groupViewOpenedAt = Date.now();
   }
   renderGroups();
   renderFiles();

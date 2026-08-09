@@ -10,6 +10,7 @@ const {
   createMainWindow, 
   setAutoHideEnabled, 
   getAutoHideStatus,
+  isFullscreenAppForeground,
   EDGE_TYPES 
 } = require('./window-manager');
 const { createTray, updateTrayMenu, destroyTray, autoLauncher } = require('./tray');
@@ -385,11 +386,30 @@ function getSystemIcons() {
   }
   // 缓存未命中时先返回空（UI 先行显示），再异步枚举，完成后通过回调刷新缓存。
   // 避免 execSync 同步阻塞主进程（此电脑/回收站等枚举可耗时数秒）
-  getSystemIconsAsync();
+  triggerSystemIconsAsync();
   return [];
 }
 
 let systemIconsLoading = false;
+let systemIconsPending = null; // 当前枚举的 Promise，供 waitSystemIcons 等待
+
+function triggerSystemIconsAsync() {
+  if (systemIconsLoading) return systemIconsPending;
+  systemIconsPending = getSystemIconsAsync();
+  return systemIconsPending;
+}
+
+// 等待系统图标枚举完成（异步，不阻塞主进程）：刷新时保证返回完整数据，
+// 避免"系统图标先消失、枚举完成后才补上"的视觉回归
+async function waitSystemIcons(timeoutMs = 6000) {
+  const now = Date.now();
+  if (systemIconsCache && (now - systemIconsCacheTime) < SYSTEM_ICONS_CACHE_TTL) return;
+  const pending = triggerSystemIconsAsync();
+  if (pending) {
+    await Promise.race([pending, new Promise((resolve) => setTimeout(resolve, timeoutMs))]);
+  }
+}
+
 async function getSystemIconsAsync() {
   if (systemIconsLoading) return;
   systemIconsLoading = true;
@@ -409,7 +429,6 @@ foreach ($item in $desktop.Items()) {
 $items | ConvertTo-Json -Depth 3`;
     const result = await execPowerShellAsync(psScript, {}, 10000);
     if (!result || result.trim() === 'null') {
-      systemIconsLoading = false;
       return;
     }
     const items = JSON.parse(result);
@@ -437,11 +456,14 @@ $items | ConvertTo-Json -Depth 3`;
     console.error('获取系统图标失败:', e.message);
   } finally {
     systemIconsLoading = false;
+    systemIconsPending = null;
   }
 }
 
 // 获取桌面文件列表
-async function getDesktopFiles() {
+// awaitSystemIcons=true 时（刷新请求）等待系统图标枚举完成，保证返回完整数据；
+// 启动场景传 false，窗口快速显示、系统图标由 desktop-changed 异步补齐
+async function getDesktopFiles(awaitSystemIcons = false) {
   try {
     const items = [];
     const seenPaths = new Set();
@@ -489,7 +511,10 @@ async function getDesktopFiles() {
       }
     }
     
-    // 获取系统图标（此电脑、回收站等）
+    // 获取系统图标（此电脑、回收站等）：刷新场景等待枚举完成，避免图标先消失再补
+    if (awaitSystemIcons) {
+      await waitSystemIcons();
+    }
     const systemIcons = getSystemIcons();
     for (const icon of systemIcons) {
       // 过滤掉已经在文件列表中存在的项
@@ -827,7 +852,8 @@ ipcMain.handle('quit-app', async () => {
 
 ipcMain.handle('refresh-files', async () => {
   try {
-    const files = await getDesktopFiles();
+    // 刷新请求等待系统图标枚举完成，保证一次返回完整数据（含系统图标）
+    const files = await getDesktopFiles(true);
     cleanupIconCache(files.map(f => f.path));
     return files;
   } catch (error) {
@@ -1697,6 +1723,11 @@ function yieldTopmost() {
   }
 }
 
+// 置顶修复限频：Windows 置顶锁定期（全屏应用抢置顶）内反复触发
+// minimize/restore 会造成窗口闪烁，8 秒内只允许一次破坏性修复
+let lastTopmostFixTime = 0;
+const TOPMOST_FIX_INTERVAL = 8 * 1000;
+
 function restoreTopmost() {
   if (mainWindow && !mainWindow.isDestroyed()) {
     try {
@@ -1704,7 +1735,11 @@ function restoreTopmost() {
     } catch (e) { /* 忽略 */ }
     if (!mainWindow.isAlwaysOnTop()) {
       // Windows 会间歇性锁定窗口的置顶设置（setAlwaysOnTop 失效，窗口停在普通 Z 序）。
-      // 最小化→还原可解除锁定；该场景罕见，闪烁可接受。
+      // 最小化→还原可解除锁定；限频 + 本窗口所在显示器有全屏应用前台时跳过，避免窗口反复闪烁
+      const now = Date.now();
+      if (now - lastTopmostFixTime < TOPMOST_FIX_INTERVAL) return;
+      if (isFullscreenAppForeground(mainWindow)) return;
+      lastTopmostFixTime = now;
       try {
         mainWindow.minimize();
         mainWindow.restore();
