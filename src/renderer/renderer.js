@@ -31,8 +31,14 @@ let folderPreviewEnabled = true; // 文件夹悬停预览开关
 let everythingEnabled = false; // Everything 集成开关
 let everythingInstalled = false; // 是否检测到 Everything
 let everythingRunAsAdmin = false; // Everything 是否以管理员运行
-let bgConfig = { enabled: false, blur: 24, dim: 45 }; // 自定义背景图片配置
+let bgConfig = { enabled: false, blur: 24, dim: 45, mode: 'cover', scale: 100, offsetX: 0, offsetY: 0 }; // 自定义背景图片配置
 let bgData = null; // 背景图片 data URL
+let userProfile = { name: '', path: null, cropPath: null, shape: 'circle', scale: 1, offsetX: 0, offsetY: 0 }; // 用户资料（头像/用户名）
+let avatarData = null; // 当前显示的头像图片 data URL（已裁剪图优先）
+let avatarSourceData = null; // 头像原图 data URL（重新编辑时使用）
+let textTone = 0; // 文字明暗饱和度 -50 ~ +50，0=主题默认
+let textToneColor = ''; // 文字色调 'r,g,b'，空=跟随主题默认（由 textToneFollow 复选框控制）
+let fontFamily = ''; // 用户字体（空=主题默认）
 let widgets = []; // 小组件: [{ id, type: 'clock'|'calendar'|'weather', x, y }] 坐标为百分比
 let showWidgets = true; // 小组件显示开关
 let widgetsAvoidIcons = false; // 图标自动绕开小组件区域
@@ -76,6 +82,13 @@ let widgetsLayer, addWidgetBtn, widgetMenu, showWidgetsToggle, widgetsAvoidToggl
 let everythingBar, everythingInput, everythingGo, everythingToggle, everythingStatus, everythingDownloadBtn, everythingAdminWarn;
 let folderPreviewToggle;
 let bgLayer, bgImage, bgToggle, selectBgBtn, clearBgBtn, bgBlurSlider, bgBlurValue, bgDimSlider, bgDimValue;
+let bgModeSelect, bgScaleSlider, bgScaleValue, bgOffsetXSlider, bgOffsetXValue, bgOffsetYSlider, bgOffsetYValue;
+let headerUser, headerAvatar, headerAvatarImg, headerName;
+let profileAvatarPreview, profileNameInput, profileShapeSelect, selectAvatarBtn, removeAvatarBtn;
+let avatarEditorOverlay, avatarEditorImg, avatarEditorFrame, avatarEditorOk, avatarEditorCancel, avatarShapeBtns;
+let textToneSlider, textToneValue, textToneResetBtn;
+let textToneFollow, textRgbR, textRgbRValue, textRgbG, textRgbGValue, textRgbB, textRgbBValue;
+let fontFamilySelect, fontPreview;
 
 // 刷新防抖
 let refreshTimeout = null;
@@ -161,6 +174,40 @@ document.addEventListener('DOMContentLoaded', () => {
   bgBlurValue = document.getElementById('bg-blur-value');
   bgDimSlider = document.getElementById('bg-dim-slider');
   bgDimValue = document.getElementById('bg-dim-value');
+  bgModeSelect = document.getElementById('bg-mode-select');
+  bgScaleSlider = document.getElementById('bg-scale-slider');
+  bgScaleValue = document.getElementById('bg-scale-value');
+  bgOffsetXSlider = document.getElementById('bg-offsetx-slider');
+  bgOffsetXValue = document.getElementById('bg-offsetx-value');
+  bgOffsetYSlider = document.getElementById('bg-offsety-slider');
+  bgOffsetYValue = document.getElementById('bg-offsety-value');
+  headerUser = document.getElementById('header-user');
+  headerAvatar = document.getElementById('header-avatar');
+  headerAvatarImg = document.getElementById('header-avatar-img');
+  headerName = document.getElementById('header-name');
+  profileAvatarPreview = document.getElementById('profile-avatar-preview');
+  profileNameInput = document.getElementById('profile-name-input');
+  profileShapeSelect = document.getElementById('profile-shape-select');
+  selectAvatarBtn = document.getElementById('select-avatar-btn');
+  removeAvatarBtn = document.getElementById('remove-avatar-btn');
+  avatarEditorOverlay = document.getElementById('avatar-editor-overlay');
+  avatarEditorImg = document.getElementById('avatar-editor-img');
+  avatarEditorFrame = document.getElementById('avatar-editor-frame');
+  avatarEditorOk = document.getElementById('avatar-editor-ok');
+  avatarEditorCancel = document.getElementById('avatar-editor-cancel');
+  avatarShapeBtns = document.querySelectorAll('.avatar-shape-btn');
+  textToneSlider = document.getElementById('text-tone-slider');
+  textToneValue = document.getElementById('text-tone-value');
+  textToneResetBtn = document.getElementById('text-tone-reset-btn');
+  textToneFollow = document.getElementById('text-tone-follow');
+  textRgbR = document.getElementById('text-rgb-r');
+  textRgbRValue = document.getElementById('text-rgb-r-value');
+  textRgbG = document.getElementById('text-rgb-g');
+  textRgbGValue = document.getElementById('text-rgb-g-value');
+  textRgbB = document.getElementById('text-rgb-b');
+  textRgbBValue = document.getElementById('text-rgb-b-value');
+  fontFamilySelect = document.getElementById('font-family-select');
+  fontPreview = document.getElementById('font-preview');
 
   // 绑定事件
   toggleBtn.addEventListener('click', handleToggleCollapse);
@@ -212,6 +259,37 @@ document.addEventListener('DOMContentLoaded', () => {
   clearBgBtn.addEventListener('click', handleClearBg);
   bgBlurSlider.addEventListener('input', handleBgBlur);
   bgDimSlider.addEventListener('input', handleBgDim);
+  bgModeSelect.addEventListener('change', handleBgModeChange);
+  bgScaleSlider.addEventListener('input', handleBgScale);
+  bgOffsetXSlider.addEventListener('input', handleBgOffsetX);
+  bgOffsetYSlider.addEventListener('input', handleBgOffsetY);
+
+  // 用户资料
+  headerUser.addEventListener('click', handleOpenAvatarEditor);
+  selectAvatarBtn.addEventListener('click', handleSelectAvatar);
+  removeAvatarBtn.addEventListener('click', handleRemoveAvatar);
+  profileNameInput.addEventListener('change', handleProfileNameChange);
+  profileShapeSelect.addEventListener('change', handleProfileShapeChange);
+
+  // 头像编辑器
+  avatarEditorCancel.addEventListener('click', closeAvatarEditor);
+  avatarEditorOk.addEventListener('click', saveAvatarEditor);
+  avatarShapeBtns.forEach((btn) => {
+    btn.addEventListener('click', () => setEditorShape(btn.dataset.shape));
+  });
+  bindAvatarEditorDrag();
+
+  // 文字明暗
+  textToneSlider.addEventListener('input', handleTextToneChange);
+  textToneResetBtn.addEventListener('click', handleTextToneReset);
+  // 文字色调（RGB 拉条）
+  textToneFollow.addEventListener('change', handleTextToneFollowChange);
+  textRgbR.addEventListener('input', () => handleTextRgbChange());
+  textRgbG.addEventListener('input', () => handleTextRgbChange());
+  textRgbB.addEventListener('input', () => handleTextRgbChange());
+
+  // 字体
+  fontFamilySelect.addEventListener('change', handleFontFamilyChange);
 
   // 快捷键录制
   bindShortcutRecorder(shortcutToggleInput, 'toggleWindow');
@@ -259,7 +337,10 @@ document.addEventListener('DOMContentLoaded', () => {
   let resizeTimer = null;
   window.addEventListener('resize', () => {
     if (resizeTimer) clearTimeout(resizeTimer);
-    resizeTimer = setTimeout(scheduleIconLayout, 100);
+    resizeTimer = setTimeout(() => {
+      scheduleIconLayout();
+      updateBgCustomSize();
+    }, 100);
   });
 
   // 滚动时图标动态绕开悬浮组件（组件 fixed 于视口，图标位于滚动容器内）
@@ -354,10 +435,34 @@ document.addEventListener('DOMContentLoaded', () => {
       bgConfig = {
         enabled: !!data.backgroundImage.enabled,
         blur: Number.isFinite(data.backgroundImage.blur) ? data.backgroundImage.blur : 24,
-        dim: Number.isFinite(data.backgroundImage.dim) ? data.backgroundImage.dim : 45
+        dim: Number.isFinite(data.backgroundImage.dim) ? data.backgroundImage.dim : 45,
+        mode: ['cover', 'contain', 'fill', 'custom'].includes(data.backgroundImage.mode) ? data.backgroundImage.mode : 'cover',
+        scale: Number.isFinite(data.backgroundImage.scale)
+          ? Math.max(100, Math.min(300, data.backgroundImage.scale))
+          : 100,
+        offsetX: Number.isFinite(data.backgroundImage.offsetX) ? data.backgroundImage.offsetX : 0,
+        offsetY: Number.isFinite(data.backgroundImage.offsetY) ? data.backgroundImage.offsetY : 0
       };
     }
     bgData = typeof data.backgroundData === 'string' ? data.backgroundData : null;
+    if (data.userProfile && typeof data.userProfile === 'object') {
+      userProfile = {
+        name: String(data.userProfile.name || ''),
+        path: data.userProfile.path || null,
+        cropPath: data.userProfile.cropPath || null,
+        shape: data.userProfile.shape === 'rounded' ? 'rounded' : 'circle',
+        scale: Number.isFinite(data.userProfile.scale) ? Math.max(1, data.userProfile.scale) : 1,
+        offsetX: Number.isFinite(data.userProfile.offsetX) ? data.userProfile.offsetX : 0,
+        offsetY: Number.isFinite(data.userProfile.offsetY) ? data.userProfile.offsetY : 0
+      };
+    }
+    avatarData = typeof data.avatarData === 'string' ? data.avatarData : null;
+    avatarSourceData = typeof data.avatarSourceData === 'string'
+      ? data.avatarSourceData
+      : avatarData;
+    textTone = Number.isFinite(data.textTone) ? data.textTone : 0;
+    textToneColor = typeof data.textToneColor === 'string' ? data.textToneColor : '';
+    fontFamily = typeof data.fontFamily === 'string' ? data.fontFamily : '';
     widgets = Array.isArray(data.widgets) ? data.widgets : [];
     showWidgets = data.showWidgets !== false;
     widgetsAvoidIcons = !!data.widgetsAvoidIcons;
@@ -386,7 +491,14 @@ document.addEventListener('DOMContentLoaded', () => {
     updateFolderPreviewUI();
     updateBackgroundUI();
     applyBackground();
+    applyAvatar();
+    migrateLegacyAvatarCrop();
+    updateProfileUI();
     applyTheme(theme);
+    applyTextTone();
+    updateTextToneUI();
+    applyFont();
+    updateFontUI();
     applyOpacity(opacity);
     applyIconSize(iconSize);
     if (languageSelect) languageSelect.value = data.language || 'zh-CN';
@@ -622,6 +734,9 @@ function applyTheme(themeMode) {
       card.setAttribute('aria-pressed', String(isActive));
     });
   }
+
+  // 切换主题后按新主题默认文字色重算明暗
+  applyTextTone();
 }
 
 // 监听系统主题变化（用于跟随系统模式）
@@ -2911,13 +3026,81 @@ function updateFolderPreviewUI() {
 // ============ 自定义背景图片 ============
 function applyBackground() {
   const enabled = bgConfig.enabled && bgData;
-  if (bgLayer) bgLayer.style.display = enabled ? 'block' : 'none';
-  if (bgImage && bgData) bgImage.src = bgData;
+  if (bgLayer) {
+    bgLayer.style.display = enabled ? 'block' : 'none';
+    bgLayer.dataset.mode = bgConfig.mode || 'cover';
+  }
+  if (bgImage && bgData) {
+    const sameImage = bgImage.getAttribute('src') === bgData;
+    if (!sameImage) {
+      bgImage.onload = () => updateBgCustomSize();
+      bgImage.src = bgData;
+    }
+  }
   const root = document.documentElement;
   root.style.setProperty('--bg-blur', bgConfig.blur + 'px');
   root.style.setProperty('--bg-dim', bgConfig.dim);
+  root.style.setProperty('--bg-scale', String(bgConfig.scale));
+  root.style.setProperty('--bg-offset-x', String(bgConfig.offsetX));
+  root.style.setProperty('--bg-offset-y', String(bgConfig.offsetY));
   const app = document.getElementById('app');
   app.classList.toggle('has-bg', enabled);
+  updateBgCustomSize();
+  updateBgCustomControls();
+}
+
+// custom 模式：按"图片宽高比适配窗口"的 contain 基准尺寸 × 缩放系数。
+// scale=100 时完整显示全图（所见即所得），放大后才裁剪；
+// 位置百分比相对窗口尺寸，与滑块语义一致
+function updateBgCustomSize() {
+  if (!bgImage || !bgLayer) return;
+  if (bgConfig.mode !== 'custom') {
+    resetBgImageInlineStyles();
+    return;
+  }
+  const iw = bgImage.naturalWidth;
+  const ih = bgImage.naturalHeight;
+  if (!iw || !ih) return;
+  const rect = bgLayer.getBoundingClientRect();
+  if (!rect.width || !rect.height) return;
+  const winRatio = rect.width / rect.height;
+  const imgRatio = iw / ih;
+  let baseW, baseH;
+  if (imgRatio >= winRatio) {
+    baseW = rect.width;
+    baseH = rect.width / imgRatio;
+  } else {
+    baseH = rect.height;
+    baseW = rect.height * imgRatio;
+  }
+  const s = (bgConfig.scale || 100) / 100;
+  bgImage.style.width = Math.round(baseW * s) + 'px';
+  bgImage.style.height = Math.round(baseH * s) + 'px';
+  bgImage.style.objectFit = 'fill'; // 尺寸已与图片同比例，完整显示无裁剪
+  bgImage.style.right = 'auto';
+  bgImage.style.bottom = 'auto';
+  // 相对窗口的偏移（%）：left/top 基于容器，translate(-50%) 让图片中心对准
+  bgImage.style.left = `calc(50% + ${bgConfig.offsetX || 0} * 1%)`;
+  bgImage.style.top = `calc(50% + ${bgConfig.offsetY || 0} * 1%)`;
+  bgImage.style.transform = 'translate(-50%, -50%)';
+}
+
+function resetBgImageInlineStyles() {
+  if (!bgImage) return;
+  bgImage.style.removeProperty('width');
+  bgImage.style.removeProperty('height');
+  bgImage.style.removeProperty('left');
+  bgImage.style.removeProperty('top');
+  bgImage.style.removeProperty('right');
+  bgImage.style.removeProperty('bottom');
+  bgImage.style.removeProperty('object-fit');
+  bgImage.style.removeProperty('transform');
+}
+
+function updateBgCustomControls() {
+  const custom = bgConfig.mode === 'custom';
+  const controls = document.querySelectorAll('.bg-custom-control');
+  controls.forEach((c) => c.classList.toggle('disabled', !custom));
 }
 
 function updateBackgroundUI() {
@@ -2929,6 +3112,14 @@ function updateBackgroundUI() {
   if (bgBlurValue) bgBlurValue.textContent = bgConfig.blur + 'px';
   if (bgDimSlider) bgDimSlider.value = String(bgConfig.dim);
   if (bgDimValue) bgDimValue.textContent = bgConfig.dim + '%';
+  if (bgModeSelect) bgModeSelect.value = bgConfig.mode || 'cover';
+  if (bgScaleSlider) bgScaleSlider.value = String(bgConfig.scale);
+  if (bgScaleValue) bgScaleValue.textContent = bgConfig.scale + '%';
+  if (bgOffsetXSlider) bgOffsetXSlider.value = String(bgConfig.offsetX);
+  if (bgOffsetXValue) bgOffsetXValue.textContent = bgConfig.offsetX + '%';
+  if (bgOffsetYSlider) bgOffsetYSlider.value = String(bgConfig.offsetY);
+  if (bgOffsetYValue) bgOffsetYValue.textContent = bgConfig.offsetY + '%';
+  updateBgCustomControls();
 }
 
 async function handleBgToggle() {
@@ -2943,7 +3134,13 @@ async function handleSelectBg() {
     bgConfig = {
       enabled: !!result.config.enabled,
       blur: Number.isFinite(result.config.blur) ? result.config.blur : 24,
-      dim: Number.isFinite(result.config.dim) ? result.config.dim : 45
+      dim: Number.isFinite(result.config.dim) ? result.config.dim : 45,
+      mode: ['cover', 'contain', 'fill', 'custom'].includes(result.config.mode) ? result.config.mode : 'cover',
+      scale: Number.isFinite(result.config.scale)
+        ? Math.max(100, Math.min(300, result.config.scale))
+        : 100,
+      offsetX: Number.isFinite(result.config.offsetX) ? result.config.offsetX : 0,
+      offsetY: Number.isFinite(result.config.offsetY) ? result.config.offsetY : 0
     };
     bgData = result.dataUrl || null;
     updateBackgroundUI();
@@ -2976,6 +3173,597 @@ async function handleBgDim() {
   bgDimValue.textContent = bgConfig.dim + '%';
   applyBackground();
   await window.api.setBackgroundSettings({ dim: bgConfig.dim });
+}
+
+async function handleBgModeChange() {
+  bgConfig.mode = bgModeSelect.value;
+  applyBackground();
+  await window.api.setBackgroundSettings({ mode: bgConfig.mode });
+}
+
+async function handleBgScale() {
+  bgConfig.scale = parseInt(bgScaleSlider.value) || 100;
+  bgScaleValue.textContent = bgConfig.scale + '%';
+  applyBackground();
+  await window.api.setBackgroundSettings({ scale: bgConfig.scale });
+}
+
+async function handleBgOffsetX() {
+  bgConfig.offsetX = parseInt(bgOffsetXSlider.value) || 0;
+  bgOffsetXValue.textContent = bgConfig.offsetX + '%';
+  applyBackground();
+  await window.api.setBackgroundSettings({ offsetX: bgConfig.offsetX });
+}
+
+async function handleBgOffsetY() {
+  bgConfig.offsetY = parseInt(bgOffsetYSlider.value) || 0;
+  bgOffsetYValue.textContent = bgConfig.offsetY + '%';
+  applyBackground();
+  await window.api.setBackgroundSettings({ offsetY: bgConfig.offsetY });
+}
+
+// ============ 用户头像 / 用户名 ============
+function hasCroppedAvatar() {
+  return !!userProfile.cropPath && !!avatarData && !!avatarSourceData && avatarData !== avatarSourceData;
+}
+
+// 按图片宽高比计算"覆盖容器"的渲染尺寸（短边 = 容器×scale），
+// 与头像编辑器（取景框 220 为基准）语义逐像素一致：图片移动、视口固定
+function setupAvatarImgSizes() {
+  const cropped = hasCroppedAvatar();
+  const entries = [
+    [headerAvatarImg, 24],
+    [document.getElementById('profile-avatar-preview-img'), 64]
+  ];
+  for (const [img, containerSize] of entries) {
+    if (!img || !img.src) continue;
+    const iw = img.naturalWidth;
+    const ih = img.naturalHeight;
+    if (!iw || !ih) continue;
+    if (cropped) {
+      // 已确认的裁剪图是正方形，最终头像只显示这张固定结果，
+      // 不再叠加原图的 scale/offset，避免二次变换。
+      img.style.width = containerSize + 'px';
+      img.style.height = containerSize + 'px';
+      img.style.left = '50%';
+      img.style.top = '50%';
+      img.style.objectFit = 'cover';
+      img.style.transform = 'translate(-50%, -50%)';
+      continue;
+    }
+    const scale = userProfile.scale || 1;
+    const short = containerSize * scale;
+    let w, h;
+    if (iw >= ih) {
+      w = short * (iw / ih);
+      h = short;
+    } else {
+      w = short;
+      h = short * (ih / iw);
+    }
+    img.style.width = Math.round(w) + 'px';
+    img.style.height = Math.round(h) + 'px';
+  }
+}
+
+function applyAvatar() {
+  const root = document.documentElement;
+  root.style.setProperty('--avatar-scale', String(userProfile.scale || 1));
+  root.style.setProperty('--avatar-offset-x', String(userProfile.offsetX || 0));
+  root.style.setProperty('--avatar-offset-y', String(userProfile.offsetY || 0));
+
+  const shape = userProfile.shape === 'rounded' ? 'rounded' : 'circle';
+  if (headerAvatar) headerAvatar.dataset.shape = shape;
+  if (profileAvatarPreview) profileAvatarPreview.dataset.shape = shape;
+
+  const hasAvatar = !!avatarData;
+  const previewImg = document.getElementById('profile-avatar-preview-img');
+  const previewPlaceholder = document.getElementById('profile-avatar-preview-placeholder');
+  const headerPlaceholder = headerAvatar ? headerAvatar.querySelector('.header-avatar-placeholder') : null;
+
+  if (headerAvatarImg) {
+    headerAvatarImg.style.display = hasAvatar ? 'block' : 'none';
+    if (hasAvatar) headerAvatarImg.src = avatarData;
+  }
+  if (previewImg) {
+    previewImg.style.display = hasAvatar ? 'block' : 'none';
+    if (hasAvatar) previewImg.src = avatarData;
+  }
+  if (previewPlaceholder) previewPlaceholder.style.display = hasAvatar ? 'none' : 'flex';
+  if (headerPlaceholder) headerPlaceholder.style.display = hasAvatar ? 'none' : 'flex';
+
+  if (headerName) {
+    headerName.textContent = userProfile.name || t('header.title');
+  }
+
+  // 图片可能尚未解码，加载完成后统一重算尺寸
+  const onLoad = () => setupAvatarImgSizes();
+  if (hasAvatar) {
+    if (headerAvatarImg) headerAvatarImg.onload = onLoad;
+    if (previewImg) previewImg.onload = onLoad;
+  }
+  setupAvatarImgSizes();
+}
+
+function updateProfileUI() {
+  if (profileNameInput) profileNameInput.value = userProfile.name || '';
+  if (profileShapeSelect) profileShapeSelect.value = userProfile.shape === 'rounded' ? 'rounded' : 'circle';
+}
+
+async function handleProfileNameChange() {
+  userProfile.name = (profileNameInput.value || '').trim();
+  await window.api.setUserProfile({ name: userProfile.name });
+  applyAvatar();
+}
+
+async function handleProfileShapeChange() {
+  userProfile.shape = profileShapeSelect.value;
+  await window.api.setUserProfile({ shape: userProfile.shape });
+  applyAvatar();
+}
+
+async function handleSelectAvatar() {
+  const result = await window.api.selectAvatarImage();
+  if (result && result.success) {
+    userProfile = {
+      name: userProfile.name || '',
+      path: result.profile.path || null,
+      cropPath: result.profile.cropPath || null,
+      shape: result.profile.shape === 'rounded' ? 'rounded' : 'circle',
+      scale: Number.isFinite(result.profile.scale) ? result.profile.scale : 1,
+      offsetX: Number.isFinite(result.profile.offsetX) ? result.profile.offsetX : 0,
+      offsetY: Number.isFinite(result.profile.offsetY) ? result.profile.offsetY : 0
+    };
+    avatarData = result.dataUrl || null;
+    avatarSourceData = result.dataUrl || null;
+    updateProfileUI();
+    applyAvatar();
+    // 选图后立即打开编辑器调整
+    openAvatarEditor();
+  } else if (result && result.error) {
+    showToast(t('profile.fail'));
+  }
+}
+
+async function handleRemoveAvatar() {
+  const result = await window.api.setUserProfile({ removeAvatar: true });
+  if (result && result.success) {
+    userProfile.path = null;
+    userProfile.cropPath = null;
+    userProfile.scale = 1;
+    userProfile.offsetX = 0;
+    userProfile.offsetY = 0;
+    avatarData = null;
+    avatarSourceData = null;
+    if (headerAvatarImg) headerAvatarImg.removeAttribute('src');
+    const previewImg = document.getElementById('profile-avatar-preview-img');
+    if (previewImg) previewImg.removeAttribute('src');
+    applyAvatar();
+  }
+}
+
+// ============ 头像编辑器 ============
+const AVATAR_FRAME_SIZE = 220; // 取景框尺寸
+let avatarEditorState = {
+  open: false,
+  dragging: false,
+  startX: 0,
+  startY: 0,
+  origOffsetX: 0,
+  origOffsetY: 0,
+  imgW: 0,
+  imgH: 0
+};
+
+function openAvatarEditor() {
+  const sourceData = avatarSourceData || avatarData;
+  if (!sourceData) return;
+  avatarEditorState.open = true;
+  avatarEditorState.scale = Math.max(1, userProfile.scale || 1);
+  avatarEditorState.origOffsetX = 0;
+  avatarEditorState.origOffsetY = 0;
+  avatarEditorState.offsetX = 0;
+  avatarEditorState.offsetY = 0;
+  avatarEditorOverlay.style.display = 'flex';
+  avatarEditorImg.src = sourceData;
+  avatarEditorImg.style.display = 'block';
+  setEditorShape(userProfile.shape === 'rounded' ? 'rounded' : 'circle');
+  // 载入已保存的位移（百分比 → 取景框像素），再次编辑不丢失之前调整
+  avatarEditorState.origOffsetX = (userProfile.offsetX || 0) / 100 * AVATAR_FRAME_SIZE;
+  avatarEditorState.origOffsetY = (userProfile.offsetY || 0) / 100 * AVATAR_FRAME_SIZE;
+  // 图片可能尚未解码（naturalWidth=0），加载完成后再计算尺寸
+  avatarEditorImg.onload = () => updateEditorImg();
+  updateEditorImg();
+}
+
+function handleOpenAvatarEditor() {
+  if (avatarData) {
+    openAvatarEditor();
+  } else if (settingsPanel) {
+    settingsPanel.style.display = 'block';
+    settingsBtn.title = t('settings.hide');
+    scheduleIconLayout();
+  }
+}
+
+function closeAvatarEditor() {
+  avatarEditorState.open = false;
+  avatarEditorState.dragging = false;
+  avatarEditorOverlay.style.display = 'none';
+  avatarEditorImg.removeAttribute('src');
+}
+
+function setEditorShape(shape) {
+  avatarEditorState.shape = shape === 'rounded' ? 'rounded' : 'circle';
+  avatarEditorFrame.dataset.shape = avatarEditorState.shape;
+  avatarShapeBtns.forEach((btn) => {
+    btn.classList.toggle('active', btn.dataset.shape === avatarEditorState.shape);
+  });
+}
+
+function updateEditorImg() {
+  const img = avatarEditorImg;
+  const iw = img.naturalWidth;
+  const ih = img.naturalHeight;
+  if (!iw || !ih) return;
+  // 保持图片原始宽高比：按"覆盖取景框"的最小尺寸缩放，
+  // 与保存后显示端语义一致，所见即所得
+  const ratio = iw / ih;
+  const scale = Math.max(1, avatarEditorState.scale || 1);
+  avatarEditorState.scale = scale;
+  let w, h;
+  if (ratio >= 1) {
+    w = AVATAR_FRAME_SIZE * ratio * scale;
+    h = AVATAR_FRAME_SIZE * scale;
+  } else {
+    w = AVATAR_FRAME_SIZE * scale;
+    h = AVATAR_FRAME_SIZE / ratio * scale;
+  }
+  avatarEditorState.imgW = Math.round(w);
+  avatarEditorState.imgH = Math.round(h);
+  img.style.width = avatarEditorState.imgW + 'px';
+  img.style.height = avatarEditorState.imgH + 'px';
+  img.style.left = '50%';
+  img.style.top = '50%';
+  img.style.objectFit = 'fill'; // 尺寸已与图片同比例，完整显示无裁剪
+  // 钳制总量并写回 state（拖动结束/保存时取用与显示完全一致的值）
+  const totalX = clampAvatarDrag(avatarEditorState.origOffsetX + (avatarEditorState.offsetX || 0), avatarEditorState.imgW);
+  const totalY = clampAvatarDrag(avatarEditorState.origOffsetY + (avatarEditorState.offsetY || 0), avatarEditorState.imgH);
+  avatarEditorState.offsetX = totalX - avatarEditorState.origOffsetX;
+  avatarEditorState.offsetY = totalY - avatarEditorState.origOffsetY;
+  img.style.transform = `translate(calc(-50% + ${totalX}px), calc(-50% + ${totalY}px))`;
+}
+
+// 拖动限制：图片边缘最多与取景框边缘平齐（框内始终有内容，
+// 且保存后显示与编辑器完全一致，不产生钳制跳变）
+function clampAvatarDrag(px, imgSize) {
+  const max = Math.max(0, (imgSize - AVATAR_FRAME_SIZE) / 2);
+  return Math.max(-max, Math.min(max, px));
+}
+
+function bindAvatarEditorDrag() {
+  const stage = avatarEditorImg ? avatarEditorImg.parentElement : null;
+  if (!stage) return;
+  stage.addEventListener('pointerdown', (e) => {
+    if (!avatarEditorState.open) return;
+    avatarEditorState.dragging = true;
+    avatarEditorState.startX = e.clientX;
+    avatarEditorState.startY = e.clientY;
+    avatarEditorState.origOffsetX = avatarEditorState.origOffsetX + (avatarEditorState.offsetX || 0);
+    avatarEditorState.origOffsetY = avatarEditorState.origOffsetY + (avatarEditorState.offsetY || 0);
+    avatarEditorState.offsetX = 0;
+    avatarEditorState.offsetY = 0;
+    stage.classList.add('dragging');
+    stage.setPointerCapture(e.pointerId);
+  });
+  stage.addEventListener('pointermove', (e) => {
+    if (!avatarEditorState.dragging) return;
+    avatarEditorState.offsetX = e.clientX - avatarEditorState.startX;
+    avatarEditorState.offsetY = e.clientY - avatarEditorState.startY;
+    updateEditorImg();
+  });
+  stage.addEventListener('pointerup', () => {
+    if (!avatarEditorState.dragging) return;
+    avatarEditorState.dragging = false;
+    avatarEditorState.origOffsetX = avatarEditorState.origOffsetX + avatarEditorState.offsetX;
+    avatarEditorState.origOffsetY = avatarEditorState.origOffsetY + avatarEditorState.offsetY;
+    avatarEditorState.offsetX = 0;
+    avatarEditorState.offsetY = 0;
+    stage.classList.remove('dragging');
+    updateEditorImg();
+  });
+  stage.addEventListener('wheel', (e) => {
+    if (!avatarEditorState.open) return;
+    e.preventDefault();
+    const factor = e.deltaY < 0 ? 1.1 : 1 / 1.1;
+    avatarEditorState.scale = Math.max(1, Math.min(8, (avatarEditorState.scale || 1) * factor));
+    updateEditorImg();
+  }, { passive: false });
+}
+
+function createAvatarCropDataUrlFromImage(img, renderW, renderH, totalX, totalY) {
+  const iw = img.naturalWidth;
+  const ih = img.naturalHeight;
+  if (!iw || !ih || !renderW || !renderH) return null;
+
+  const renderScaleX = renderW / iw;
+  const renderScaleY = renderH / ih;
+  const sourceSize = AVATAR_FRAME_SIZE / renderScaleX;
+  let sourceX = (renderW / 2 - totalX - AVATAR_FRAME_SIZE / 2) / renderScaleX;
+  let sourceY = (renderH / 2 - totalY - AVATAR_FRAME_SIZE / 2) / renderScaleY;
+  const maxX = Math.max(0, iw - sourceSize);
+  const maxY = Math.max(0, ih - sourceSize);
+  sourceX = Math.max(0, Math.min(maxX, sourceX));
+  sourceY = Math.max(0, Math.min(maxY, sourceY));
+
+  const canvas = document.createElement('canvas');
+  canvas.width = 256;
+  canvas.height = 256;
+  const context = canvas.getContext('2d');
+  if (!context) return null;
+  context.imageSmoothingEnabled = true;
+  context.imageSmoothingQuality = 'high';
+  context.drawImage(img, sourceX, sourceY, sourceSize, sourceSize, 0, 0, 256, 256);
+  return canvas.toDataURL('image/png');
+}
+
+function createAvatarCropDataUrl() {
+  const img = avatarEditorImg;
+  if (!img.naturalWidth || !img.naturalHeight || !avatarEditorState.imgW || !avatarEditorState.imgH) return null;
+  const totalX = clampAvatarDrag(
+    avatarEditorState.origOffsetX + (avatarEditorState.offsetX || 0),
+    avatarEditorState.imgW
+  );
+  const totalY = clampAvatarDrag(
+    avatarEditorState.origOffsetY + (avatarEditorState.offsetY || 0),
+    avatarEditorState.imgH
+  );
+  return createAvatarCropDataUrlFromImage(img, avatarEditorState.imgW, avatarEditorState.imgH, totalX, totalY);
+}
+
+async function migrateLegacyAvatarCrop() {
+  if (hasCroppedAvatar() || !avatarSourceData || !userProfile.path) return;
+  const image = new Image();
+  image.onload = async () => {
+    const iw = image.naturalWidth;
+    const ih = image.naturalHeight;
+    if (!iw || !ih) return;
+    const ratio = iw / ih;
+    const scale = Math.max(1, userProfile.scale || 1);
+    const renderW = Math.round((ratio >= 1 ? AVATAR_FRAME_SIZE * ratio : AVATAR_FRAME_SIZE) * scale);
+    const renderH = Math.round((ratio >= 1 ? AVATAR_FRAME_SIZE : AVATAR_FRAME_SIZE / ratio) * scale);
+    const totalX = clampAvatarDrag((userProfile.offsetX || 0) / 100 * AVATAR_FRAME_SIZE, renderW);
+    const totalY = clampAvatarDrag((userProfile.offsetY || 0) / 100 * AVATAR_FRAME_SIZE, renderH);
+    const cropDataUrl = createAvatarCropDataUrlFromImage(image, renderW, renderH, totalX, totalY);
+    if (!cropDataUrl) return;
+    const result = await window.api.setUserProfile({
+      shape: userProfile.shape,
+      scale,
+      offsetX: (totalX / AVATAR_FRAME_SIZE) * 100,
+      offsetY: (totalY / AVATAR_FRAME_SIZE) * 100,
+      cropDataUrl
+    });
+    if (!result || !result.success) return;
+    userProfile = { ...userProfile, ...result.profile };
+    avatarData = cropDataUrl;
+    applyAvatar();
+  };
+  image.src = avatarSourceData;
+}
+
+async function saveAvatarEditor() {
+  const cropDataUrl = createAvatarCropDataUrl();
+  if (!cropDataUrl) {
+    showToast(t('profile.fail'));
+    return;
+  }
+  const totalX = clampAvatarDrag(
+    avatarEditorState.origOffsetX + (avatarEditorState.offsetX || 0),
+    avatarEditorState.imgW
+  );
+  const totalY = clampAvatarDrag(
+    avatarEditorState.origOffsetY + (avatarEditorState.offsetY || 0),
+    avatarEditorState.imgH
+  );
+  const nextProfile = {
+    shape: avatarEditorState.shape,
+    scale: Math.max(1, avatarEditorState.scale || 1),
+    offsetX: (totalX / AVATAR_FRAME_SIZE) * 100,
+    offsetY: (totalY / AVATAR_FRAME_SIZE) * 100,
+    cropDataUrl
+  };
+  const result = await window.api.setUserProfile({
+    ...nextProfile
+  });
+  if (!result || !result.success) {
+    showToast(t('profile.fail'));
+    return;
+  }
+  userProfile = { ...userProfile, ...result.profile };
+  avatarData = cropDataUrl;
+  if (profileShapeSelect) profileShapeSelect.value = userProfile.shape;
+  closeAvatarEditor();
+  applyAvatar();
+}
+
+// ============ 文字明暗饱和度 ============
+const TEXT_TONE_RGB_KEYS = [
+  '--text-primary-rgb',
+  '--text-secondary-rgb',
+  '--text-tertiary-rgb',
+  '--text-muted-rgb',
+  '--text-disabled-rgb'
+];
+
+const TEXT_TONE_ALPHAS = [0.9, 0.85, 0.8, 0.5, 0.4];
+
+const TEXT_TONE_SEMANTIC_KEYS = [
+  '--text-primary',
+  '--text-secondary',
+  '--text-tertiary',
+  '--text-muted',
+  '--text-disabled'
+];
+
+function applyTextTone() {
+  const root = document.documentElement;
+  const tone = Math.max(-50, Math.min(50, textTone || 0));
+  // 先清除旧覆盖，保证读取的是主题默认色（避免基于上次插值结果反复插值导致抖动）
+  for (const key of TEXT_TONE_RGB_KEYS) root.style.removeProperty(key);
+  for (const key of TEXT_TONE_SEMANTIC_KEYS) root.style.removeProperty(key);
+  root.style.removeProperty('--select-option-color');
+  root.style.removeProperty('--select-option-bg');
+
+  // 用户色调基色：'r,g,b' → [r,g,b]，无效/空则用主题默认色
+  let baseColor = null;
+  const colorMatch = String(textToneColor || '').match(/^\s*(\d{1,3})\s*,\s*(\d{1,3})\s*,\s*(\d{1,3})\s*$/);
+  if (colorMatch) {
+    const rgb = [parseInt(colorMatch[1]), parseInt(colorMatch[2]), parseInt(colorMatch[3])];
+    if (rgb.every((v) => v >= 0 && v <= 255)) baseColor = rgb;
+  }
+
+  if (tone === 0 && !baseColor) return;
+
+  const computed = getComputedStyle(root);
+  const t = tone / 50; // -1 ~ +1
+  let primaryLuminance = 0;
+  for (let i = 0; i < TEXT_TONE_RGB_KEYS.length; i++) {
+    const key = TEXT_TONE_RGB_KEYS[i];
+    let base = [255, 255, 255];
+    if (baseColor) {
+      base = [...baseColor];
+    } else {
+      const raw = computed.getPropertyValue(key).trim();
+      const m = raw.match(/^\s*(\d+)\s*,\s*(\d+)\s*,\s*(\d+)\s*$/);
+      if (m) {
+        base = [parseInt(m[1]), parseInt(m[2]), parseInt(m[3])];
+      }
+    }
+    // 以基色为起点：t>0 向白提亮（保留色调倾向），t<0 向黑压暗
+    const newRgb = base.map((c) => {
+      const target = t > 0 ? 255 : 0;
+      return Math.round(c + (target - c) * Math.min(1, Math.abs(t)));
+    });
+    root.style.setProperty(key, newRgb.join(', '));
+    const alpha = Math.min(1, TEXT_TONE_ALPHAS[i] + Math.abs(t) * 0.2);
+    root.style.setProperty(TEXT_TONE_SEMANTIC_KEYS[i], `rgba(${newRgb.join(', ')}, ${alpha})`);
+    if (i === 0) {
+      primaryLuminance = (newRgb[0] * 299 + newRgb[1] * 587 + newRgb[2] * 114) / 1000;
+    }
+  }
+  // 下拉选项配色跟随最终文字亮度（>150 用黑字白底，否则白字黑底）
+  const darkText = primaryLuminance > 150;
+  root.style.setProperty('--select-option-color', darkText ? '#000000' : '#ffffff');
+  root.style.setProperty('--select-option-bg', darkText ? '#ffffff' : '#2d2d2d');
+}
+
+function updateTextToneUI() {
+  if (textToneSlider) textToneSlider.value = String(textTone || 0);
+  if (textToneValue) {
+    textToneValue.textContent = textTone === 0 ? t('settings.textToneDefault') : (textTone > 0 ? '+' : '') + textTone;
+  }
+  // RGB 滑块：从当前色调解析；跟随主题时显示 255 并禁用
+  let r = 255;
+  let g = 255;
+  let b = 255;
+  const colorMatch = String(textToneColor || '').match(/^\s*(\d{1,3})\s*,\s*(\d{1,3})\s*,\s*(\d{1,3})\s*$/);
+  if (colorMatch) {
+    r = Math.max(0, Math.min(255, parseInt(colorMatch[1])));
+    g = Math.max(0, Math.min(255, parseInt(colorMatch[2])));
+    b = Math.max(0, Math.min(255, parseInt(colorMatch[3])));
+  }
+  if (textRgbR) textRgbR.value = String(r);
+  if (textRgbRValue) textRgbRValue.textContent = String(r);
+  if (textRgbG) textRgbG.value = String(g);
+  if (textRgbGValue) textRgbGValue.textContent = String(g);
+  if (textRgbB) textRgbB.value = String(b);
+  if (textRgbBValue) textRgbBValue.textContent = String(b);
+  const follow = !textToneColor;
+  textToneFollow.checked = follow;
+  textRgbR.disabled = follow;
+  textRgbG.disabled = follow;
+  textRgbB.disabled = follow;
+}
+
+async function handleTextToneChange() {
+  textTone = parseInt(textToneSlider.value) || 0;
+  applyTextTone();
+  updateTextToneUI();
+  await window.api.setTextTone(textTone);
+}
+
+function getRgbFromSliders() {
+  const r = Math.max(0, Math.min(255, parseInt(textRgbR.value) || 0));
+  const g = Math.max(0, Math.min(255, parseInt(textRgbG.value) || 0));
+  const b = Math.max(0, Math.min(255, parseInt(textRgbB.value) || 0));
+  return `${r}, ${g}, ${b}`;
+}
+
+async function handleTextRgbChange() {
+  textToneFollow.checked = false;
+  textToneColor = getRgbFromSliders();
+  applyTextTone();
+  updateTextToneUI();
+  await window.api.setTextToneColor(textToneColor);
+}
+
+async function handleTextToneFollowChange() {
+  if (textToneFollow.checked) {
+    textToneColor = '';
+  } else {
+    textToneColor = getRgbFromSliders();
+  }
+  applyTextTone();
+  updateTextToneUI();
+  await window.api.setTextToneColor(textToneColor);
+}
+
+async function handleTextToneReset() {
+  textTone = 0;
+  textToneColor = '';
+  textToneFollow.checked = true;
+  if (textRgbR) textRgbR.value = '255';
+  if (textRgbG) textRgbG.value = '255';
+  if (textRgbB) textRgbB.value = '255';
+  applyTextTone();
+  updateTextToneUI();
+  await window.api.setTextTone(0);
+  await window.api.setTextToneColor('');
+}
+
+// ============ 字体 ============
+function applyFont() {
+  const root = document.documentElement;
+  if (fontFamily) {
+    root.style.setProperty('--user-font-family', fontFamily);
+  } else {
+    root.style.removeProperty('--user-font-family');
+  }
+}
+
+function updateFontUI() {
+  if (fontFamilySelect) {
+    // 匹配预设选项；自定义字体（无匹配项）时选中"默认"并回填
+    let matched = false;
+    for (const opt of fontFamilySelect.options) {
+      if (opt.value && opt.value === fontFamily) {
+        fontFamilySelect.value = fontFamily;
+        matched = true;
+        break;
+      }
+    }
+    if (!matched && !fontFamily) fontFamilySelect.value = '';
+  }
+  if (fontPreview) {
+    fontPreview.style.fontFamily = fontFamily ? fontFamily + ', ' + getComputedStyle(document.documentElement).getPropertyValue('--skin-font-family') : '';
+  }
+}
+
+async function handleFontFamilyChange() {
+  fontFamily = fontFamilySelect.value;
+  applyFont();
+  updateFontUI();
+  await window.api.setFontFamily(fontFamily);
 }
 
 // ============ 小组件（时钟 / 日历） ============

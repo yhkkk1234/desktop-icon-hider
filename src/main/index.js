@@ -45,8 +45,24 @@ const store = new Store({
       enabled: false,
       path: null,
       blur: 24,
-      dim: 45
+      dim: 45,
+      mode: 'cover', // 显示模式: cover | contain | fill | custom
+      scale: 100, // 自定义缩放 %（custom 模式）
+      offsetX: 0, // 自定义横向偏移 %（custom 模式）
+      offsetY: 0 // 自定义纵向偏移 %（custom 模式）
     },
+    userProfile: {
+      name: '',
+      path: null,
+      cropPath: null,
+      shape: 'circle', // 头像形状: circle | rounded
+      scale: 1,
+      offsetX: 0,
+      offsetY: 0
+    },
+    textTone: 0, // 文字明暗饱和度: -50 ~ +50，0=主题默认
+    textToneColor: '', // 文字色调（'r,g,b'），空=跟随主题默认
+    fontFamily: '', // 用户字体（空=跟随主题默认）
     widgets: [],
     showWidgets: true,
     widgetsAvoidIcons: false,
@@ -686,6 +702,12 @@ function createWindow() {
           folderPreviewEnabled: store.get('folderPreviewEnabled', true),
           backgroundImage: store.get('backgroundImage', {}),
           backgroundData: await getBackgroundData(),
+          userProfile: store.get('userProfile', {}),
+          avatarData: await getAvatarData(),
+          avatarSourceData: await getAvatarSourceData(),
+          textTone: store.get('textTone', 0),
+          textToneColor: store.get('textToneColor', ''),
+          fontFamily: store.get('fontFamily', ''),
           widgets: store.get('widgets', []),
           showWidgets: store.get('showWidgets', true),
           widgetsAvoidIcons: store.get('widgetsAvoidIcons', false),
@@ -720,6 +742,12 @@ function createWindow() {
           folderPreviewEnabled: store.get('folderPreviewEnabled', true),
           backgroundImage: store.get('backgroundImage', {}),
           backgroundData: null,
+          userProfile: store.get('userProfile', {}),
+          avatarData: null,
+          avatarSourceData: null,
+          textTone: store.get('textTone', 0),
+          textToneColor: store.get('textToneColor', ''),
+          fontFamily: store.get('fontFamily', ''),
           widgets: store.get('widgets', []),
           showWidgets: store.get('showWidgets', true),
           widgetsAvoidIcons: store.get('widgetsAvoidIcons', false),
@@ -1373,6 +1401,18 @@ ipcMain.handle('set-background-settings', async (event, settings) => {
     if (Number.isFinite(settings.dim)) {
       config.dim = Math.max(0, Math.min(80, Math.round(settings.dim)));
     }
+    if (['cover', 'contain', 'fill', 'custom'].includes(settings.mode)) {
+      config.mode = settings.mode;
+    }
+    if (Number.isFinite(settings.scale)) {
+      config.scale = Math.max(100, Math.min(300, Math.round(settings.scale)));
+    }
+    if (Number.isFinite(settings.offsetX)) {
+      config.offsetX = Math.max(-50, Math.min(50, Math.round(settings.offsetX)));
+    }
+    if (Number.isFinite(settings.offsetY)) {
+      config.offsetY = Math.max(-50, Math.min(50, Math.round(settings.offsetY)));
+    }
     store.set('backgroundImage', config);
     return { success: true, config };
   } catch (e) {
@@ -1386,6 +1426,193 @@ ipcMain.handle('clear-background', async () => {
 
 ipcMain.handle('get-background-data', async () => {
   return await getBackgroundData();
+});
+
+// ============ 用户头像 ============
+const AVATAR_MAX_DIM = 1024;
+let avatarDir = null;
+
+function getAvatarDir() {
+  if (!avatarDir) {
+    avatarDir = path.join(app.getPath('userData'), 'avatars');
+  }
+  return avatarDir;
+}
+
+function getAvatarFilePath() {
+  return path.join(getAvatarDir(), 'avatar.png');
+}
+
+function getAvatarCropFilePath() {
+  return path.join(getAvatarDir(), 'avatar-crop.png');
+}
+
+async function selectAvatarImage() {
+  try {
+    const { dialog } = require('electron');
+    const { canceled, filePaths } = await dialog.showOpenDialog(mainWindow, {
+      title: '选择头像图片',
+      filters: [
+        { name: '图片', extensions: ['jpg', 'jpeg', 'png', 'webp', 'bmp', 'gif'] }
+      ],
+      properties: ['openFile']
+    });
+    if (canceled || !filePaths || filePaths.length === 0) {
+      return { success: false, canceled: true };
+    }
+    const srcPath = filePaths[0];
+    const img = nativeImage.createFromPath(srcPath);
+    if (img.isEmpty()) {
+      return { success: false, error: '无法读取该图片' };
+    }
+    const size = img.getSize();
+    let finalImg = img;
+    if (size && size.width && size.height) {
+      const scale = Math.min(1, AVATAR_MAX_DIM / Math.max(size.width, size.height));
+      if (scale < 1) {
+        finalImg = img.resize({
+          width: Math.max(1, Math.round(size.width * scale)),
+          height: Math.max(1, Math.round(size.height * scale)),
+          quality: 'best'
+        });
+      }
+    }
+    const pngData = finalImg.toPNG();
+    if (!pngData || pngData.length === 0) {
+      return { success: false, error: '图片编码失败' };
+    }
+    await fs.promises.mkdir(getAvatarDir(), { recursive: true });
+    await fs.promises.writeFile(getAvatarFilePath(), pngData);
+    try {
+      if (fs.existsSync(getAvatarCropFilePath())) {
+        await fs.promises.unlink(getAvatarCropFilePath());
+      }
+    } catch (e) { /* 忽略旧裁剪图清理失败 */ }
+    // 更换图片后重置裁剪参数
+    const profile = store.get('userProfile', {});
+    profile.path = getAvatarFilePath();
+    profile.cropPath = null;
+    profile.scale = 1;
+    profile.offsetX = 0;
+    profile.offsetY = 0;
+    store.set('userProfile', profile);
+    return { success: true, profile, dataUrl: `data:image/png;base64,${pngData.toString('base64')}` };
+  } catch (e) {
+    console.error('选择头像图片失败:', e.message);
+    return { success: false, error: e.message };
+  }
+}
+
+async function getAvatarData() {
+  try {
+    const profile = store.get('userProfile', {});
+    const filePath = profile && profile.cropPath && fs.existsSync(profile.cropPath)
+      ? profile.cropPath
+      : profile && profile.path;
+    if (!filePath || !fs.existsSync(filePath)) return null;
+    const data = await fs.promises.readFile(filePath);
+    return `data:image/png;base64,${data.toString('base64')}`;
+  } catch (e) {
+    return null;
+  }
+}
+
+async function getAvatarSourceData() {
+  try {
+    const profile = store.get('userProfile', {});
+    if (!profile || !profile.path || !fs.existsSync(profile.path)) return null;
+    const data = await fs.promises.readFile(profile.path);
+    return `data:image/png;base64,${data.toString('base64')}`;
+  } catch (e) {
+    return null;
+  }
+}
+
+ipcMain.handle('select-avatar-image', async () => {
+  return await selectAvatarImage();
+});
+
+ipcMain.handle('set-user-profile', async (event, profile) => {
+  try {
+    if (!profile || typeof profile !== 'object') return { success: false };
+    const current = store.get('userProfile', {});
+    if (typeof profile.name === 'string') {
+      current.name = profile.name.slice(0, 30);
+    }
+    if (typeof profile.shape === 'string' && ['circle', 'rounded'].includes(profile.shape)) {
+      current.shape = profile.shape;
+    }
+    if (Number.isFinite(profile.scale)) {
+      current.scale = Math.max(1, Math.min(8, profile.scale));
+    }
+    if (Number.isFinite(profile.offsetX)) {
+      current.offsetX = Math.max(-100000, Math.min(100000, profile.offsetX));
+    }
+    if (Number.isFinite(profile.offsetY)) {
+      current.offsetY = Math.max(-100000, Math.min(100000, profile.offsetY));
+    }
+    if (typeof profile.cropDataUrl === 'string' && profile.cropDataUrl) {
+      const match = profile.cropDataUrl.match(/^data:image\/png;base64,([A-Za-z0-9+/=]+)$/);
+      if (!match) return { success: false, error: '头像裁剪数据格式无效' };
+      const cropData = Buffer.from(match[1], 'base64');
+      if (cropData.length === 0 || cropData.length > 4 * 1024 * 1024) {
+        return { success: false, error: '头像裁剪数据过大' };
+      }
+      const cropImage = nativeImage.createFromBuffer(cropData);
+      const cropSize = cropImage.getSize();
+      if (cropImage.isEmpty() || !cropSize.width || !cropSize.height ||
+          cropSize.width > AVATAR_MAX_DIM || cropSize.height > AVATAR_MAX_DIM) {
+        return { success: false, error: '头像裁剪数据无效' };
+      }
+      await fs.promises.mkdir(getAvatarDir(), { recursive: true });
+      await fs.promises.writeFile(getAvatarCropFilePath(), cropData);
+      current.cropPath = getAvatarCropFilePath();
+    }
+    if (profile.removeAvatar === true) {
+      current.path = null;
+      current.cropPath = null;
+      current.scale = 1;
+      current.offsetX = 0;
+      current.offsetY = 0;
+      try {
+        if (fs.existsSync(getAvatarFilePath())) {
+          await fs.promises.unlink(getAvatarFilePath());
+        }
+        if (fs.existsSync(getAvatarCropFilePath())) {
+          await fs.promises.unlink(getAvatarCropFilePath());
+        }
+      } catch (e) { /* 忽略 */ }
+    }
+    store.set('userProfile', current);
+    return { success: true, profile: current };
+  } catch (e) {
+    return { success: false, error: e.message };
+  }
+});
+
+ipcMain.handle('set-text-tone', async (event, tone) => {
+  const value = Number.isFinite(tone) ? Math.max(-50, Math.min(50, Math.round(tone))) : 0;
+  store.set('textTone', value);
+  return true;
+});
+
+ipcMain.handle('set-text-tone-color', async (event, color) => {
+  if (typeof color !== 'string') return false;
+  const m = color.match(/^\s*(\d{1,3})\s*,\s*(\d{1,3})\s*,\s*(\d{1,3})\s*$/);
+  if (m) {
+    const rgb = [m[1], m[2], m[3]].map(Number).filter((v) => v >= 0 && v <= 255);
+    if (rgb.length === 3) {
+      store.set('textToneColor', rgb.join(', '));
+      return true;
+    }
+  }
+  store.set('textToneColor', '');
+  return true;
+});
+
+ipcMain.handle('set-font-family', async (event, fontFamily) => {
+  store.set('fontFamily', typeof fontFamily === 'string' ? fontFamily.slice(0, 200) : '');
+  return true;
 });
 
 // 布局导出/导入

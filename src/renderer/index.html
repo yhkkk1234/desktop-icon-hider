@@ -19,7 +19,17 @@
       <button id="toggle-btn" class="icon-btn" title="折叠">
         <span id="toggle-icon">▼</span>
       </button>
-      <span class="title" data-i18n="header.title">桌面图标</span>
+      <div id="header-user" class="header-user" title="点击设置用户资料">
+        <span id="header-avatar" class="header-avatar" data-shape="circle">
+          <img id="header-avatar-img" alt="" draggable="false">
+          <span id="header-avatar-placeholder" class="header-avatar-placeholder">
+            <svg viewBox="0 0 24 24" aria-hidden="true">
+              <path d="M12 12a4 4 0 1 0 0-8 4 4 0 0 0 0 8zm0 2c-4.4 0-8 2.2-8 5v1h16v-1c0-2.8-3.6-5-8-5z"></path>
+            </svg>
+          </span>
+        </span>
+        <span id="header-name" class="title">桌面图标</span>
+      </div>
       <div class="header-actions">
         <button id="settings-btn" class="icon-btn" title="设置" data-i18n-title="action.settings">
           <svg class="ui-icon gear-icon" viewBox="0 0 24 24" aria-hidden="true">
@@ -56,6 +66,41 @@
     
     <!-- 设置面板 -->
     <div id="settings-panel" class="settings-panel" style="display: none;">
+      <!-- 用户资料 -->
+      <div class="settings-section">
+        <h3 data-i18n="profile.title">用户资料</h3>
+        <div class="setting-item profile-item">
+          <span id="profile-avatar-preview" class="profile-avatar-preview" data-shape="circle">
+            <img id="profile-avatar-preview-img" alt="" draggable="false">
+            <span id="profile-avatar-preview-placeholder" class="header-avatar-placeholder">
+              <svg viewBox="0 0 24 24" aria-hidden="true">
+                <path d="M12 12a4 4 0 1 0 0-8 4 4 0 0 0 0 8zm0 2c-4.4 0-8 2.2-8 5v1h16v-1c0-2.8-3.6-5-8-5z"></path>
+              </svg>
+            </span>
+          </span>
+          <div class="profile-controls">
+            <div class="setting-item">
+              <label for="profile-name-input" data-i18n="profile.name">用户名:</label>
+              <input type="text" id="profile-name-input" class="number-input" maxlength="30" placeholder="桌面图标">
+            </div>
+            <div class="setting-item">
+              <span class="setting-label" data-i18n="profile.avatarShape">头像形状:</span>
+              <select id="profile-shape-select">
+                <option value="circle" data-i18n="profile.shapeCircle">圆形</option>
+                <option value="rounded" data-i18n="profile.shapeRounded">圆角正方形</option>
+              </select>
+            </div>
+            <div class="setting-item">
+              <button id="select-avatar-btn" class="prompt-btn prompt-btn-confirm" data-i18n="profile.selectAvatar">选择头像</button>
+              <button id="remove-avatar-btn" class="prompt-btn prompt-btn-cancel" data-i18n="profile.removeAvatar">移除头像</button>
+            </div>
+          </div>
+        </div>
+        <div class="setting-description" data-i18n="profile.desc">
+          选择图片后可拖动与缩放，按所选形状截取为头像，显示在窗口左上角。
+        </div>
+      </div>
+
       <!-- 主题设置 -->
       <div class="settings-section">
         <h3 data-i18n="settings.theme">主题设置</h3>
@@ -155,6 +200,37 @@
           <label for="opacity-slider" data-i18n="settings.opacity">界面透明度:</label>
           <input type="range" id="opacity-slider" min="50" max="100" step="5" value="92">
           <span id="opacity-value">92%</span>
+        </div>
+        <div class="setting-item opacity-control">
+          <label for="text-tone-slider" data-i18n="settings.textTone">文字明暗:</label>
+          <input type="range" id="text-tone-slider" min="-50" max="50" step="1" value="0">
+          <span id="text-tone-value">默认</span>
+          <button id="text-tone-reset-btn" class="prompt-btn prompt-btn-cancel" data-i18n="settings.textToneReset">重置</button>
+        </div>
+        <div class="setting-item">
+          <label class="switch">
+            <input type="checkbox" id="text-tone-follow" checked>
+            <span class="slider"></span>
+          </label>
+          <span class="setting-label" data-i18n="settings.textColorFollow">跟随主题色调</span>
+        </div>
+        <div class="setting-item opacity-control">
+          <label for="text-rgb-r" data-i18n="settings.textColorR">红:</label>
+          <input type="range" id="text-rgb-r" min="0" max="255" step="1" value="255">
+          <span id="text-rgb-r-value">255</span>
+        </div>
+        <div class="setting-item opacity-control">
+          <label for="text-rgb-g" data-i18n="settings.textColorG">绿:</label>
+          <input type="range" id="text-rgb-g" min="0" max="255" step="1" value="255">
+          <span id="text-rgb-g-value">255</span>
+        </div>
+        <div class="setting-item opacity-control">
+          <label for="text-rgb-b" data-i18n="settings.textColorB">蓝:</label>
+          <input type="range" id="text-rgb-b" min="0" max="255" step="1" value="255">
+          <span id="text-rgb-b-value">255</span>
+        </div>
+        <div class="setting-description" data-i18n="settings.textToneDesc">
+          浅色背景看不清文字时，可调暗/调亮文字并增强饱和度；每个主题有默认值，可一键重置。
         </div>
         <div class="setting-description" data-i18n="settings.themeDesc">
           选择界面主题风格，调整背景透明度。"跟随系统"将自动匹配操作系统的深色/浅色模式。
@@ -301,8 +377,32 @@
           <input type="range" id="bg-dim-slider" min="0" max="80" step="5" value="45">
           <span id="bg-dim-value">45%</span>
         </div>
+        <div class="setting-item">
+          <label for="bg-mode-select" data-i18n="settings.backgroundMode">显示方式:</label>
+          <select id="bg-mode-select">
+            <option value="cover" data-i18n="settings.bgModeCover">填充裁剪 (居中)</option>
+            <option value="contain" data-i18n="settings.bgModeContain">完整显示</option>
+            <option value="fill" data-i18n="settings.bgModeFill">拉伸铺满</option>
+            <option value="custom" data-i18n="settings.bgModeCustom">自定义缩放/位置</option>
+          </select>
+        </div>
+        <div class="setting-item opacity-control bg-custom-control">
+          <label for="bg-scale-slider" data-i18n="settings.backgroundScale">缩放:</label>
+          <input type="range" id="bg-scale-slider" min="100" max="300" step="5" value="100">
+          <span id="bg-scale-value">100%</span>
+        </div>
+        <div class="setting-item opacity-control bg-custom-control">
+          <label for="bg-offsetx-slider" data-i18n="settings.backgroundOffsetX">横向:</label>
+          <input type="range" id="bg-offsetx-slider" min="-50" max="50" step="1" value="0">
+          <span id="bg-offsetx-value">0%</span>
+        </div>
+        <div class="setting-item opacity-control bg-custom-control">
+          <label for="bg-offsety-slider" data-i18n="settings.backgroundOffsetY">纵向:</label>
+          <input type="range" id="bg-offsety-slider" min="-50" max="50" step="1" value="0">
+          <span id="bg-offsety-value">0%</span>
+        </div>
         <div class="setting-description" data-i18n="settings.backgroundDesc">
-          选择一张图片作为窗口背景，模糊和暗化处理可保证图标清晰可读，营造柔和氛围。
+          选择一张图片作为窗口背景，可切换显示方式或自定义缩放与位置；模糊和暗化处理可保证图标清晰可读。
         </div>
       </div>
       
@@ -397,6 +497,31 @@
         </div>
       </div>
       
+      <!-- 字体设置 -->
+      <div class="settings-section">
+        <h3 data-i18n="settings.font">字体</h3>
+        <div class="setting-item">
+          <label for="font-family-select" data-i18n="settings.fontFamily">界面字体:</label>
+          <select id="font-family-select">
+            <option value="" data-i18n="settings.fontDefault">默认 (跟随主题)</option>
+            <option value="'Microsoft YaHei UI', 'Microsoft YaHei', sans-serif">微软雅黑</option>
+            <option value="'Segoe UI Variable', 'Segoe UI', sans-serif">Segoe UI</option>
+            <option value="'SimHei', 'Microsoft YaHei', sans-serif">黑体</option>
+            <option value="'SimSun', serif">宋体</option>
+            <option value="'KaiTi', serif">楷体</option>
+            <option value="'Consolas', 'Cascadia Mono', monospace">Consolas (等宽)</option>
+            <option value="'Cascadia Mono', 'Consolas', monospace">Cascadia Mono (等宽)</option>
+            <option value="'Courier New', monospace">Courier New (等宽)</option>
+          </select>
+        </div>
+        <div class="setting-item">
+          <span id="font-preview" class="font-preview">Aa 示例文字 123</span>
+        </div>
+        <div class="setting-description" data-i18n="settings.fontDesc">
+          选择界面字体，不选择时使用各主题默认字体。
+        </div>
+      </div>
+
       <!-- 快捷键自定义 -->
       <div class="settings-section">
         <h3 data-i18n="settings.shortcuts">快捷键</h3>
@@ -541,12 +666,34 @@
       <button id="sel-delete-btn" class="sel-btn sel-danger" data-i18n="action.delete">删除</button>
       <button id="sel-clear-btn" class="sel-btn" data-i18n="action.deselect">取消选择</button>
     </div>
-    
+
     <!-- 文件夹悬停预览 -->
     <div id="folder-preview" class="folder-preview" style="display: none;"></div>
-    
+
     <!-- 框选矩形 -->
     <div id="box-select" class="box-select" style="display: none;"></div>
+
+    <!-- 头像编辑器 -->
+    <div id="avatar-editor-overlay" class="avatar-editor-overlay" style="display: none;">
+      <div class="avatar-editor-dialog">
+        <div class="avatar-editor-header">
+          <span data-i18n="profile.editorTitle">调整头像</span>
+          <div class="avatar-shape-group">
+            <button type="button" class="avatar-shape-btn" data-shape="circle" data-i18n="profile.shapeCircle">圆形</button>
+            <button type="button" class="avatar-shape-btn" data-shape="rounded" data-i18n="profile.shapeRounded">圆角正方形</button>
+          </div>
+        </div>
+        <div class="avatar-editor-stage">
+          <img id="avatar-editor-img" alt="" draggable="false">
+          <div id="avatar-editor-frame" class="avatar-editor-frame" data-shape="circle"></div>
+        </div>
+        <div class="avatar-editor-hint" data-i18n="profile.editorHint">拖动图片调整位置，滚轮缩放</div>
+        <div class="avatar-editor-actions">
+          <button type="button" id="avatar-editor-cancel" class="prompt-btn prompt-btn-cancel" data-i18n="common.cancel">取消</button>
+          <button type="button" id="avatar-editor-ok" class="prompt-btn prompt-btn-confirm" data-i18n="common.ok">确定</button>
+        </div>
+      </div>
+    </div>
   </div>
 
   <script src="i18n.js"></script>

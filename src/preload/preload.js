@@ -101,6 +101,18 @@ contextBridge.exposeInMainWorld('api', {
   setBackgroundSettings: (settings) => ipcRenderer.invoke('set-background-settings', settings),
   clearBackground: () => ipcRenderer.invoke('clear-background'),
   getBackgroundData: () => ipcRenderer.invoke('get-background-data'),
+
+  // 用户头像 / 资料
+  selectAvatarImage: () => ipcRenderer.invoke('select-avatar-image'),
+  setUserProfile: (profile) => ipcRenderer.invoke('set-user-profile', profile),
+
+  // 文字明暗饱和度
+  setTextTone: (tone) => ipcRenderer.invoke('set-text-tone', tone),
+  // 文字色调（'r,g,b'，空=跟随主题）
+  setTextToneColor: (color) => ipcRenderer.invoke('set-text-tone-color', color),
+
+  // 字体
+  setFontFamily: (fontFamily) => ipcRenderer.invoke('set-font-family', fontFamily),
   
   // 监听自动隐藏事件
   onAutoHideChanged: (callback) => ipcRenderer.on('auto-hide-changed', (event, data) => callback(data)),

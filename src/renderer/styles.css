@@ -171,6 +171,7 @@ html, body {
   box-shadow: var(--skin-header-shadow);
   flex-shrink: 0;
   -webkit-app-region: drag;
+  padding-left: 14px;
 }
 
 .title {
@@ -1640,16 +1641,44 @@ body.icons-locked .file-item.draggable:active {
   pointer-events: none;
 }
 
+/* contain 模式：图片未铺满时以主题底色垫底，避免露出透明窗口 */
+.bg-layer[data-mode="contain"],
+.bg-layer[data-mode="custom"] {
+  background: var(--bg-primary);
+}
+
 .bg-layer img {
   position: absolute;
   inset: 0;
   width: 100%;
   height: 100%;
-  object-fit: cover;
   filter: blur(var(--bg-blur, 24px));
-  transform: scale(1.2);
   /* 跟随"界面透明度"设置：与主题模式行为一致 */
   opacity: var(--opacity-bg, 0.92);
+}
+
+/* cover（默认）：填充裁剪 + 轻微放大，抵消边缘模糊扩散漏底 */
+.bg-layer[data-mode="cover"] img {
+  object-fit: cover;
+  transform: scale(1.2);
+}
+
+/* contain：完整显示，保持宽高比 */
+.bg-layer[data-mode="contain"] img {
+  object-fit: contain;
+}
+
+/* fill：拉伸铺满 */
+.bg-layer[data-mode="fill"] img {
+  object-fit: fill;
+}
+
+/* custom：图片按"适配窗口的完整尺寸 × 缩放"渲染，尺寸/位置由 JS 内联控制，
+   覆盖基类规则的 width/height/transform（内联样式优先级更高） */
+.bg-layer[data-mode="custom"] img {
+  object-fit: fill;
+  right: auto;
+  bottom: auto;
 }
 
 /* 边缘内阴影：压暗模糊图片在窗口边缘的亮色扩散 */
@@ -3007,7 +3036,7 @@ body.icons-locked .file-item.draggable:active {
 /* 让皮肤同时影响布局边界、字体和控件形状，而不改变功能 */
 html,
 body {
-  font-family: var(--skin-font-family);
+  font-family: var(--user-font-family, var(--skin-font-family));
 }
 
 #app {
@@ -4000,4 +4029,257 @@ input:focus-visible,
   [data-theme="glass-dark"] .settings-panel {
     background: rgba(var(--bg-tertiary-rgb), 0.97);
   }
+}
+
+/* ============ 标题栏用户头像 + 用户名 ============ */
+.header-user {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-left: 10px;
+  cursor: pointer;
+  -webkit-app-region: no-drag;
+  overflow: hidden;
+}
+
+.header-user .title {
+  flex: 0 1 auto;
+  margin-left: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  pointer-events: none;
+}
+
+.header-avatar {
+  position: relative;
+  width: 24px;
+  height: 24px;
+  flex-shrink: 0;
+  overflow: hidden;
+  background: var(--bg-button);
+  border: none;
+  box-shadow: inset 0 0 0 1px var(--border-primary);
+}
+
+.header-avatar[data-shape="circle"] {
+  border-radius: 50%;
+}
+
+.header-avatar[data-shape="rounded"] {
+  border-radius: 6px;
+}
+
+.header-avatar img {
+  position: absolute;
+  /* offset 百分比相对容器（与编辑器取景框语义一致，无死区）；
+     尺寸由 JS 按图片宽高比计算（保持比例，不裁剪） */
+  left: calc(50% + var(--avatar-offset-x, 0) * 1%);
+  top: calc(50% + var(--avatar-offset-y, 0) * 1%);
+  max-width: none;
+  object-fit: fill;
+  transform: translate(-50%, -50%);
+  display: none;
+}
+
+.header-avatar-placeholder {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: var(--text-muted);
+}
+
+.header-avatar-placeholder svg {
+  width: 60%;
+  height: 60%;
+  fill: currentColor;
+}
+
+/* ============ 设置面板：用户资料 ============ */
+.profile-item {
+  display: flex;
+  align-items: flex-start;
+  gap: 12px;
+}
+
+.profile-avatar-preview {
+  position: relative;
+  width: 64px;
+  height: 64px;
+  flex-shrink: 0;
+  overflow: hidden;
+  background: var(--bg-button);
+  border: none;
+  box-shadow: inset 0 0 0 1px var(--border-primary);
+}
+
+.profile-avatar-preview[data-shape="circle"] {
+  border-radius: 50%;
+}
+
+.profile-avatar-preview[data-shape="rounded"] {
+  border-radius: 16px;
+}
+
+.profile-avatar-preview img {
+  position: absolute;
+  left: calc(50% + var(--avatar-offset-x, 0) * 1%);
+  top: calc(50% + var(--avatar-offset-y, 0) * 1%);
+  max-width: none;
+  object-fit: fill;
+  transform: translate(-50%, -50%);
+  display: none;
+}
+
+.profile-controls {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.profile-controls .setting-item {
+  margin: 0;
+}
+
+.profile-controls .prompt-btn {
+  font-size: 12px;
+  padding: 4px 10px;
+}
+
+/* ============ 头像编辑器 ============ */
+.avatar-editor-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 1000;
+  background: rgba(0, 0, 0, 0.5);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.avatar-editor-dialog {
+  width: 340px;
+  max-width: calc(100vw - 24px);
+  background: var(--bg-tertiary);
+  border: 1px solid var(--border-primary);
+  border-radius: var(--skin-panel-radius, 13px);
+  box-shadow: var(--skin-shadow, 0 12px 38px rgba(0, 0, 0, 0.48));
+  padding: 14px;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.avatar-editor-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  font-size: 14px;
+  font-weight: 600;
+  color: var(--text-primary);
+}
+
+.avatar-shape-group {
+  display: flex;
+  gap: 4px;
+}
+
+.avatar-shape-btn {
+  border: 1px solid var(--border-input);
+  background: var(--bg-button);
+  color: var(--text-secondary);
+  font-size: 12px;
+  padding: 3px 8px;
+  border-radius: 6px;
+  cursor: pointer;
+}
+
+.avatar-shape-btn.active {
+  background: var(--bg-context);
+  border-color: var(--border-context);
+  color: var(--text-primary);
+}
+
+.avatar-editor-stage {
+  position: relative;
+  width: 100%;
+  height: 260px;
+  overflow: hidden;
+  background: var(--bg-primary);
+  border: 1px solid var(--border-primary);
+  border-radius: 8px;
+  cursor: grab;
+  touch-action: none;
+}
+
+.avatar-editor-stage.dragging {
+  cursor: grabbing;
+}
+
+.avatar-editor-stage img {
+  position: absolute;
+  left: 50%;
+  top: 50%;
+  max-width: none;
+  transform-origin: center;
+  user-select: none;
+  -webkit-user-drag: none;
+}
+
+.avatar-editor-frame {
+  position: absolute;
+  left: 50%;
+  top: 50%;
+  width: 220px;
+  height: 220px;
+  transform: translate(-50%, -50%);
+  pointer-events: none;
+  /* outline 不占取景框尺寸，框内实际裁剪区域保持 220x220 */
+  border: none;
+  outline: 2px solid rgba(255, 255, 255, 0.85);
+  box-shadow: 0 0 0 999px rgba(0, 0, 0, 0.45);
+}
+
+.avatar-editor-frame[data-shape="circle"] {
+  border-radius: 50%;
+}
+
+.avatar-editor-frame[data-shape="rounded"] {
+  border-radius: 55px; /* 220px 取景框的 25%，与显示端头像圆角比例一致 */
+}
+
+.avatar-editor-hint {
+  text-align: center;
+  font-size: 12px;
+  color: var(--text-muted);
+}
+
+.avatar-editor-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 8px;
+}
+
+/* ============ 字体预览 ============ */
+.font-preview {
+  font-size: 15px;
+  color: var(--text-primary);
+  padding: 6px 10px;
+  background: var(--bg-input);
+  border: 1px solid var(--border-input);
+  border-radius: 6px;
+  width: 100%;
+}
+
+/* 背景自定义控件：非 custom 模式时置灰不可用 */
+.bg-custom-control.disabled {
+  opacity: 0.45;
+  pointer-events: none;
 }
