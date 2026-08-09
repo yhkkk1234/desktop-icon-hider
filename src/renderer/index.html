@@ -229,8 +229,22 @@
           <input type="range" id="text-rgb-b" min="0" max="255" step="1" value="255">
           <span id="text-rgb-b-value">255</span>
         </div>
+        <div class="setting-item">
+          <label for="icon-text-effect-select" data-i18n="settings.iconTextEffect">图标文字效果:</label>
+          <select id="icon-text-effect-select">
+            <option value="windows" data-i18n="settings.iconTextEffectWindows">Windows 桌面风格</option>
+            <option value="auto" data-i18n="settings.iconTextEffectAuto">自动对比阴影</option>
+            <option value="soft" data-i18n="settings.iconTextEffectSoft">柔和阴影</option>
+            <option value="strong" data-i18n="settings.iconTextEffectStrong">强对比轮廓</option>
+            <option value="none" data-i18n="settings.iconTextEffectNone">关闭</option>
+          </select>
+          <button id="icon-text-effect-reset-btn" class="prompt-btn prompt-btn-cancel" data-i18n="settings.iconTextEffectReset">默认</button>
+        </div>
         <div class="setting-description" data-i18n="settings.textToneDesc">
           浅色背景看不清文字时，可调暗/调亮文字并增强饱和度；每个主题有默认值，可一键重置。
+        </div>
+        <div class="setting-description" data-i18n="settings.iconTextEffectDesc">
+          图标名称和分组名称会根据文字明暗自动添加阴影，减少背景图片对文字的干扰。
         </div>
         <div class="setting-description" data-i18n="settings.themeDesc">
           选择界面主题风格，调整背景透明度。"跟随系统"将自动匹配操作系统的深色/浅色模式。

@@ -38,6 +38,7 @@ let avatarData = null; // 当前显示的头像图片 data URL（已裁剪图优
 let avatarSourceData = null; // 头像原图 data URL（重新编辑时使用）
 let textTone = 0; // 文字明暗饱和度 -50 ~ +50，0=主题默认
 let textToneColor = ''; // 文字色调 'r,g,b'，空=跟随主题默认（由 textToneFollow 复选框控制）
+let iconTextEffect = 'windows'; // 图标文字效果: windows | auto | soft | strong | none
 let fontFamily = ''; // 用户字体（空=主题默认）
 let widgets = []; // 小组件: [{ id, type: 'clock'|'calendar'|'weather', x, y }] 坐标为百分比
 let showWidgets = true; // 小组件显示开关
@@ -88,6 +89,7 @@ let profileAvatarPreview, profileNameInput, profileShapeSelect, selectAvatarBtn,
 let avatarEditorOverlay, avatarEditorImg, avatarEditorFrame, avatarEditorOk, avatarEditorCancel, avatarShapeBtns;
 let textToneSlider, textToneValue, textToneResetBtn;
 let textToneFollow, textRgbR, textRgbRValue, textRgbG, textRgbGValue, textRgbB, textRgbBValue;
+let iconTextEffectSelect, iconTextEffectResetBtn;
 let fontFamilySelect, fontPreview;
 
 // 刷新防抖
@@ -206,6 +208,8 @@ document.addEventListener('DOMContentLoaded', () => {
   textRgbGValue = document.getElementById('text-rgb-g-value');
   textRgbB = document.getElementById('text-rgb-b');
   textRgbBValue = document.getElementById('text-rgb-b-value');
+  iconTextEffectSelect = document.getElementById('icon-text-effect-select');
+  iconTextEffectResetBtn = document.getElementById('icon-text-effect-reset-btn');
   fontFamilySelect = document.getElementById('font-family-select');
   fontPreview = document.getElementById('font-preview');
 
@@ -287,6 +291,8 @@ document.addEventListener('DOMContentLoaded', () => {
   textRgbR.addEventListener('input', () => handleTextRgbChange());
   textRgbG.addEventListener('input', () => handleTextRgbChange());
   textRgbB.addEventListener('input', () => handleTextRgbChange());
+  iconTextEffectSelect.addEventListener('change', handleIconTextEffectChange);
+  iconTextEffectResetBtn.addEventListener('click', handleIconTextEffectReset);
 
   // 字体
   fontFamilySelect.addEventListener('change', handleFontFamilyChange);
@@ -462,6 +468,9 @@ document.addEventListener('DOMContentLoaded', () => {
       : avatarData;
     textTone = Number.isFinite(data.textTone) ? data.textTone : 0;
     textToneColor = typeof data.textToneColor === 'string' ? data.textToneColor : '';
+    iconTextEffect = ['windows', 'auto', 'soft', 'strong', 'none'].includes(data.iconTextEffect)
+      ? data.iconTextEffect
+      : 'windows';
     fontFamily = typeof data.fontFamily === 'string' ? data.fontFamily : '';
     widgets = Array.isArray(data.widgets) ? data.widgets : [];
     showWidgets = data.showWidgets !== false;
@@ -497,6 +506,7 @@ document.addEventListener('DOMContentLoaded', () => {
     applyTheme(theme);
     applyTextTone();
     updateTextToneUI();
+    updateIconTextEffectUI();
     applyFont();
     updateFontUI();
     applyOpacity(opacity);
@@ -3622,7 +3632,10 @@ function applyTextTone() {
     if (rgb.every((v) => v >= 0 && v <= 255)) baseColor = rgb;
   }
 
-  if (tone === 0 && !baseColor) return;
+  if (tone === 0 && !baseColor) {
+    applyIconTextEffect();
+    return;
+  }
 
   const computed = getComputedStyle(root);
   const t = tone / 50; // -1 ~ +1
@@ -3655,6 +3668,69 @@ function applyTextTone() {
   const darkText = primaryLuminance > 150;
   root.style.setProperty('--select-option-color', darkText ? '#000000' : '#ffffff');
   root.style.setProperty('--select-option-bg', darkText ? '#ffffff' : '#2d2d2d');
+  applyIconTextEffect();
+}
+
+function applyIconTextEffect() {
+  const root = document.documentElement;
+  const effect = ['windows', 'auto', 'soft', 'strong', 'none'].includes(iconTextEffect)
+    ? iconTextEffect
+    : 'windows';
+  root.style.removeProperty('--icon-label-text-color');
+
+  if (effect === 'windows') {
+    // Windows 桌面图标标签的核心观感：近白文字 + 深色投影，
+    // 不随浅色/深色主题反转成突兀的白色光晕。
+    const edge = 'rgba(0, 0, 0, 0.78)';
+    root.style.setProperty('--icon-label-text-color', 'rgba(255, 255, 255, 0.96)');
+    root.style.setProperty('--icon-label-text-shadow',
+      `0 1px 2px rgba(0, 0, 0, 0.94), 1px 0 1px ${edge}, -1px 0 1px ${edge}`);
+    return;
+  }
+  if (effect === 'none') {
+    root.style.setProperty('--icon-label-text-shadow', 'none');
+    return;
+  }
+
+  const raw = getComputedStyle(root).getPropertyValue('--text-secondary-rgb').trim();
+  const match = raw.match(/^\s*(\d+)\s*,\s*(\d+)\s*,\s*(\d+)\s*$/);
+  const rgb = match ? [parseInt(match[1]), parseInt(match[2]), parseInt(match[3])] : [255, 255, 255];
+  const luminance = (rgb[0] * 299 + rgb[1] * 587 + rgb[2] * 114) / 1000;
+  // 强对比/柔和模式保留对比色适配；自动模式单独使用克制的深色投影，
+  // 避免浅色主题的深色文字在深色背景上出现突兀白色光晕。
+  const shadowRgb = luminance > 150 ? '0, 0, 0' : '255, 255, 255';
+  const shadow = (alpha) => `rgba(${shadowRgb}, ${alpha})`;
+  let textShadow;
+  if (effect === 'soft') {
+    textShadow = `0 1px 1.5px ${shadow(0.58)}`;
+  } else if (effect === 'strong') {
+    const edge = shadow(0.72);
+    textShadow = `-1px -1px 1px ${edge}, 1px -1px 1px ${edge}, ` +
+      `-1px 1px 1px ${edge}, 1px 1px 1px ${edge}, 0 2px 2px ${shadow(0.86)}`;
+  } else {
+    // auto：始终使用深色投影；深色文字只保留很淡的投影，避免产生白色发光感。
+    const alpha = luminance > 150 ? 0.84 : 0.34;
+    textShadow = `0 1px 2px rgba(0, 0, 0, ${alpha}), 0 0 1px rgba(0, 0, 0, ${alpha * 0.55})`;
+  }
+  root.style.setProperty('--icon-label-text-shadow', textShadow);
+}
+
+function updateIconTextEffectUI() {
+  if (iconTextEffectSelect) iconTextEffectSelect.value = iconTextEffect;
+}
+
+async function handleIconTextEffectChange() {
+  iconTextEffect = iconTextEffectSelect.value;
+  applyIconTextEffect();
+  updateIconTextEffectUI();
+  await window.api.setIconTextEffect(iconTextEffect);
+}
+
+async function handleIconTextEffectReset() {
+  iconTextEffect = 'windows';
+  applyIconTextEffect();
+  updateIconTextEffectUI();
+  await window.api.setIconTextEffect('windows');
 }
 
 function updateTextToneUI() {

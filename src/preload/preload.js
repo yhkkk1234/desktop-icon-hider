@@ -110,6 +110,8 @@ contextBridge.exposeInMainWorld('api', {
   setTextTone: (tone) => ipcRenderer.invoke('set-text-tone', tone),
   // 文字色调（'r,g,b'，空=跟随主题）
   setTextToneColor: (color) => ipcRenderer.invoke('set-text-tone-color', color),
+  // 图标文字阴影/轮廓效果
+  setIconTextEffect: (effect) => ipcRenderer.invoke('set-icon-text-effect', effect),
 
   // 字体
   setFontFamily: (fontFamily) => ipcRenderer.invoke('set-font-family', fontFamily),

@@ -62,6 +62,7 @@ const store = new Store({
     },
     textTone: 0, // 文字明暗饱和度: -50 ~ +50，0=主题默认
     textToneColor: '', // 文字色调（'r,g,b'），空=跟随主题默认
+    iconTextEffect: 'windows', // 图标文字效果: windows | auto | soft | strong | none
     fontFamily: '', // 用户字体（空=跟随主题默认）
     widgets: [],
     showWidgets: true,
@@ -707,6 +708,7 @@ function createWindow() {
           avatarSourceData: await getAvatarSourceData(),
           textTone: store.get('textTone', 0),
           textToneColor: store.get('textToneColor', ''),
+          iconTextEffect: store.get('iconTextEffect', 'windows'),
           fontFamily: store.get('fontFamily', ''),
           widgets: store.get('widgets', []),
           showWidgets: store.get('showWidgets', true),
@@ -747,6 +749,7 @@ function createWindow() {
           avatarSourceData: null,
           textTone: store.get('textTone', 0),
           textToneColor: store.get('textToneColor', ''),
+          iconTextEffect: store.get('iconTextEffect', 'windows'),
           fontFamily: store.get('fontFamily', ''),
           widgets: store.get('widgets', []),
           showWidgets: store.get('showWidgets', true),
@@ -1607,6 +1610,12 @@ ipcMain.handle('set-text-tone-color', async (event, color) => {
     }
   }
   store.set('textToneColor', '');
+  return true;
+});
+
+ipcMain.handle('set-icon-text-effect', async (event, effect) => {
+  if (!['windows', 'auto', 'soft', 'strong', 'none'].includes(effect)) return false;
+  store.set('iconTextEffect', effect);
   return true;
 });
 
