@@ -38,6 +38,7 @@ const store = new Store({
     iconsLocked: false,
     arrangeRules: [],
     startupDelay: 0,
+    gpuAcceleration: false,
     folderPreviewEnabled: true,
     everythingEnabled: false,
     backgroundImage: {
@@ -677,6 +678,7 @@ function createWindow() {
           arrangeRules: store.get('arrangeRules', []),
           shortcuts: store.get('shortcuts', {}),
           startupDelay: store.get('startupDelay', 0),
+          gpuAcceleration: store.get('gpuAcceleration', false),
           language: store.get('language', 'zh-CN'),
           everythingEnabled: store.get('everythingEnabled', false),
           everythingInstalled: !!findEverythingPath(),
@@ -710,6 +712,7 @@ function createWindow() {
           arrangeRules: store.get('arrangeRules', []),
           shortcuts: store.get('shortcuts', {}),
           startupDelay: store.get('startupDelay', 0),
+          gpuAcceleration: store.get('gpuAcceleration', false),
           language: store.get('language', 'zh-CN'),
           everythingEnabled: store.get('everythingEnabled', false),
           everythingInstalled: false,
@@ -1138,6 +1141,12 @@ ipcMain.handle('set-shortcuts', async (event, shortcuts) => {
 ipcMain.handle('set-startup-delay', async (event, seconds) => {
   const delay = Number.isFinite(seconds) ? Math.max(0, Math.min(600, Math.round(seconds))) : 0;
   store.set('startupDelay', delay);
+  return true;
+});
+
+// GPU 加速开关：保存配置，重启应用后生效（参数必须在 whenReady 之前设置，无法热切换）
+ipcMain.handle('set-gpu-acceleration', async (event, enabled) => {
+  store.set('gpuAcceleration', !!enabled);
   return true;
 });
 
@@ -1811,9 +1820,16 @@ ipcMain.handle('show-file-context-menu', async (event, filePath, x, y) => {
   }
 });
 
-// 修复透明窗口的 GPU 进程错误（必须在 app.whenReady 之前调用）
-app.commandLine.appendSwitch('disable-software-rasterizer');
-app.commandLine.appendSwitch('disable-gpu-compositing');
+// GPU 加速开关：透明窗口 + GPU 合成在部分机器上会崩溃（历史问题），默认禁用 GPU
+// （软件渲染）；用户可在设置中开启 GPU 加速实测稳定性（透明窗口闪白问题在 GPU
+// 合成下通常消失）。这些参数必须在 app.whenReady 之前设置，运行时切换需重启生效。
+// --no-gpu 启动参数强制禁用（崩溃后无法进 UI 恢复时的兜底入口）
+const gpuAccelerationEnabled = !process.argv.includes('--no-gpu') && store.get('gpuAcceleration', false);
+if (!gpuAccelerationEnabled) {
+  // 修复透明窗口的 GPU 进程错误（必须在 app.whenReady 之前调用）
+  app.commandLine.appendSwitch('disable-software-rasterizer');
+  app.commandLine.appendSwitch('disable-gpu-compositing');
+}
 
 app.whenReady().then(async () => {
   // 开机延迟启动：延迟初始化窗口，避免开机时抢占焦点

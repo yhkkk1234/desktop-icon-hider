@@ -82,6 +82,9 @@ contextBridge.exposeInMainWorld('api', {
   
   // 开机延迟启动
   setStartupDelay: (seconds) => ipcRenderer.invoke('set-startup-delay', seconds),
+
+  // GPU 加速开关（重启后生效）
+  setGpuAcceleration: (enabled) => ipcRenderer.invoke('set-gpu-acceleration', enabled),
   
   // 布局导出/导入
   exportLayout: (extraData) => ipcRenderer.invoke('export-layout', extraData),
@@ -122,6 +125,9 @@ contextBridge.exposeInMainWorld('api', {
   
   // 监听桌面文件变化
   onDesktopChanged: (callback) => ipcRenderer.on('desktop-changed', () => callback()),
+  
+  // 监听窗口显示事件（触发渲染层 CSS 淡入，盖住透明窗口 show 首帧闪白）
+  onWindowShown: (callback) => ipcRenderer.on('window-shown', () => callback()),
   
   // 监听语言变化
   onLanguageChanged: (callback) => ipcRenderer.on('language-changed', (event, data) => callback(data)),

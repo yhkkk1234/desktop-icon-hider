@@ -1026,6 +1026,21 @@ kbd {
   background: var(--bg-active);
 }
 
+/* 窗口显示淡入：内容层动画（body opacity），盖住透明窗口 show 首帧闪白。
+   窗口层 setOpacity 会破坏透明窗口的 per-pixel alpha 与点击命中区域，故在渲染层实现 */
+.window-fade-in {
+  animation: windowFadeIn 0.2s ease-out;
+}
+
+@keyframes windowFadeIn {
+  from {
+    opacity: 0;
+  }
+  to {
+    opacity: 1;
+  }
+}
+
 /* 折叠动画优化 */
 #content {
   transition: opacity 0.18s ease, transform 0.18s ease;

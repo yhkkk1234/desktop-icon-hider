@@ -24,6 +24,7 @@ let iconsLocked = false; // 图标锁定
 let arrangeRules = []; // 自动整理规则
 let shortcuts = {}; // 自定义快捷键
 let startupDelay = 0; // 开机延迟启动
+let gpuAcceleration = false; // GPU 加速（重启后生效）
 let iconsVisible = true; // 图标可见性（双击空白切换）
 let clipboard = null; // 剪贴板: { mode: 'copy'|'cut', paths: [] }
 let folderPreviewEnabled = true; // 文件夹悬停预览开关
@@ -67,6 +68,7 @@ let selectionToolbar, selectionCount, selOpenBtn, selCopyBtn, selCutBtn, selPast
 let folderPreview, boxSelectEl;
 let iconsLockToggle, rulesList, addRuleBtn, applyRulesBtn;
 let startupDelayInput, languageSelect;
+let gpuAccelerationToggle;
 let shortcutToggleInput, shortcutRefreshInput, shortcutWidgetsInput;
 let exportLayoutBtn, importLayoutBtn, quitAppBtn;
 let groupModeSelect, groupsBar, thumbStyleSelect;
@@ -124,6 +126,7 @@ document.addEventListener('DOMContentLoaded', () => {
   addRuleBtn = document.getElementById('add-rule-btn');
   applyRulesBtn = document.getElementById('apply-rules-btn');
   startupDelayInput = document.getElementById('startup-delay-input');
+  gpuAccelerationToggle = document.getElementById('gpu-acceleration-toggle');
   languageSelect = document.getElementById('language-select');
   shortcutToggleInput = document.getElementById('shortcut-toggle-input');
   shortcutRefreshInput = document.getElementById('shortcut-refresh-input');
@@ -181,6 +184,7 @@ document.addEventListener('DOMContentLoaded', () => {
   addRuleBtn.addEventListener('click', () => promptRuleEditor(null));
   applyRulesBtn.addEventListener('click', applyArrangeRules);
   startupDelayInput.addEventListener('change', handleStartupDelayChange);
+  gpuAccelerationToggle.addEventListener('change', handleGpuAccelerationChange);
   languageSelect.addEventListener('change', handleLanguageChange);
   exportLayoutBtn.addEventListener('click', handleExportLayout);
   importLayoutBtn.addEventListener('click', handleImportLayout);
@@ -340,6 +344,7 @@ document.addEventListener('DOMContentLoaded', () => {
     arrangeRules = Array.isArray(data.arrangeRules) ? data.arrangeRules : [];
     shortcuts = data.shortcuts || {};
     startupDelay = data.startupDelay || 0;
+    gpuAcceleration = !!data.gpuAcceleration;
     iconsVisible = true;
     folderPreviewEnabled = data.folderPreviewEnabled !== false;
     everythingEnabled = !!data.everythingEnabled;
@@ -374,6 +379,7 @@ document.addEventListener('DOMContentLoaded', () => {
     updateWeatherFxUI();
     updateIconsLockUI();
     updateStartupDelayUI();
+    updateGpuAccelerationUI();
     updateShortcutInputs();
     renderRules();
     updateEverythingUI();
@@ -440,6 +446,14 @@ document.addEventListener('DOMContentLoaded', () => {
   // 监听桌面文件变化（自动刷新）
   window.api.onDesktopChanged(() => {
     debouncedHandleRefresh(200);
+  });
+
+  // 监听窗口显示事件：内容层 CSS 淡入，盖住透明窗口 show 首帧闪白
+  // （窗口层 setOpacity 会破坏透明窗口的 per-pixel alpha 与点击命中区域，不可用）
+  window.api.onWindowShown(() => {
+    document.body.classList.remove('window-fade-in');
+    void document.body.offsetWidth; // 强制重排以重启动画
+    document.body.classList.add('window-fade-in');
   });
 
   // 监听语言变化
@@ -746,6 +760,17 @@ async function handleStartupDelayChange() {
 
 function updateStartupDelayUI() {
   if (startupDelayInput) startupDelayInput.value = String(startupDelay);
+}
+
+// GPU 加速（重启后生效）
+async function handleGpuAccelerationChange() {
+  gpuAcceleration = gpuAccelerationToggle.checked;
+  await window.api.setGpuAcceleration(gpuAcceleration);
+  showToast(t('settings.gpuRestart'));
+}
+
+function updateGpuAccelerationUI() {
+  if (gpuAccelerationToggle) gpuAccelerationToggle.checked = gpuAcceleration;
 }
 
 // 语言

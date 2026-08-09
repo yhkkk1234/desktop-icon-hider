@@ -76,6 +76,8 @@ function createTray(mainWindow, store) {
             mainWindow.hide();
           }
         } else {
+          // 先通知渲染层置透明再显示（CSS 淡入盖住透明窗口 show 首帧闪白）
+          mainWindow.webContents.send('window-shown');
           mainWindow.show();
           mainWindow.focus();
         }
@@ -108,6 +110,8 @@ function updateTrayMenu(mainWindow, store) {
           if (mainWindow.isVisible() && !mainWindow.isMinimized()) {
             mainWindow.hide();
           } else {
+            // 先通知渲染层置透明再显示（CSS 淡入盖住透明窗口 show 首帧闪白）
+            mainWindow.webContents.send('window-shown');
             mainWindow.show();
             mainWindow.focus();
           }

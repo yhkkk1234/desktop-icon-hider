@@ -372,6 +372,17 @@
         <div class="setting-description" data-i18n="settings.startupDesc">
           延迟启动可避免开机时窗口抢占焦点；延迟期间原生桌面图标保持可见。
         </div>
+        <div class="setting-item">
+          <label class="switch">
+            <input type="checkbox" id="gpu-acceleration-toggle">
+            <span class="slider"></span>
+          </label>
+          <span class="setting-label" data-i18n="settings.gpuAcceleration">GPU 加速</span>
+        </div>
+        <div class="setting-description" data-i18n="settings.gpuDesc">
+          开启后窗口渲染使用 GPU 合成（可能消除显示时闪白），但部分机器上透明窗口
+          GPU 合成可能不稳定（崩溃/黑屏）；切换后需重启应用生效。
+        </div>
       </div>
       
       <!-- 语言设置 -->
