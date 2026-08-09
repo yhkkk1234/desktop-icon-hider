@@ -1,4 +1,25 @@
-/* CSS 变量 - 主题系统 */
+/*
+ * ============ 主题系统（三层 Token 架构） ============
+ *
+ * 第一层 primitive：*-rgb 基础色值（如 --bg-primary-rgb），每个主题必须覆盖
+ * 第二层 semantic：组合色（如 --bg-primary = rgba(var(--bg-primary-rgb), alpha)），
+ *                  透明度由用户可调 --opacity-* 驱动
+ * 第三层 主题专属：--skin-*（圆角/字体/阴影/纹理）、--neu-*（拟态阴影）、
+ *                  --glass-*（玻璃材质）、--texture-*（标题栏纹理）
+ *
+ * 主题清单：dark(默认) / light / system / topo / ocean / forest / cream / sakura /
+ *           mist / cyber / terminal / sunset / clay / night-clay / obsidian /
+ *           glass-light / glass-dark
+ *
+ * 约定（新增/修改主题时）：
+ * 1. 只覆盖变量，优先复用语义变量（--bg-context-rgb 即强调色，勿重复写死色值）
+ * 2. 组件级样式（[data-theme="x"] .icon-btn 等）仅用于该主题特有的行为
+ *    （transform 反馈、布局调整），颜色一律走变量
+ * 3. swatch 预览卡（.theme-card[data-theme-option=...]）独立维护，因跨主题预览
+ *    无法读取当前主题变量
+ * 4. 玻璃主题的 backdrop-filter 因透明窗口性能问题全局禁用，材质依赖
+ *    bg-layer 背景图单次模糊 + 半透明叠加（见 3879 行附近）
+ */
 :root {
   /* RGB 基础值（深色主题） */
   --bg-primary-rgb: 30, 30, 30;
@@ -70,6 +91,11 @@
   
   --select-option-bg: #2d2d2d;
   --select-option-color: white;
+  
+  /* 警告提示（设置面板内的黄色警示条） */
+  --warning-bg: rgba(255, 180, 60, 0.12);
+  --warning-border: rgba(255, 180, 60, 0.35);
+  --warning-text: #e8b45a;
 }
 
 /* 浅色主题 */
@@ -1536,10 +1562,10 @@ body.icons-locked .file-item.draggable:active {
 .setting-warning {
   margin-top: 8px;
   padding: 8px 10px;
-  background: rgba(255, 180, 60, 0.12);
-  border: 1px solid rgba(255, 180, 60, 0.35);
+  background: var(--warning-bg);
+  border: 1px solid var(--warning-border);
   border-radius: 6px;
-  color: #e8b45a;
+  color: var(--warning-text);
   font-size: 11px;
   line-height: 1.5;
 }
@@ -3166,11 +3192,12 @@ input:focus-visible,
   --skin-font-family: 'Segoe UI Variable', 'Microsoft YaHei UI', 'Segoe UI', sans-serif;
   --skin-header-fill: linear-gradient(145deg, rgba(239, 232, 226, 0.98), rgba(218, 208, 201, 0.96));
   --skin-shadow: 10px 12px 30px rgba(161, 130, 120, 0.28), inset 0 1px 0 rgba(255, 255, 255, 0.54);
-  --neu-raised: 8px 8px 18px rgba(176, 145, 135, 0.38), -8px -8px 18px rgba(255, 255, 255, 0.72);
-  --neu-raised-small: 4px 4px 10px rgba(176, 145, 135, 0.3), -4px -4px 10px rgba(255, 255, 255, 0.66);
-  --neu-tab: 2px 2px 5px rgba(176, 145, 135, 0.28), -2px -2px 5px rgba(255, 255, 255, 0.58);
-  --neu-inset: inset 5px 5px 11px rgba(176, 145, 135, 0.3), inset -5px -5px 11px rgba(255, 255, 255, 0.68);
-  --neu-inset-accent: inset 5px 5px 11px rgba(176, 145, 135, 0.34), inset -5px -5px 11px rgba(255, 255, 255, 0.5);
+  --neu-color-rgb: 176, 145, 135;
+  --neu-raised: 8px 8px 18px rgba(var(--neu-color-rgb), 0.38), -8px -8px 18px rgba(255, 255, 255, 0.72);
+  --neu-raised-small: 4px 4px 10px rgba(var(--neu-color-rgb), 0.3), -4px -4px 10px rgba(255, 255, 255, 0.66);
+  --neu-tab: 2px 2px 5px rgba(var(--neu-color-rgb), 0.28), -2px -2px 5px rgba(255, 255, 255, 0.58);
+  --neu-inset: inset 5px 5px 11px rgba(var(--neu-color-rgb), 0.3), inset -5px -5px 11px rgba(255, 255, 255, 0.68);
+  --neu-inset-accent: inset 5px 5px 11px rgba(var(--neu-color-rgb), 0.34), inset -5px -5px 11px rgba(255, 255, 255, 0.5);
 }
 
 [data-theme="clay"] #app {
@@ -3257,9 +3284,9 @@ input:focus-visible,
 
 [data-theme="clay"] .group-tab.active,
 [data-theme="clay"] .theme-card.active {
-  border-color: rgba(208, 106, 91, 0.55);
+  border-color: rgba(var(--bg-context-rgb), 0.55);
   background: var(--bg-secondary);
-  box-shadow: var(--neu-inset-accent), 0 0 0 1px rgba(208, 106, 91, 0.18);
+  box-shadow: var(--neu-inset-accent), 0 0 0 1px rgba(var(--bg-context-rgb), 0.18);
 }
 
 [data-theme="clay"] .file-item,
@@ -3279,7 +3306,7 @@ input:focus-visible,
 [data-theme="clay"] .group-folder.drop-target {
   background: var(--bg-secondary);
   outline: none;
-  box-shadow: var(--neu-inset-accent), 0 0 0 1px rgba(208, 106, 91, 0.24);
+  box-shadow: var(--neu-inset-accent), 0 0 0 1px rgba(var(--bg-context-rgb), 0.24);
 }
 
 [data-theme="clay"] .prompt-dialog,
@@ -3331,13 +3358,13 @@ input:focus-visible,
   --select-option-bg: #1a1f27;
   --select-option-color: #f2ede3;
   --switch-active: #f08048;
-  --texture-image: repeating-linear-gradient(90deg, transparent 0 47px, rgba(240, 128, 72, 0.1) 47px 48px),
+  --texture-image: repeating-linear-gradient(90deg, transparent 0 47px, rgba(var(--bg-context-rgb), 0.1) 47px 48px),
     linear-gradient(180deg, rgba(255, 255, 255, 0.06), transparent 65%);
   --texture-size: 96px 100%;
   --texture-tile: 96px;
   --texture-anim: texture-drift 30s linear infinite;
-  --skin-pattern: repeating-linear-gradient(90deg, transparent 0 47px, rgba(240, 128, 72, 0.035) 47px 48px),
-    repeating-linear-gradient(0deg, transparent 0 31px, rgba(157, 170, 185, 0.028) 31px 32px);
+  --skin-pattern: repeating-linear-gradient(90deg, transparent 0 47px, rgba(var(--bg-context-rgb), 0.035) 47px 48px),
+    repeating-linear-gradient(0deg, transparent 0 31px, rgba(var(--border-primary-rgb), 0.028) 31px 32px);
   --skin-pattern-size: 96px 64px;
   --skin-app-radius: 10px;
   --skin-control-radius: 6px;
@@ -3346,19 +3373,21 @@ input:focus-visible,
   --skin-pill-radius: 8px;
   --skin-font-family: 'Segoe UI Variable', 'Microsoft YaHei UI', 'Segoe UI', sans-serif;
   --skin-header-fill: linear-gradient(145deg, rgba(48, 56, 67, 0.99), rgba(23, 28, 35, 0.98));
-  --skin-shadow: 9px 10px 25px rgba(2, 5, 9, 0.7), inset 0 1px 0 rgba(157, 170, 185, 0.16);
-  --neu-raised: 7px 8px 17px rgba(2, 5, 9, 0.7), -6px -6px 15px rgba(75, 86, 101, 0.24);
-  --neu-raised-small: 3px 4px 9px rgba(2, 5, 9, 0.65), -3px -3px 8px rgba(75, 86, 101, 0.2);
-  --neu-inset: inset 4px 4px 9px rgba(2, 5, 9, 0.64), inset -3px -3px 8px rgba(75, 86, 101, 0.16);
-  --neu-inset-accent: inset 4px 4px 9px rgba(2, 5, 9, 0.7), inset -3px -3px 8px rgba(75, 86, 101, 0.14);
+  --skin-shadow: 9px 10px 25px rgba(var(--neu-dark-rgb), 0.7), inset 0 1px 0 rgba(var(--border-primary-rgb), 0.16);
+  --neu-dark-rgb: 2, 5, 9;
+  --neu-light-rgb: 75, 86, 101;
+  --neu-raised: 7px 8px 17px rgba(var(--neu-dark-rgb), 0.7), -6px -6px 15px rgba(var(--neu-light-rgb), 0.24);
+  --neu-raised-small: 3px 4px 9px rgba(var(--neu-dark-rgb), 0.65), -3px -3px 8px rgba(var(--neu-light-rgb), 0.2);
+  --neu-inset: inset 4px 4px 9px rgba(var(--neu-dark-rgb), 0.64), inset -3px -3px 8px rgba(var(--neu-light-rgb), 0.16);
+  --neu-inset-accent: inset 4px 4px 9px rgba(var(--neu-dark-rgb), 0.7), inset -3px -3px 8px rgba(var(--neu-light-rgb), 0.14);
 }
 
 [data-theme="obsidian"] #app {
-  border-color: rgba(240, 128, 72, 0.3);
+  border-color: rgba(var(--bg-context-rgb), 0.3);
 }
 
 [data-theme="obsidian"] .header {
-  border-bottom-color: rgba(240, 128, 72, 0.36);
+  border-bottom-color: rgba(var(--bg-context-rgb), 0.36);
   box-shadow: var(--neu-raised);
 }
 
@@ -3370,7 +3399,7 @@ input:focus-visible,
   width: 76px;
   height: 2px;
   background: var(--switch-active);
-  box-shadow: 0 0 10px rgba(240, 128, 72, 0.7);
+  box-shadow: 0 0 10px rgba(var(--bg-context-rgb), 0.7);
   pointer-events: none;
 }
 
@@ -3379,7 +3408,7 @@ input:focus-visible,
 }
 
 [data-theme="obsidian"] .settings-panel {
-  border-color: rgba(157, 170, 185, 0.16);
+  border-color: rgba(var(--border-primary-rgb), 0.16);
   background: var(--bg-secondary);
   box-shadow: var(--neu-inset);
 }
@@ -3400,7 +3429,7 @@ input:focus-visible,
 [data-theme="obsidian"] .number-input,
 [data-theme="obsidian"] .shortcut-input,
 [data-theme="obsidian"] .prompt-input {
-  border-color: rgba(157, 170, 185, 0.18);
+  border-color: rgba(var(--border-primary-rgb), 0.18);
   background: var(--bg-primary);
   box-shadow: var(--neu-inset);
 }
@@ -3412,7 +3441,7 @@ input:focus-visible,
 [data-theme="obsidian"] .sel-btn,
 [data-theme="obsidian"] .widget-cal-nav,
 [data-theme="obsidian"] .theme-card {
-  border-color: rgba(157, 170, 185, 0.18);
+  border-color: rgba(var(--border-primary-rgb), 0.18);
   background: var(--bg-secondary);
   box-shadow: var(--neu-raised-small);
 }
@@ -3424,9 +3453,9 @@ input:focus-visible,
 [data-theme="obsidian"] .widget-cal-nav:hover,
 [data-theme="obsidian"] .theme-card:hover {
   color: var(--text-primary);
-  border-color: rgba(240, 128, 72, 0.44);
+  border-color: rgba(var(--bg-context-rgb), 0.44);
   transform: translateY(-1px);
-  box-shadow: var(--neu-raised), 0 0 0 1px rgba(240, 128, 72, 0.12);
+  box-shadow: var(--neu-raised), 0 0 0 1px rgba(var(--bg-context-rgb), 0.12);
 }
 
 [data-theme="obsidian"] .icon-btn:active,
@@ -3440,9 +3469,9 @@ input:focus-visible,
 
 [data-theme="obsidian"] .group-tab.active,
 [data-theme="obsidian"] .theme-card.active {
-  border-color: rgba(240, 128, 72, 0.76);
+  border-color: rgba(var(--bg-context-rgb), 0.76);
   background: var(--bg-secondary);
-  box-shadow: var(--neu-inset-accent), 0 0 0 1px rgba(240, 128, 72, 0.22);
+  box-shadow: var(--neu-inset-accent), 0 0 0 1px rgba(var(--bg-context-rgb), 0.22);
 }
 
 [data-theme="obsidian"] .files-list {
@@ -3452,14 +3481,14 @@ input:focus-visible,
 [data-theme="obsidian"] .file-item,
 [data-theme="obsidian"] .group-folder {
   background: var(--bg-secondary);
-  border: 1px solid rgba(157, 170, 185, 0.12);
+  border: 1px solid rgba(var(--border-primary-rgb), 0.12);
   box-shadow: var(--neu-raised-small);
 }
 
 [data-theme="obsidian"] .file-item:hover,
 [data-theme="obsidian"] .group-folder:hover {
   background: var(--bg-tertiary);
-  border-color: rgba(240, 128, 72, 0.44);
+  border-color: rgba(var(--bg-context-rgb), 0.44);
   box-shadow: var(--neu-raised);
 }
 
@@ -3469,8 +3498,8 @@ input:focus-visible,
 [data-theme="obsidian"] .group-folder.drop-target {
   background: var(--bg-secondary);
   outline: none;
-  border-color: rgba(240, 128, 72, 0.78);
-  box-shadow: var(--neu-inset-accent), 0 0 0 1px rgba(240, 128, 72, 0.18);
+  border-color: rgba(var(--bg-context-rgb), 0.78);
+  box-shadow: var(--neu-inset-accent), 0 0 0 1px rgba(var(--bg-context-rgb), 0.18);
 }
 
 [data-theme="obsidian"] .prompt-dialog,
@@ -3479,7 +3508,7 @@ input:focus-visible,
 [data-theme="obsidian"] .selection-toolbar,
 [data-theme="obsidian"] .rule-item,
 [data-theme="obsidian"] .group-return-bar {
-  border-color: rgba(157, 170, 185, 0.18);
+  border-color: rgba(var(--border-primary-rgb), 0.18);
   box-shadow: var(--neu-raised);
 }
 
@@ -3570,12 +3599,12 @@ input:focus-visible,
   --select-option-bg: #26262f;
   --select-option-color: #f5efe8;
   --switch-active: #d37465;
-  --texture-image: linear-gradient(145deg, rgba(255, 255, 255, 0.08), transparent 42%, rgba(211, 116, 101, 0.08));
+  --texture-image: linear-gradient(145deg, rgba(255, 255, 255, 0.08), transparent 42%, rgba(var(--bg-context-rgb), 0.08));
   --texture-size: 100% 100%;
   --texture-tile: 100%;
   --texture-anim: none;
   --skin-pattern: radial-gradient(ellipse at 12% 10%, rgba(255, 255, 255, 0.06), transparent 30%),
-    radial-gradient(ellipse at 90% 88%, rgba(211, 116, 101, 0.06), transparent 35%);
+    radial-gradient(ellipse at 90% 88%, rgba(var(--bg-context-rgb), 0.06), transparent 35%);
   --skin-pattern-size: 100% 100%, 100% 100%;
   --skin-app-radius: 24px;
   --skin-control-radius: 14px;
@@ -3585,11 +3614,13 @@ input:focus-visible,
   --skin-font-family: 'Segoe UI Variable', 'Microsoft YaHei UI', 'Segoe UI', sans-serif;
   --skin-header-fill: linear-gradient(145deg, rgba(54, 54, 65, 0.98), rgba(36, 36, 45, 0.96));
   --skin-shadow: 10px 12px 30px rgba(7, 7, 11, 0.5), inset 0 1px 0 rgba(255, 255, 255, 0.08);
-  --neu-raised: 8px 8px 18px rgba(9, 9, 13, 0.72), -8px -8px 18px rgba(75, 74, 88, 0.3);
-  --neu-raised-small: 4px 4px 10px rgba(9, 9, 13, 0.64), -4px -4px 10px rgba(75, 74, 88, 0.26);
-  --neu-tab: 2px 2px 5px rgba(9, 9, 13, 0.55), -2px -2px 5px rgba(75, 74, 88, 0.22);
-  --neu-inset: inset 5px 5px 11px rgba(9, 9, 13, 0.62), inset -5px -5px 11px rgba(75, 74, 88, 0.24);
-  --neu-inset-accent: inset 5px 5px 11px rgba(9, 9, 13, 0.68), inset -5px -5px 11px rgba(75, 74, 88, 0.2);
+  --neu-dark-rgb: 9, 9, 13;
+  --neu-light-rgb: 75, 74, 88;
+  --neu-raised: 8px 8px 18px rgba(var(--neu-dark-rgb), 0.72), -8px -8px 18px rgba(var(--neu-light-rgb), 0.3);
+  --neu-raised-small: 4px 4px 10px rgba(var(--neu-dark-rgb), 0.64), -4px -4px 10px rgba(var(--neu-light-rgb), 0.26);
+  --neu-tab: 2px 2px 5px rgba(var(--neu-dark-rgb), 0.55), -2px -2px 5px rgba(var(--neu-light-rgb), 0.22);
+  --neu-inset: inset 5px 5px 11px rgba(var(--neu-dark-rgb), 0.62), inset -5px -5px 11px rgba(var(--neu-light-rgb), 0.24);
+  --neu-inset-accent: inset 5px 5px 11px rgba(var(--neu-dark-rgb), 0.68), inset -5px -5px 11px rgba(var(--neu-light-rgb), 0.2);
 }
 
 .theme-card[data-theme-option="night-clay"] .theme-swatch {
@@ -3639,9 +3670,13 @@ input:focus-visible,
   --skin-font-family: 'Segoe UI Variable', 'Microsoft YaHei UI', 'Segoe UI', sans-serif;
   --skin-header-fill: rgba(255, 255, 255, 0.34);
   --skin-shadow: none;
-  --glass-surface: rgba(255, 255, 255, calc(0.05 + var(--opacity-bg, 0.92) * 0.25));
-  --glass-surface-strong: rgba(255, 255, 255, calc(0.08 + var(--opacity-bg, 0.92) * 0.413));
-  --glass-surface-soft: rgba(255, 255, 255, calc(0.02 + var(--opacity-bg, 0.92) * 0.13));
+  --glass-surface-rgb: 255, 255, 255;
+  --glass-surface-alpha: calc(0.05 + var(--opacity-bg, 0.92) * 0.25);
+  --glass-surface-strong-alpha: calc(0.08 + var(--opacity-bg, 0.92) * 0.413);
+  --glass-surface-soft-alpha: calc(0.02 + var(--opacity-bg, 0.92) * 0.13);
+  --glass-surface: rgba(var(--glass-surface-rgb), var(--glass-surface-alpha));
+  --glass-surface-strong: rgba(var(--glass-surface-rgb), var(--glass-surface-strong-alpha));
+  --glass-surface-soft: rgba(var(--glass-surface-rgb), var(--glass-surface-soft-alpha));
   --glass-border: rgba(255, 255, 255, 0.58);
   --glass-border-soft: rgba(255, 255, 255, 0.34);
   --glass-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.72), 0 8px 26px rgba(56, 67, 82, 0.14);
@@ -3690,9 +3725,15 @@ input:focus-visible,
   --skin-font-family: 'Segoe UI Variable', 'Microsoft YaHei UI', 'Segoe UI', sans-serif;
   --skin-header-fill: rgba(44, 51, 62, 0.5);
   --skin-shadow: none;
-  --glass-surface: rgba(29, 34, 43, calc(0.12 + var(--opacity-bg, 0.92) * 0.348));
-  --glass-surface-strong: rgba(50, 58, 71, calc(0.16 + var(--opacity-bg, 0.92) * 0.478));
-  --glass-surface-soft: rgba(24, 29, 37, calc(0.05 + var(--opacity-bg, 0.92) * 0.25));
+  --glass-surface-rgb: 29, 34, 43;
+  --glass-surface-alpha: calc(0.12 + var(--opacity-bg, 0.92) * 0.348);
+  --glass-surface-strong-rgb: 50, 58, 71;
+  --glass-surface-strong-alpha: calc(0.16 + var(--opacity-bg, 0.92) * 0.478);
+  --glass-surface-soft-rgb: 24, 29, 37;
+  --glass-surface-soft-alpha: calc(0.05 + var(--opacity-bg, 0.92) * 0.25);
+  --glass-surface: rgba(var(--glass-surface-rgb), var(--glass-surface-alpha));
+  --glass-surface-strong: rgba(var(--glass-surface-strong-rgb), var(--glass-surface-strong-alpha));
+  --glass-surface-soft: rgba(var(--glass-surface-soft-rgb), var(--glass-surface-soft-alpha));
   --glass-border: rgba(255, 255, 255, 0.2);
   --glass-border-soft: rgba(255, 255, 255, 0.12);
   --glass-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.16), 0 8px 26px rgba(0, 0, 0, 0.24);
