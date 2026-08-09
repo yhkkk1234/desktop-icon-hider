@@ -168,6 +168,7 @@ html, body {
   padding: 0 8px;
   cursor: move;
   border-bottom: 1px solid var(--border-secondary);
+  box-shadow: var(--skin-header-shadow);
   flex-shrink: 0;
   -webkit-app-region: drag;
 }
@@ -177,6 +178,7 @@ html, body {
   color: var(--text-primary);
   font-size: 13px;
   font-weight: 500;
+  letter-spacing: 0.01em;
   margin-left: 6px;
   pointer-events: none;
 }
@@ -198,7 +200,7 @@ html, body {
   align-items: center;
   justify-content: center;
   font-size: 14px;
-  transition: background 0.15s;
+  transition: background 0.15s, transform 0.1s ease-out;
   -webkit-app-region: no-drag;
 }
 
@@ -208,6 +210,7 @@ html, body {
 
 .icon-btn:active {
   background: var(--bg-button-active);
+  transform: scale(0.92);
 }
 
 /* 设置面板 */
@@ -215,6 +218,7 @@ html, body {
   background: var(--bg-tertiary);
   border-bottom: 1px solid var(--border-secondary);
   padding: 12px;
+  box-shadow: var(--skin-shadow);
   animation: slideDown 0.2s ease;
 }
 
@@ -233,6 +237,7 @@ html, body {
   color: var(--text-primary);
   font-size: 12px;
   font-weight: 600;
+  letter-spacing: 0.01em;
   margin-bottom: 12px;
   padding-bottom: 6px;
   border-bottom: 1px solid var(--border-secondary);
@@ -614,13 +619,17 @@ kbd {
   font-size: 12px;
   cursor: pointer;
   white-space: nowrap;
-  transition: background 0.15s, color 0.15s;
+  transition: background 0.15s, color 0.15s, transform 0.1s ease-out;
   user-select: none;
 }
 
 .group-tab:hover {
   background: var(--bg-button-hover);
   color: var(--text-primary);
+}
+
+.group-tab:active {
+  transform: scale(0.95);
 }
 
 .group-tab.active {
@@ -901,7 +910,7 @@ kbd {
   padding: 16px;
   min-width: 280px;
   max-width: 360px;
-  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.4);
+  box-shadow: var(--skin-shadow);
   animation: slideDown 0.15s ease;
 }
 
@@ -1085,7 +1094,7 @@ kbd {
   background: var(--bg-secondary);
   border: 1px solid var(--border-primary);
   border-radius: 24px;
-  box-shadow: 0 8px 28px rgba(0, 0, 0, 0.35);
+  box-shadow: var(--skin-shadow);
   z-index: 9500;
   backdrop-filter: blur(18px);
   animation: toolbarIn 0.2s ease;
@@ -1126,6 +1135,10 @@ kbd {
   transform: translateY(-1px);
 }
 
+.sel-btn:active {
+  transform: translateY(1px);
+}
+
 .sel-btn.sel-danger:hover {
   background: rgba(255, 100, 100, 0.22);
   color: #ff6666;
@@ -1153,7 +1166,7 @@ kbd {
   border: 1px solid var(--border-primary);
   border-radius: 10px;
   padding: 8px;
-  box-shadow: 0 10px 32px rgba(0, 0, 0, 0.42);
+  box-shadow: var(--skin-shadow);
   z-index: 9600;
   backdrop-filter: blur(18px);
   animation: previewIn 0.15s ease;
@@ -1859,7 +1872,7 @@ body.icons-locked .file-item.draggable:active {
   background: var(--bg-tertiary);
   border: 1px solid var(--border-primary);
   border-radius: 12px;
-  box-shadow: 0 6px 24px rgba(0, 0, 0, 0.25);
+  box-shadow: var(--skin-shadow);
   backdrop-filter: blur(14px);
   padding: 12px 14px;
   cursor: grab;
@@ -1950,12 +1963,16 @@ body.icons-locked .file-item.draggable:active {
   cursor: pointer;
   font-size: 13px;
   line-height: 1;
-  transition: background 0.15s, color 0.15s;
+  transition: background 0.15s, color 0.15s, transform 0.1s ease-out;
 }
 
 .widget-cal-nav:hover {
   background: var(--bg-button-hover);
   color: var(--text-primary);
+}
+
+.widget-cal-nav:active {
+  transform: scale(0.92);
 }
 
 .widget-cal-grid {
@@ -2650,6 +2667,7 @@ body.icons-locked .file-item.draggable:active {
   --skin-pill-radius: 999px;
   --skin-line: var(--border-secondary);
   --skin-shadow: 0 8px 32px rgba(0, 0, 0, 0.22), inset 0 1px 0 rgba(255, 255, 255, 0.06);
+  --skin-header-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.14), 0 6px 18px rgba(0, 0, 0, 0.18);
   --skin-header-fill: linear-gradient(180deg, var(--bg-secondary), rgba(var(--bg-secondary-rgb), 0.9));
   --skin-font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', 'Microsoft YaHei UI', sans-serif;
 }
@@ -2695,6 +2713,7 @@ body.icons-locked .file-item.draggable:active {
   --skin-panel-radius: 14px;
   --skin-header-fill: linear-gradient(180deg, rgba(35, 57, 42, 0.98), rgba(26, 43, 32, 0.96));
   --skin-shadow: 0 12px 36px rgba(3, 12, 7, 0.42), inset 0 1px 0 rgba(222, 246, 199, 0.08);
+  --skin-header-shadow: inset 0 1px 0 rgba(222, 246, 199, 0.12), 0 6px 18px rgba(3, 12, 7, 0.3);
 }
 
 /* 奶油：暖纸色与陶土色强调，轻盈但不刺眼 */
@@ -2737,6 +2756,7 @@ body.icons-locked .file-item.draggable:active {
   --skin-panel-radius: 16px;
   --skin-header-fill: linear-gradient(180deg, rgba(249, 239, 223, 0.98), rgba(244, 234, 218, 0.96));
   --skin-shadow: 0 12px 34px rgba(93, 63, 39, 0.2), inset 0 1px 0 rgba(255, 255, 255, 0.75);
+  --skin-header-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.85), 0 6px 18px rgba(93, 63, 39, 0.16);
 }
 
 /* 樱粉：柔和的粉白底色搭配莓果色，保留足够的文字对比 */
@@ -2781,6 +2801,7 @@ body.icons-locked .file-item.draggable:active {
   --skin-panel-radius: 18px;
   --skin-header-fill: linear-gradient(180deg, rgba(251, 232, 239, 0.98), rgba(248, 226, 234, 0.96));
   --skin-shadow: 0 12px 36px rgba(123, 54, 83, 0.18), inset 0 1px 0 rgba(255, 255, 255, 0.8);
+  --skin-header-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.88), 0 6px 18px rgba(123, 54, 83, 0.14);
 }
 
 /* 薰衣草：雾紫背景配靛蓝强调，像一张安静的夜间便签 */
@@ -2823,6 +2844,7 @@ body.icons-locked .file-item.draggable:active {
   --skin-panel-radius: 15px;
   --skin-header-fill: linear-gradient(180deg, rgba(241, 236, 249, 0.98), rgba(235, 230, 246, 0.96));
   --skin-shadow: 0 12px 36px rgba(79, 63, 125, 0.18), inset 0 1px 0 rgba(255, 255, 255, 0.78);
+  --skin-header-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.85), 0 6px 18px rgba(79, 63, 125, 0.14);
 }
 
 /* 霓虹：炭黑底色配琥珀色操作反馈，强调信息密度与边界 */
@@ -2869,6 +2891,7 @@ body.icons-locked .file-item.draggable:active {
   --skin-font-family: 'Cascadia Mono', Consolas, monospace;
   --skin-header-fill: linear-gradient(180deg, rgba(28, 33, 40, 0.99), rgba(21, 25, 31, 0.98));
   --skin-shadow: 0 12px 34px rgba(0, 0, 0, 0.5), inset 0 1px 0 rgba(255, 193, 82, 0.1);
+  --skin-header-shadow: inset 0 1px 0 rgba(255, 193, 82, 0.12), 0 6px 18px rgba(0, 0, 0, 0.4);
 }
 
 /* 终端：磷光绿与扫描线，保留复古终端的节奏感 */
@@ -2913,6 +2936,7 @@ body.icons-locked .file-item.draggable:active {
   --skin-font-family: 'Cascadia Mono', Consolas, monospace;
   --skin-header-fill: linear-gradient(180deg, rgba(16, 36, 24, 0.99), rgba(13, 29, 20, 0.98));
   --skin-shadow: 0 12px 34px rgba(0, 0, 0, 0.52), inset 0 1px 0 rgba(137, 230, 143, 0.1);
+  --skin-header-shadow: inset 0 1px 0 rgba(137, 230, 143, 0.12), 0 6px 18px rgba(0, 0, 0, 0.42);
 }
 
 /* 暮色：深蓝紫底色搭配夕阳橙，适合想要更有氛围感的桌面 */
@@ -2957,6 +2981,7 @@ body.icons-locked .file-item.draggable:active {
   --skin-panel-radius: 13px;
   --skin-header-fill: linear-gradient(180deg, rgba(65, 44, 45, 0.99), rgba(49, 34, 37, 0.98));
   --skin-shadow: 0 12px 38px rgba(0, 0, 0, 0.48), inset 0 1px 0 rgba(246, 166, 103, 0.08);
+  --skin-header-shadow: inset 0 1px 0 rgba(246, 166, 103, 0.12), 0 6px 18px rgba(0, 0, 0, 0.38);
 }
 
 /* 让皮肤同时影响布局边界、字体和控件形状，而不改变功能 */
@@ -3046,6 +3071,10 @@ select,
   background: var(--bg-context);
   border-color: var(--switch-active);
   box-shadow: 0 0 0 1px rgba(var(--border-context-rgb), 0.22) inset;
+}
+
+.theme-card:active {
+  transform: scale(0.97);
 }
 
 .theme-swatch {
@@ -3680,6 +3709,8 @@ input:focus-visible,
   --glass-border: rgba(255, 255, 255, 0.58);
   --glass-border-soft: rgba(255, 255, 255, 0.34);
   --glass-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.72), 0 8px 26px rgba(56, 67, 82, 0.14);
+  --glass-shadow-panel: inset 0 1px 0 rgba(255, 255, 255, 0.72), 0 16px 40px rgba(56, 67, 82, 0.22);
+  --glass-header-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.9), 0 8px 26px rgba(56, 67, 82, 0.16);
   --glass-blur: 22px;
   --glass-saturate: 125%;
 }
@@ -3737,6 +3768,8 @@ input:focus-visible,
   --glass-border: rgba(255, 255, 255, 0.2);
   --glass-border-soft: rgba(255, 255, 255, 0.12);
   --glass-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.16), 0 8px 26px rgba(0, 0, 0, 0.24);
+  --glass-shadow-panel: inset 0 1px 0 rgba(255, 255, 255, 0.16), 0 16px 44px rgba(0, 0, 0, 0.42);
+  --glass-header-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.24), 0 8px 26px rgba(0, 0, 0, 0.28);
   --glass-blur: 24px;
   --glass-saturate: 125%;
 }
@@ -3761,7 +3794,7 @@ input:focus-visible,
   background: var(--glass-surface-strong);
   border: 1px solid var(--glass-border);
   border-bottom-color: var(--glass-border);
-  box-shadow: var(--glass-shadow);
+  box-shadow: var(--glass-header-shadow);
   -webkit-backdrop-filter: blur(var(--glass-blur)) saturate(var(--glass-saturate));
   backdrop-filter: blur(var(--glass-blur)) saturate(var(--glass-saturate));
 }
@@ -3791,7 +3824,7 @@ input:focus-visible,
 [data-theme="glass-dark"] .group-return-bar {
   background: var(--glass-surface-strong);
   border-color: var(--glass-border);
-  box-shadow: var(--glass-shadow);
+  box-shadow: var(--glass-shadow-panel);
   -webkit-backdrop-filter: blur(var(--glass-blur)) saturate(var(--glass-saturate));
   backdrop-filter: blur(var(--glass-blur)) saturate(var(--glass-saturate));
 }
@@ -3929,5 +3962,22 @@ input:focus-visible,
 @media (prefers-reduced-motion: reduce) {
   [data-theme="obsidian"] .header::after {
     box-shadow: none;
+  }
+}
+
+/* 系统开启"减少透明效果"：玻璃材质退化为近实色背景，保证可读性 */
+@media (prefers-reduced-transparency: reduce) {
+  [data-theme="glass-light"] #app,
+  [data-theme="glass-dark"] #app {
+    background: rgba(var(--bg-primary-rgb), 0.97);
+  }
+  [data-theme="glass-light"] .header,
+  [data-theme="glass-dark"] .header {
+    background: rgba(var(--bg-secondary-rgb), 0.97);
+    box-shadow: none;
+  }
+  [data-theme="glass-light"] .settings-panel,
+  [data-theme="glass-dark"] .settings-panel {
+    background: rgba(var(--bg-tertiary-rgb), 0.97);
   }
 }
