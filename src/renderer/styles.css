@@ -853,19 +853,20 @@ kbd {
   }
 }
 
-/* 滚动条样式 */
+/* 滚动条样式（thumb 透明边框缩进，避免两端顶出圆角容器） */
 .content::-webkit-scrollbar {
-  width: 8px;
+  width: 10px;
 }
 
 .content::-webkit-scrollbar-track {
-  background: var(--scrollbar-track);
-  border-radius: 4px;
+  background: transparent;
 }
 
 .content::-webkit-scrollbar-thumb {
   background: var(--scrollbar-thumb);
-  border-radius: 4px;
+  border: 2px solid transparent;
+  border-radius: 5px;
+  background-clip: content-box;
 }
 
 .content::-webkit-scrollbar-thumb:hover {
@@ -993,13 +994,11 @@ kbd {
 }
 
 /* ============ UI 质感优化 ============ */
-#app {
-  box-shadow: 0 8px 32px rgba(0, 0, 0, 0.22), inset 0 1px 0 rgba(255, 255, 255, 0.06);
-}
+/* #app 外阴影已由动态主题区规则统一置空（透明窗口圆角尖角问题），阴影交给内部面板 */
 
 .header {
   background: linear-gradient(180deg, var(--bg-secondary), rgba(var(--bg-secondary-rgb), calc(var(--opacity-bg-header) - 0.06)));
-  box-shadow: 0 1px 0 rgba(255, 255, 255, 0.04) inset, 0 1px 4px rgba(0, 0, 0, 0.12);
+  box-shadow: var(--skin-header-shadow);
 }
 
 .icon-btn {
@@ -1547,19 +1546,20 @@ body.icons-locked .file-item.draggable:active {
   }
 }
 
-/* 预览面板滚动条（与主界面主题一致） */
+/* 预览面板滚动条（与主界面主题一致；thumb 缩进避免两端顶出圆角） */
 .folder-preview::-webkit-scrollbar {
-  width: 8px;
+  width: 10px;
 }
 
 .folder-preview::-webkit-scrollbar-track {
-  background: var(--scrollbar-track);
-  border-radius: 4px;
+  background: transparent;
 }
 
 .folder-preview::-webkit-scrollbar-thumb {
   background: var(--scrollbar-thumb);
-  border-radius: 4px;
+  border: 2px solid transparent;
+  border-radius: 5px;
+  background-clip: content-box;
 }
 
 .folder-preview::-webkit-scrollbar-thumb:hover {
@@ -1642,12 +1642,12 @@ body.icons-locked .file-item.draggable:active {
 
 .bg-layer img {
   position: absolute;
-  inset: 0;
-  width: 100%;
-  height: 100%;
+  top: -12%;
+  left: -12%;
+  width: 124%;
+  height: 124%;
   object-fit: cover;
   filter: blur(var(--bg-blur, 24px));
-  transform: scale(1.2);
   /* 跟随"界面透明度"设置：与主题模式行为一致 */
   opacity: var(--opacity-bg, 0.92);
 }
@@ -1673,6 +1673,12 @@ body.icons-locked .file-item.draggable:active {
   background: transparent;
   border-color: transparent;
   box-shadow: none;
+}
+
+/* 裁切冗余：顶部多裁 2px（消除模糊缩放边缘在 header 上方的 1px 泄漏线），底部延伸补位 */
+#app.has-bg .bg-layer {
+  top: -2px;
+  bottom: -2px;
 }
 
 #app.has-bg .header {
