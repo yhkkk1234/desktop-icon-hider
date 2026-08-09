@@ -268,6 +268,13 @@ html, body {
   border-top: 1px solid var(--border-secondary);
 }
 
+/* 设置面板普通标签（主题模式/排序方式/分组显示等）：
+   与滑块标签同层级，统一跟随主题文字色，避免深色主题下纯黑不可读 */
+.settings-panel label {
+  color: var(--text-tertiary);
+  font-size: 12px;
+}
+
 /* 开关样式 */
 .switch {
   position: relative;
@@ -389,6 +396,16 @@ select option {
   background: var(--switch-active);
   cursor: pointer;
   border: none;
+}
+
+/* 滑块数值（透明度/图标大小/背景效果/文字明暗/色调 RGB 等）：
+   统一跟随主题文字色，避免深色主题下继承默认纯黑看不清 */
+.opacity-control span {
+  color: var(--text-secondary);
+  font-size: 12px;
+  min-width: 35px;
+  text-align: right;
+  flex-shrink: 0;
 }
 
 #opacity-value {
