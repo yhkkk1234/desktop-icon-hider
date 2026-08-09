@@ -1676,7 +1676,9 @@ body.icons-locked .file-item.draggable:active {
 }
 
 /* 顶部 1px 覆盖层：窗口贴屏幕边缘时内容层（背景图缩放溢出/header半透明背景）的
-   合成残留会显示在 header 上方，用各主题 header 顶部同色盖住（非贴边时不可见） */
+   合成残留会显示在 header 上方，用各主题 header 顶部同色盖住（非贴边时不可见）。
+   background-size 限定为 header 高度(40px)：1px 元素只显示渐变顶段 ≈ 纯色 A，
+   与 header 顶部精确同色（若调整 header 高度需同步此值） */
 #app::before {
   content: '';
   position: absolute;
@@ -1685,6 +1687,8 @@ body.icons-locked .file-item.draggable:active {
   right: var(--skin-app-radius);
   height: 1px;
   background: var(--skin-header-fill);
+  background-size: 100% 40px;
+  background-repeat: no-repeat;
   z-index: 2;
   pointer-events: none;
 }
