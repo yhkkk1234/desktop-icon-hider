@@ -1675,18 +1675,23 @@ body.icons-locked .file-item.draggable:active {
   box-shadow: none;
 }
 
-/* 顶部 1px 覆盖层：窗口贴屏幕边缘时背景层缩放溢出的合成残留会显示在 header 上方，
-   用 header 同色盖住（两端缩进圆角半径，避免直线段超出圆弧冒头） */
-#app.has-bg::before {
+/* 顶部 1px 覆盖层：窗口贴屏幕边缘时内容层（背景图缩放溢出/header半透明背景）的
+   合成残留会显示在 header 上方，用各主题 header 顶部同色盖住（非贴边时不可见） */
+#app::before {
   content: '';
   position: absolute;
   top: 0;
   left: var(--skin-app-radius);
   right: var(--skin-app-radius);
   height: 1px;
-  background: var(--bg-secondary);
+  background: var(--skin-header-fill);
   z-index: 2;
   pointer-events: none;
+}
+
+[data-theme="glass-light"] #app::before,
+[data-theme="glass-dark"] #app::before {
+  background: var(--glass-surface-strong);
 }
 
 #app.has-bg .header {
