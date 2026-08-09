@@ -300,7 +300,12 @@ document.addEventListener('DOMContentLoaded', () => {
   bgEffectsResetBtn.addEventListener('click', handleBgEffectsReset);
 
   // 用户资料
-  headerUser.addEventListener('click', handleOpenAvatarEditor);
+  headerUser.addEventListener('click', (e) => {
+    // 仅点击头像或用户名时打开编辑器，标题栏空白处保持窗口拖拽
+    if (e.target.closest('.header-avatar') || e.target.closest('#header-name')) {
+      handleOpenAvatarEditor();
+    }
+  });
   selectAvatarBtn.addEventListener('click', handleSelectAvatar);
   removeAvatarBtn.addEventListener('click', handleRemoveAvatar);
   profileNameInput.addEventListener('change', handleProfileNameChange);

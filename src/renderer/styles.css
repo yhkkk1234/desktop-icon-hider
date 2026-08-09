@@ -4077,8 +4077,6 @@ input:focus-visible,
   align-items: center;
   gap: 8px;
   margin-left: 10px;
-  cursor: pointer;
-  -webkit-app-region: no-drag;
   overflow: hidden;
 }
 
@@ -4088,7 +4086,8 @@ input:focus-visible,
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
-  pointer-events: none;
+  pointer-events: auto; /* 覆盖基础 .title 的 none，允许点击打开头像编辑器 */
+  -webkit-app-region: no-drag;
 }
 
 .header-avatar {
@@ -4100,6 +4099,7 @@ input:focus-visible,
   background: var(--bg-button);
   border: none;
   box-shadow: inset 0 0 0 1px var(--border-primary);
+  -webkit-app-region: no-drag;
 }
 
 .header-avatar[data-shape="circle"] {
