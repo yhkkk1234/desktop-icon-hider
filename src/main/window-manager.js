@@ -174,6 +174,7 @@ function createMainWindow(store, startInactive = false) {
       frame: false,
       alwaysOnTop: 'floating',
       skipTaskbar: true,
+      icon: path.join(__dirname, '../../assets/app-icon.png'),
       resizable: true,
       movable: true,
       minimizable: true,
