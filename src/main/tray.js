@@ -66,6 +66,8 @@ function createTray(mainWindow, store) {
 
     tray.on('click', () => {
       if (mainWindow) {
+        // 自动隐藏开启时窗口显隐由边缘逻辑管理，托盘手动切换无意义（显示后会被立即滑出），忽略
+        if (store.get('autoHideEnabled', false)) return;
         if (mainWindow.isVisible()) {
           if (mainWindow.isMinimized()) {
             mainWindow.restore();
@@ -91,16 +93,19 @@ function createTray(mainWindow, store) {
 function updateTrayMenu(mainWindow, store) {
   if (!tray) return;
 
-  const isWindowVisible = mainWindow && mainWindow.isVisible();
+  const isWindowVisible = mainWindow && mainWindow.isVisible() && !mainWindow.isMinimized();
   const isAutoHideEnabled = store.get('autoHideEnabled', false);
   const isAutoLaunchEnabled = store.get('autoLaunch', false);
 
-  const menuTemplate = [
-    {
+  const menuTemplate = [];
+
+  // 自动隐藏开启时窗口显隐由边缘逻辑管理，不提供手动显示/隐藏项（显示后会被立即滑出）
+  if (!isAutoHideEnabled) {
+    menuTemplate.push({
       label: isWindowVisible ? '隐藏窗口' : '显示窗口',
       click: () => {
         if (mainWindow) {
-          if (isWindowVisible) {
+          if (mainWindow.isVisible() && !mainWindow.isMinimized()) {
             mainWindow.hide();
           } else {
             mainWindow.show();
@@ -109,10 +114,11 @@ function updateTrayMenu(mainWindow, store) {
           updateTrayMenu(mainWindow, store);
         }
       }
-    },
-    {
-      type: 'separator'
-    },
+    });
+    menuTemplate.push({ type: 'separator' });
+  }
+
+  menuTemplate.push(
     {
       label: '设置',
       click: () => {
@@ -169,7 +175,7 @@ function updateTrayMenu(mainWindow, store) {
         app.quit();
       }
     }
-  ];
+  );
 
   const contextMenu = Menu.buildFromTemplate(menuTemplate);
   tray.setContextMenu(contextMenu);

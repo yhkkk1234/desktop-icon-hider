@@ -814,13 +814,15 @@ function setAutoHideEnabled(window, enabled, store) {
     } else {
       // 禁用自动隐藏
       stopAutoHide(window);
-      window.autoHideState.currentEdge = EDGE_TYPES.NONE;
-      store.set('autoHideEdge', EDGE_TYPES.NONE);
-      
-      // 如果窗口是隐藏状态，显示它
+      // 如果窗口是隐藏状态，显示它。
+      // 注意顺序：必须在清空 currentEdge 之前唤出（showWindow 依赖边缘计算唤出位置，
+      // 先清边缘会导致 switch 落到 default 直接 return，窗口永远留在屏幕外、
+      // 之后托盘"显示窗口"也调不出来）
       if (window.autoHideState.isHidden) {
         showWindow(window);
       }
+      window.autoHideState.currentEdge = EDGE_TYPES.NONE;
+      store.set('autoHideEdge', EDGE_TYPES.NONE);
       
       window.webContents.send('auto-hide-status', { enabled: false });
     }
