@@ -155,7 +155,7 @@ function getDisplayForWindow(window) {
   return screen.getPrimaryDisplay();
 }
 
-function createMainWindow(store) {
+function createMainWindow(store, startInactive = false) {
   try {
     const primaryDisplay = screen.getPrimaryDisplay();
     const { width, height } = primaryDisplay.workAreaSize;
@@ -202,7 +202,13 @@ function createMainWindow(store) {
     mainWindow.loadFile(path.join(__dirname, '../renderer/index.html'));
     
     mainWindow.once('ready-to-show', () => {
-      mainWindow.show();
+      // 开机自启（--hidden）：窗口可见但不抢占焦点（showInactive），
+      // 避免用户"启动了却找不到界面"（原逻辑先 show 再 hide，窗口彻底消失）
+      if (startInactive) {
+        mainWindow.showInactive();
+      } else {
+        mainWindow.show();
+      }
       
       if (savedCollapsed) {
         mainWindow.setBounds({

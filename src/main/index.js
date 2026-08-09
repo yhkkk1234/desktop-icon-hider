@@ -652,7 +652,8 @@ public class DesktopHelper {
 
 // 创建主窗口
 function createWindow() {
-  mainWindow = createMainWindow(store);
+  // 开机自启（--hidden）：窗口可见但不抢占焦点（showInactive）
+  mainWindow = createMainWindow(store, process.argv.includes('--hidden'));
   
   if (mainWindow) {
     mainWindow.once('ready-to-show', async () => {
@@ -1848,11 +1849,6 @@ app.whenReady().then(async () => {
     
     createWindow();
     tray = createTray(mainWindow, store);
-    
-    // 开机自启（--hidden）时不显示窗口，避免抢占焦点；托盘与快捷键随时可唤出
-    if (process.argv.includes('--hidden') && mainWindow && !mainWindow.isDestroyed()) {
-      mainWindow.hide();
-    }
     
     // 监听桌面文件变化，自动刷新
     startDesktopWatchers();
