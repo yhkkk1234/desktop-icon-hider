@@ -13,6 +13,7 @@
     <div id="bg-layer" class="bg-layer" style="display: none;">
       <img id="bg-image" alt="" draggable="false">
       <div id="bg-dim" class="bg-dim"></div>
+      <div id="bg-vignette" class="bg-vignette"></div>
     </div>
     
     <div id="header" class="header">
@@ -391,6 +392,36 @@
           <input type="range" id="bg-dim-slider" min="0" max="80" step="5" value="45">
           <span id="bg-dim-value">45%</span>
         </div>
+        <div class="setting-item opacity-control">
+          <label for="bg-brightness-slider" data-i18n="settings.backgroundBrightness">亮度:</label>
+          <input type="range" id="bg-brightness-slider" min="50" max="150" step="5" value="100">
+          <span id="bg-brightness-value">100%</span>
+        </div>
+        <div class="setting-item opacity-control">
+          <label for="bg-saturation-slider" data-i18n="settings.backgroundSaturation">饱和度:</label>
+          <input type="range" id="bg-saturation-slider" min="0" max="200" step="5" value="100">
+          <span id="bg-saturation-value">100%</span>
+        </div>
+        <div class="setting-item opacity-control">
+          <label for="bg-contrast-slider" data-i18n="settings.backgroundContrast">对比度:</label>
+          <input type="range" id="bg-contrast-slider" min="50" max="150" step="5" value="100">
+          <span id="bg-contrast-value">100%</span>
+        </div>
+        <div class="setting-item">
+          <label class="switch">
+            <input type="checkbox" id="bg-vignette-toggle">
+            <span class="slider"></span>
+          </label>
+          <span class="setting-label" data-i18n="settings.backgroundVignetteEnable">启用四角暗角</span>
+        </div>
+        <div class="setting-item opacity-control bg-vignette-control">
+          <label for="bg-vignette-slider" data-i18n="settings.backgroundVignette">暗角强度:</label>
+          <input type="range" id="bg-vignette-slider" min="0" max="80" step="5" value="25">
+          <span id="bg-vignette-value">25%</span>
+        </div>
+        <div class="setting-item">
+          <button id="bg-effects-reset-btn" class="prompt-btn prompt-btn-cancel" data-i18n="settings.backgroundEffectsReset">恢复效果默认</button>
+        </div>
         <div class="setting-item">
           <label for="bg-mode-select" data-i18n="settings.backgroundMode">显示方式:</label>
           <select id="bg-mode-select">
@@ -416,7 +447,7 @@
           <span id="bg-offsety-value">0%</span>
         </div>
         <div class="setting-description" data-i18n="settings.backgroundDesc">
-          选择一张图片作为窗口背景，可切换显示方式或自定义缩放与位置；模糊和暗化处理可保证图标清晰可读。
+          选择一张图片作为窗口背景，可切换显示方式、自定义缩放位置，并调整亮度、饱和度、对比度和暗角。
         </div>
       </div>
       

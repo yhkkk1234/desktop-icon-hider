@@ -31,7 +31,20 @@ let folderPreviewEnabled = true; // 文件夹悬停预览开关
 let everythingEnabled = false; // Everything 集成开关
 let everythingInstalled = false; // 是否检测到 Everything
 let everythingRunAsAdmin = false; // Everything 是否以管理员运行
-let bgConfig = { enabled: false, blur: 24, dim: 45, mode: 'cover', scale: 100, offsetX: 0, offsetY: 0 }; // 自定义背景图片配置
+let bgConfig = {
+  enabled: false,
+  blur: 24,
+  dim: 45,
+  mode: 'cover',
+  scale: 100,
+  offsetX: 0,
+  offsetY: 0,
+  brightness: 100,
+  saturation: 100,
+  contrast: 100,
+  vignetteEnabled: false,
+  vignette: 25
+}; // 自定义背景图片配置
 let bgData = null; // 背景图片 data URL
 let userProfile = { name: '', path: null, cropPath: null, shape: 'circle', scale: 1, offsetX: 0, offsetY: 0 }; // 用户资料（头像/用户名）
 let avatarData = null; // 当前显示的头像图片 data URL（已裁剪图优先）
@@ -84,6 +97,8 @@ let everythingBar, everythingInput, everythingGo, everythingToggle, everythingSt
 let folderPreviewToggle;
 let bgLayer, bgImage, bgToggle, selectBgBtn, clearBgBtn, bgBlurSlider, bgBlurValue, bgDimSlider, bgDimValue;
 let bgModeSelect, bgScaleSlider, bgScaleValue, bgOffsetXSlider, bgOffsetXValue, bgOffsetYSlider, bgOffsetYValue;
+let bgBrightnessSlider, bgBrightnessValue, bgSaturationSlider, bgSaturationValue;
+let bgContrastSlider, bgContrastValue, bgVignetteToggle, bgVignetteSlider, bgVignetteValue, bgEffectsResetBtn;
 let headerUser, headerAvatar, headerAvatarImg, headerName;
 let profileAvatarPreview, profileNameInput, profileShapeSelect, selectAvatarBtn, removeAvatarBtn;
 let avatarEditorOverlay, avatarEditorImg, avatarEditorFrame, avatarEditorOk, avatarEditorCancel, avatarShapeBtns;
@@ -183,6 +198,16 @@ document.addEventListener('DOMContentLoaded', () => {
   bgOffsetXValue = document.getElementById('bg-offsetx-value');
   bgOffsetYSlider = document.getElementById('bg-offsety-slider');
   bgOffsetYValue = document.getElementById('bg-offsety-value');
+  bgBrightnessSlider = document.getElementById('bg-brightness-slider');
+  bgBrightnessValue = document.getElementById('bg-brightness-value');
+  bgSaturationSlider = document.getElementById('bg-saturation-slider');
+  bgSaturationValue = document.getElementById('bg-saturation-value');
+  bgContrastSlider = document.getElementById('bg-contrast-slider');
+  bgContrastValue = document.getElementById('bg-contrast-value');
+  bgVignetteToggle = document.getElementById('bg-vignette-toggle');
+  bgVignetteSlider = document.getElementById('bg-vignette-slider');
+  bgVignetteValue = document.getElementById('bg-vignette-value');
+  bgEffectsResetBtn = document.getElementById('bg-effects-reset-btn');
   headerUser = document.getElementById('header-user');
   headerAvatar = document.getElementById('header-avatar');
   headerAvatarImg = document.getElementById('header-avatar-img');
@@ -267,6 +292,12 @@ document.addEventListener('DOMContentLoaded', () => {
   bgScaleSlider.addEventListener('input', handleBgScale);
   bgOffsetXSlider.addEventListener('input', handleBgOffsetX);
   bgOffsetYSlider.addEventListener('input', handleBgOffsetY);
+  bgBrightnessSlider.addEventListener('input', handleBgBrightness);
+  bgSaturationSlider.addEventListener('input', handleBgSaturation);
+  bgContrastSlider.addEventListener('input', handleBgContrast);
+  bgVignetteToggle.addEventListener('change', handleBgVignetteToggle);
+  bgVignetteSlider.addEventListener('input', handleBgVignette);
+  bgEffectsResetBtn.addEventListener('click', handleBgEffectsReset);
 
   // 用户资料
   headerUser.addEventListener('click', handleOpenAvatarEditor);
@@ -447,7 +478,20 @@ document.addEventListener('DOMContentLoaded', () => {
           ? Math.max(100, Math.min(300, data.backgroundImage.scale))
           : 100,
         offsetX: Number.isFinite(data.backgroundImage.offsetX) ? data.backgroundImage.offsetX : 0,
-        offsetY: Number.isFinite(data.backgroundImage.offsetY) ? data.backgroundImage.offsetY : 0
+        offsetY: Number.isFinite(data.backgroundImage.offsetY) ? data.backgroundImage.offsetY : 0,
+        brightness: Number.isFinite(data.backgroundImage.brightness)
+          ? Math.max(50, Math.min(150, data.backgroundImage.brightness))
+          : 100,
+        saturation: Number.isFinite(data.backgroundImage.saturation)
+          ? Math.max(0, Math.min(200, data.backgroundImage.saturation))
+          : 100,
+        contrast: Number.isFinite(data.backgroundImage.contrast)
+          ? Math.max(50, Math.min(150, data.backgroundImage.contrast))
+          : 100,
+        vignetteEnabled: data.backgroundImage.vignetteEnabled === true,
+        vignette: Number.isFinite(data.backgroundImage.vignette)
+          ? Math.max(0, Math.min(80, data.backgroundImage.vignette))
+          : 25
       };
     }
     bgData = typeof data.backgroundData === 'string' ? data.backgroundData : null;
@@ -3053,6 +3097,12 @@ function applyBackground() {
   root.style.setProperty('--bg-scale', String(bgConfig.scale));
   root.style.setProperty('--bg-offset-x', String(bgConfig.offsetX));
   root.style.setProperty('--bg-offset-y', String(bgConfig.offsetY));
+  root.style.setProperty('--bg-brightness', String(bgConfig.brightness / 100));
+  root.style.setProperty('--bg-saturation', String(bgConfig.saturation / 100));
+  root.style.setProperty('--bg-contrast', String(bgConfig.contrast / 100));
+  root.style.setProperty('--bg-vignette-opacity', bgConfig.vignetteEnabled
+    ? String((bgConfig.vignette || 0) / 100)
+    : '0');
   const app = document.getElementById('app');
   app.classList.toggle('has-bg', enabled);
   updateBgCustomSize();
@@ -3129,6 +3179,18 @@ function updateBackgroundUI() {
   if (bgOffsetXValue) bgOffsetXValue.textContent = bgConfig.offsetX + '%';
   if (bgOffsetYSlider) bgOffsetYSlider.value = String(bgConfig.offsetY);
   if (bgOffsetYValue) bgOffsetYValue.textContent = bgConfig.offsetY + '%';
+  if (bgBrightnessSlider) bgBrightnessSlider.value = String(bgConfig.brightness);
+  if (bgBrightnessValue) bgBrightnessValue.textContent = bgConfig.brightness + '%';
+  if (bgSaturationSlider) bgSaturationSlider.value = String(bgConfig.saturation);
+  if (bgSaturationValue) bgSaturationValue.textContent = bgConfig.saturation + '%';
+  if (bgContrastSlider) bgContrastSlider.value = String(bgConfig.contrast);
+  if (bgContrastValue) bgContrastValue.textContent = bgConfig.contrast + '%';
+  if (bgVignetteToggle) bgVignetteToggle.checked = bgConfig.vignetteEnabled;
+  if (bgVignetteSlider) bgVignetteSlider.value = String(bgConfig.vignette);
+  if (bgVignetteValue) bgVignetteValue.textContent = bgConfig.vignette + '%';
+  if (bgVignetteSlider) bgVignetteSlider.disabled = !bgConfig.vignetteEnabled;
+  const vignetteControl = document.querySelector('.bg-vignette-control');
+  if (vignetteControl) vignetteControl.classList.toggle('disabled', !bgConfig.vignetteEnabled);
   updateBgCustomControls();
 }
 
@@ -3150,7 +3212,20 @@ async function handleSelectBg() {
         ? Math.max(100, Math.min(300, result.config.scale))
         : 100,
       offsetX: Number.isFinite(result.config.offsetX) ? result.config.offsetX : 0,
-      offsetY: Number.isFinite(result.config.offsetY) ? result.config.offsetY : 0
+      offsetY: Number.isFinite(result.config.offsetY) ? result.config.offsetY : 0,
+      brightness: Number.isFinite(result.config.brightness)
+        ? Math.max(50, Math.min(150, result.config.brightness))
+        : 100,
+      saturation: Number.isFinite(result.config.saturation)
+        ? Math.max(0, Math.min(200, result.config.saturation))
+        : 100,
+      contrast: Number.isFinite(result.config.contrast)
+        ? Math.max(50, Math.min(150, result.config.contrast))
+        : 100,
+      vignetteEnabled: result.config.vignetteEnabled === true,
+      vignette: Number.isFinite(result.config.vignette)
+        ? Math.max(0, Math.min(80, result.config.vignette))
+        : 25
     };
     bgData = result.dataUrl || null;
     updateBackgroundUI();
@@ -3210,6 +3285,58 @@ async function handleBgOffsetY() {
   bgOffsetYValue.textContent = bgConfig.offsetY + '%';
   applyBackground();
   await window.api.setBackgroundSettings({ offsetY: bgConfig.offsetY });
+}
+
+async function handleBgBrightness() {
+  bgConfig.brightness = parseInt(bgBrightnessSlider.value) || 100;
+  bgBrightnessValue.textContent = bgConfig.brightness + '%';
+  applyBackground();
+  await window.api.setBackgroundSettings({ brightness: bgConfig.brightness });
+}
+
+async function handleBgSaturation() {
+  bgConfig.saturation = parseInt(bgSaturationSlider.value) || 0;
+  bgSaturationValue.textContent = bgConfig.saturation + '%';
+  applyBackground();
+  await window.api.setBackgroundSettings({ saturation: bgConfig.saturation });
+}
+
+async function handleBgContrast() {
+  bgConfig.contrast = parseInt(bgContrastSlider.value) || 100;
+  bgContrastValue.textContent = bgConfig.contrast + '%';
+  applyBackground();
+  await window.api.setBackgroundSettings({ contrast: bgConfig.contrast });
+}
+
+async function handleBgVignetteToggle() {
+  bgConfig.vignetteEnabled = bgVignetteToggle.checked;
+  updateBackgroundUI();
+  applyBackground();
+  await window.api.setBackgroundSettings({ vignetteEnabled: bgConfig.vignetteEnabled });
+}
+
+async function handleBgVignette() {
+  bgConfig.vignette = parseInt(bgVignetteSlider.value) || 0;
+  bgVignetteValue.textContent = bgConfig.vignette + '%';
+  applyBackground();
+  await window.api.setBackgroundSettings({ vignette: bgConfig.vignette });
+}
+
+async function handleBgEffectsReset() {
+  bgConfig.brightness = 100;
+  bgConfig.saturation = 100;
+  bgConfig.contrast = 100;
+  bgConfig.vignetteEnabled = false;
+  bgConfig.vignette = 25;
+  updateBackgroundUI();
+  applyBackground();
+  await window.api.setBackgroundSettings({
+    brightness: 100,
+    saturation: 100,
+    contrast: 100,
+    vignetteEnabled: false,
+    vignette: 25
+  });
 }
 
 // ============ 用户头像 / 用户名 ============

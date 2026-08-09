@@ -1655,7 +1655,10 @@ body.icons-locked .file-item.draggable:active {
   inset: 0;
   width: 100%;
   height: 100%;
-  filter: blur(var(--bg-blur, 24px));
+  filter: blur(var(--bg-blur, 24px))
+    brightness(var(--bg-brightness, 1))
+    saturate(var(--bg-saturation, 1))
+    contrast(var(--bg-contrast, 1));
   /* 跟随"界面透明度"设置：与主题模式行为一致 */
   opacity: var(--opacity-bg, 0.92);
 }
@@ -1698,6 +1701,20 @@ body.icons-locked .file-item.draggable:active {
   position: absolute;
   inset: 0;
   background: rgba(0, 0, 0, calc(var(--bg-dim, 0.45) / 100));
+}
+
+/* 用户可选的四角暗角：中心保持清晰，边缘渐进压暗，不覆盖图片本身 */
+.bg-vignette {
+  position: absolute;
+  inset: 0;
+  border-radius: inherit;
+  pointer-events: none;
+  opacity: var(--bg-vignette-opacity, 0);
+  background: radial-gradient(
+    ellipse at center,
+    rgba(0, 0, 0, 0) 38%,
+    rgba(0, 0, 0, 0.9) 100%
+  );
 }
 
 /* 背景图模式下窗口底色透明，由图片层承担；去掉顶部白边/高光 */
@@ -4284,6 +4301,11 @@ input:focus-visible,
 
 /* 背景自定义控件：非 custom 模式时置灰不可用 */
 .bg-custom-control.disabled {
+  opacity: 0.45;
+  pointer-events: none;
+}
+
+.bg-vignette-control.disabled {
   opacity: 0.45;
   pointer-events: none;
 }

@@ -49,7 +49,12 @@ const store = new Store({
       mode: 'cover', // 显示模式: cover | contain | fill | custom
       scale: 100, // 自定义缩放 %（custom 模式）
       offsetX: 0, // 自定义横向偏移 %（custom 模式）
-      offsetY: 0 // 自定义纵向偏移 %（custom 模式）
+      offsetY: 0, // 自定义纵向偏移 %（custom 模式）
+      brightness: 100, // 背景亮度 %
+      saturation: 100, // 背景饱和度 %
+      contrast: 100, // 背景对比度 %
+      vignetteEnabled: false, // 是否启用四角暗角
+      vignette: 25 // 暗角强度 %
     },
     userProfile: {
       name: '',
@@ -1415,6 +1420,21 @@ ipcMain.handle('set-background-settings', async (event, settings) => {
     }
     if (Number.isFinite(settings.offsetY)) {
       config.offsetY = Math.max(-50, Math.min(50, Math.round(settings.offsetY)));
+    }
+    if (Number.isFinite(settings.brightness)) {
+      config.brightness = Math.max(50, Math.min(150, Math.round(settings.brightness)));
+    }
+    if (Number.isFinite(settings.saturation)) {
+      config.saturation = Math.max(0, Math.min(200, Math.round(settings.saturation)));
+    }
+    if (Number.isFinite(settings.contrast)) {
+      config.contrast = Math.max(50, Math.min(150, Math.round(settings.contrast)));
+    }
+    if (typeof settings.vignetteEnabled === 'boolean') {
+      config.vignetteEnabled = settings.vignetteEnabled;
+    }
+    if (Number.isFinite(settings.vignette)) {
+      config.vignette = Math.max(0, Math.min(80, Math.round(settings.vignette)));
     }
     store.set('backgroundImage', config);
     return { success: true, config };
