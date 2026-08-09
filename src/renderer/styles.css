@@ -855,7 +855,7 @@ kbd {
 
 /* 滚动条样式（thumb 透明边框缩进，避免两端顶出圆角容器） */
 .content::-webkit-scrollbar {
-  width: 14px;
+  width: 16px;
 }
 
 .content::-webkit-scrollbar-track {
@@ -864,7 +864,7 @@ kbd {
 
 .content::-webkit-scrollbar-thumb {
   background: var(--scrollbar-thumb);
-  border: 4px solid transparent;
+  border: 5px solid transparent;
   border-radius: 8px;
   background-clip: content-box;
 }
@@ -1548,7 +1548,7 @@ body.icons-locked .file-item.draggable:active {
 
 /* 预览面板滚动条（与主界面主题一致；thumb 缩进避免两端顶出圆角） */
 .folder-preview::-webkit-scrollbar {
-  width: 14px;
+  width: 16px;
 }
 
 .folder-preview::-webkit-scrollbar-track {
@@ -1557,7 +1557,7 @@ body.icons-locked .file-item.draggable:active {
 
 .folder-preview::-webkit-scrollbar-thumb {
   background: var(--scrollbar-thumb);
-  border: 4px solid transparent;
+  border: 5px solid transparent;
   border-radius: 8px;
   background-clip: content-box;
 }
@@ -1676,13 +1676,13 @@ body.icons-locked .file-item.draggable:active {
 }
 
 /* 顶部 1px 覆盖层：窗口贴屏幕边缘时背景层缩放溢出的合成残留会显示在 header 上方，
-   用 header 同色盖住（非贴边时与 header 顶部渐变差异不可见） */
+   用 header 同色盖住（两端缩进圆角半径，避免直线段超出圆弧冒头） */
 #app.has-bg::before {
   content: '';
   position: absolute;
   top: 0;
-  left: 0;
-  right: 0;
+  left: var(--skin-app-radius);
+  right: var(--skin-app-radius);
   height: 1px;
   background: var(--bg-secondary);
   z-index: 2;
