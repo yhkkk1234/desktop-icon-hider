@@ -1676,9 +1676,8 @@ body.icons-locked .file-item.draggable:active {
 }
 
 /* 顶部 1px 覆盖层：窗口贴屏幕边缘时内容层（背景图缩放溢出/header半透明背景）的
-   合成残留会显示在 header 上方，用各主题 header 顶部同色盖住（非贴边时不可见）。
-   background-size 限定为 header 高度(40px)：1px 元素只显示渐变顶段 ≈ 纯色 A，
-   与 header 顶部精确同色（若调整 header 高度需同步此值） */
+   合成残留会显示在 header 上方，用各主题 header 顶部纯色（--header-top-color）
+   盖住（非贴边时不可见） */
 #app::before {
   content: '';
   position: absolute;
@@ -1686,9 +1685,7 @@ body.icons-locked .file-item.draggable:active {
   left: var(--skin-app-radius);
   right: var(--skin-app-radius);
   height: 1px;
-  background: var(--skin-header-fill);
-  background-size: 100% 40px;
-  background-repeat: no-repeat;
+  background: var(--header-top-color);
   z-index: 2;
   pointer-events: none;
 }
@@ -2692,6 +2689,7 @@ body.icons-locked .file-item.draggable:active {
   --skin-shadow: 0 8px 32px rgba(0, 0, 0, 0.22), inset 0 1px 0 rgba(255, 255, 255, 0.06);
   --skin-header-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.14), 0 6px 18px rgba(0, 0, 0, 0.18);
   --skin-header-fill: linear-gradient(180deg, var(--bg-secondary), rgba(var(--bg-secondary-rgb), 0.9));
+  --header-top-color: var(--bg-secondary);
   --skin-font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', 'Microsoft YaHei UI', sans-serif;
 }
 
@@ -2735,6 +2733,7 @@ body.icons-locked .file-item.draggable:active {
   --skin-card-radius: 10px;
   --skin-panel-radius: 14px;
   --skin-header-fill: linear-gradient(180deg, rgba(35, 57, 42, 0.98), rgba(26, 43, 32, 0.96));
+  --header-top-color: rgba(35, 57, 42, 0.98);
   --skin-shadow: 0 12px 36px rgba(3, 12, 7, 0.42), inset 0 1px 0 rgba(222, 246, 199, 0.08);
   --skin-header-shadow: inset 0 1px 0 rgba(222, 246, 199, 0.12), 0 6px 18px rgba(3, 12, 7, 0.3);
 }
@@ -2778,6 +2777,7 @@ body.icons-locked .file-item.draggable:active {
   --skin-card-radius: 12px;
   --skin-panel-radius: 16px;
   --skin-header-fill: linear-gradient(180deg, rgba(249, 239, 223, 0.98), rgba(244, 234, 218, 0.96));
+  --header-top-color: rgba(249, 239, 223, 0.98);
   --skin-shadow: 0 12px 34px rgba(93, 63, 39, 0.2), inset 0 1px 0 rgba(255, 255, 255, 0.75);
   --skin-header-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.85), 0 6px 18px rgba(93, 63, 39, 0.16);
 }
@@ -2823,6 +2823,7 @@ body.icons-locked .file-item.draggable:active {
   --skin-card-radius: 14px;
   --skin-panel-radius: 18px;
   --skin-header-fill: linear-gradient(180deg, rgba(251, 232, 239, 0.98), rgba(248, 226, 234, 0.96));
+  --header-top-color: rgba(251, 232, 239, 0.98);
   --skin-shadow: 0 12px 36px rgba(123, 54, 83, 0.18), inset 0 1px 0 rgba(255, 255, 255, 0.8);
   --skin-header-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.88), 0 6px 18px rgba(123, 54, 83, 0.14);
 }
@@ -2866,6 +2867,7 @@ body.icons-locked .file-item.draggable:active {
   --skin-card-radius: 11px;
   --skin-panel-radius: 15px;
   --skin-header-fill: linear-gradient(180deg, rgba(241, 236, 249, 0.98), rgba(235, 230, 246, 0.96));
+  --header-top-color: rgba(241, 236, 249, 0.98);
   --skin-shadow: 0 12px 36px rgba(79, 63, 125, 0.18), inset 0 1px 0 rgba(255, 255, 255, 0.78);
   --skin-header-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.85), 0 6px 18px rgba(79, 63, 125, 0.14);
 }
@@ -2913,6 +2915,7 @@ body.icons-locked .file-item.draggable:active {
   --skin-pill-radius: 5px;
   --skin-font-family: 'Cascadia Mono', Consolas, monospace;
   --skin-header-fill: linear-gradient(180deg, rgba(28, 33, 40, 0.99), rgba(21, 25, 31, 0.98));
+  --header-top-color: rgba(28, 33, 40, 0.99);
   --skin-shadow: 0 12px 34px rgba(0, 0, 0, 0.5), inset 0 1px 0 rgba(255, 193, 82, 0.1);
   --skin-header-shadow: inset 0 1px 0 rgba(255, 193, 82, 0.12), 0 6px 18px rgba(0, 0, 0, 0.4);
 }
@@ -2958,6 +2961,7 @@ body.icons-locked .file-item.draggable:active {
   --skin-pill-radius: 3px;
   --skin-font-family: 'Cascadia Mono', Consolas, monospace;
   --skin-header-fill: linear-gradient(180deg, rgba(16, 36, 24, 0.99), rgba(13, 29, 20, 0.98));
+  --header-top-color: rgba(16, 36, 24, 0.99);
   --skin-shadow: 0 12px 34px rgba(0, 0, 0, 0.52), inset 0 1px 0 rgba(137, 230, 143, 0.1);
   --skin-header-shadow: inset 0 1px 0 rgba(137, 230, 143, 0.12), 0 6px 18px rgba(0, 0, 0, 0.42);
 }
@@ -3003,6 +3007,7 @@ body.icons-locked .file-item.draggable:active {
   --skin-card-radius: 9px;
   --skin-panel-radius: 13px;
   --skin-header-fill: linear-gradient(180deg, rgba(65, 44, 45, 0.99), rgba(49, 34, 37, 0.98));
+  --header-top-color: rgba(65, 44, 45, 0.99);
   --skin-shadow: 0 12px 38px rgba(0, 0, 0, 0.48), inset 0 1px 0 rgba(246, 166, 103, 0.08);
   --skin-header-shadow: inset 0 1px 0 rgba(246, 166, 103, 0.12), 0 6px 18px rgba(0, 0, 0, 0.38);
 }
@@ -3243,6 +3248,7 @@ input:focus-visible,
   --skin-pill-radius: 999px;
   --skin-font-family: 'Segoe UI Variable', 'Microsoft YaHei UI', 'Segoe UI', sans-serif;
   --skin-header-fill: linear-gradient(145deg, rgba(239, 232, 226, 0.98), rgba(218, 208, 201, 0.96));
+  --header-top-color: rgba(239, 232, 226, 0.98);
   --skin-shadow: 10px 12px 30px rgba(161, 130, 120, 0.28), inset 0 1px 0 rgba(255, 255, 255, 0.54);
   --neu-color-rgb: 176, 145, 135;
   --neu-raised: 8px 8px 18px rgba(var(--neu-color-rgb), 0.38), -8px -8px 18px rgba(255, 255, 255, 0.72);
@@ -3425,6 +3431,7 @@ input:focus-visible,
   --skin-pill-radius: 8px;
   --skin-font-family: 'Segoe UI Variable', 'Microsoft YaHei UI', 'Segoe UI', sans-serif;
   --skin-header-fill: linear-gradient(145deg, rgba(48, 56, 67, 0.99), rgba(23, 28, 35, 0.98));
+  --header-top-color: rgba(48, 56, 67, 0.99);
   --skin-shadow: 9px 10px 25px rgba(var(--neu-dark-rgb), 0.7), inset 0 1px 0 rgba(var(--border-primary-rgb), 0.16);
   --neu-dark-rgb: 2, 5, 9;
   --neu-light-rgb: 75, 86, 101;
@@ -3665,6 +3672,7 @@ input:focus-visible,
   --skin-pill-radius: 999px;
   --skin-font-family: 'Segoe UI Variable', 'Microsoft YaHei UI', 'Segoe UI', sans-serif;
   --skin-header-fill: linear-gradient(145deg, rgba(54, 54, 65, 0.98), rgba(36, 36, 45, 0.96));
+  --header-top-color: rgba(54, 54, 65, 0.98);
   --skin-shadow: 10px 12px 30px rgba(7, 7, 11, 0.5), inset 0 1px 0 rgba(255, 255, 255, 0.08);
   --neu-dark-rgb: 9, 9, 13;
   --neu-light-rgb: 75, 74, 88;
