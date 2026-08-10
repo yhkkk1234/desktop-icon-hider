@@ -55,7 +55,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
     until they become active again
   - The Agent widget is resizable: drag the bottom-right corner handle to grow
     the list area (min 220x140 to keep content visible, size persisted per
-    widget); backdrop blur is suspended while resizing to avoid stutter
+    widget); backdrop blur is suspended while resizing to avoid stutter.
+    Double-click the handle to reset to the default size (content-adaptive
+    height)
 
 ## [1.8.4] - 2026-08-06
 

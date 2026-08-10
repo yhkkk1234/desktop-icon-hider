@@ -4229,6 +4229,17 @@ function createWidgetElement(widget) {
       window.addEventListener('mousemove', handleWidgetResizeMove);
       window.addEventListener('mouseup', handleWidgetResizeEnd);
     });
+    // 双击手柄：清除 w/h，恢复默认宽度与内容自适应高度
+    handle.addEventListener('dblclick', (e) => {
+      e.stopPropagation();
+      delete widget.w;
+      delete widget.h;
+      node.classList.remove('wa-resized');
+      node.style.width = '';
+      node.style.height = '';
+      saveWidgets();
+      scheduleIconLayout();
+    });
   }
 
   // 删除
