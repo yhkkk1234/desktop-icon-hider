@@ -137,6 +137,58 @@ describe('getOpencodeDbPath', () => {
     expect(p.endsWith('opencode.db')).toBe(true);
   });
 });
+
+describe('hasVisibleOpencodeWindow', () => {
+  const { hasVisibleOpencodeWindow } = require('../src/main/agent-monitor');
+
+  it('有可见主窗口（标题为 OpenCode）→ true', () => {
+    const out = '"OpenCode.exe","6364","Console","1","166,728 K","Running","DESKTOP-X\\u","0:00:08","OpenCode"\n';
+    expect(hasVisibleOpencodeWindow(out)).toBe(true);
+  });
+
+  it('后台残留进程（真实 GBK 编码的"暂缺"解码后）→ false', () => {
+    // "暂缺" 的 GBK 字节 D4 DD C8 B1（中文 Windows tasklist /V 的 N/A），模拟真实解码链路
+    const gbk = (hex) => new TextDecoder('gbk').decode(Buffer.from(hex, 'hex'));
+    const out = `"OpenCode.exe","46388","Console","1","40,760 K","Running","DESKTOP-X\\u","0:00:00","${gbk('d4ddc8b1')}"\n`;
+    expect(hasVisibleOpencodeWindow(out)).toBe(false);
+  });
+
+  it('英文 N/A → false', () => {
+    const out = '"OpenCode.exe","46388","Console","1","40,760 K","Running","DESKTOP-X\\u","0:00:00","N/A"\n';
+    expect(hasVisibleOpencodeWindow(out)).toBe(false);
+  });
+
+  it('Electron 线程窗口（OleMainThreadWndName）→ false', () => {
+    const out = '"OpenCode.exe","26476","Console","1","62,064 K","Running","DESKTOP-X\\u","0:00:01","OleMainThreadWndName"\n';
+    expect(hasVisibleOpencodeWindow(out)).toBe(false);
+  });
+
+  it('多进程混合：仅 OLE 线程窗口 + 暂缺 → false', () => {
+    const out = [
+      '"OpenCode.exe","46388","Console","1","40,760 K","Running","DESKTOP-X\\u","0:00:00","暂缺"',
+      '"OpenCode.exe","26476","Console","1","62,064 K","Running","DESKTOP-X\\u","0:00:01","OleMainThreadWndName"'
+    ].join('\n');
+    expect(hasVisibleOpencodeWindow(out)).toBe(false);
+  });
+
+  it('混合：后台残留 + 一个可见窗口 → true', () => {
+    const out = [
+      '"OpenCode.exe","46388","Console","1","40,760 K","Running","DESKTOP-X\\u","0:00:00","暂缺"',
+      '"OpenCode.exe","6364","Console","1","166,728 K","Running","DESKTOP-X\\u","0:00:08","OpenCode"'
+    ].join('\n');
+    expect(hasVisibleOpencodeWindow(out)).toBe(true);
+  });
+
+  it('无 OpenCode.exe 行（仅 TUI）→ false', () => {
+    const out = '"opencode.exe","45144","Console","1","1,033,316 K","Unknown","DESKTOP-X\\u","0:16:12","暂缺"\n';
+    expect(hasVisibleOpencodeWindow(out)).toBe(false);
+  });
+
+  it('空输出 → false', () => {
+    expect(hasVisibleOpencodeWindow('')).toBe(false);
+  });
+});
+
 describe('detectOpencodeRunning', () => {
   const { detectOpencodeRunning, detectOpencodeRunningNow, hasProcessAsync, resetRuntimeSignal, RUNTIME_CONFIRM_MS } = require('../src/main/agent-monitor');
 
@@ -321,9 +373,11 @@ describe('createOpencodeAdapter', () => {
     expect(result.ok).toBe(false);
   });
 
-  it('openSession 检测到桌面客户端 → 深链打开对应项目窗口', async () => {
+  it('openSession 检测到桌面客户端（可见主窗口）→ 深链打开对应项目窗口', async () => {
     const spawnCalls = [];
-    const spawnFn = makeSpawnFn(spawnCalls, { tasklistOutput: 'OpenCode.exe  12345 Console  1  200,000 K' });
+    // tasklist /V CSV 格式：最后列是窗口标题（OpenCode 主窗口可见）
+    const tasklistOutput = '"OpenCode.exe","12345","Console","1","200,000 K","Running","USER","0:00:01","OpenCode"\n';
+    const spawnFn = makeSpawnFn(spawnCalls, { tasklistOutput });
     const shellUrls = [];
     const adapter = createOpencodeAdapter({
       Database: null,
@@ -339,6 +393,41 @@ describe('createOpencodeAdapter', () => {
     expect(shellUrls[0]).toBe('opencode://open-project?directory=' + encodeURIComponent(expectedDir));
     // 仅 tasklist 探测一次，未 spawn 终端
     expect(spawnCalls.filter(c => c[0] !== 'tasklist')).toHaveLength(0);
+  });
+
+  it('openSession 桌面端仅后台残留（无可见窗口）→ 走终端而非深链', async () => {
+    const spawnCalls = [];
+    // OpenCode.exe 进程存在但窗口标题为 N/A（关闭窗口后 Electron 后台常驻；中文系统为"暂缺"）
+    const tasklistOutput = '"OpenCode.exe","12345","Console","1","200,000 K","Running","USER","0:00:01","N/A"\n';
+    const spawnFn = makeSpawnFn(spawnCalls, { tasklistOutput, whereResult: 'pwsh' });
+    const shellUrls = [];
+    const adapter = createOpencodeAdapter({
+      Database: null,
+      spawnFn,
+      shellFn: (url) => shellUrls.push(url)
+    });
+    const result = await adapter.openSession({ id: 'ses_abc123', directory: 'F:/我的项目' });
+    expect(result.ok).toBe(true);
+    expect(result.target).toBe('terminal');
+    expect(result.shell).toBe('pwsh');
+    expect(shellUrls).toHaveLength(0);
+    const terminalCalls = spawnCalls.filter(c => c[0] === 'pwsh');
+    expect(terminalCalls).toHaveLength(1);
+    expect(terminalCalls[0][1]).toEqual(['-NoExit', '-Command', 'opencode -s ses_abc123']);
+  });
+
+  it('openSession 桌面端仅 OLE 线程窗口（Electron 后台）→ 走终端', async () => {
+    const spawnCalls = [];
+    const tasklistOutput = '"OpenCode.exe","12345","Console","1","200,000 K","Running","USER","0:00:01","OleMainThreadWndName"\n';
+    const spawnFn = makeSpawnFn(spawnCalls, { tasklistOutput, whereResult: 'pwsh' });
+    const adapter = createOpencodeAdapter({
+      Database: null,
+      spawnFn,
+      shellFn: () => { throw new Error('不应调用深链'); }
+    });
+    const result = await adapter.openSession({ id: 'ses_abc123', directory: 'F:/我的项目' });
+    expect(result.ok).toBe(true);
+    expect(result.target).toBe('terminal');
   });
 
   it('无桌面客户端时优先用 pwsh 打开终端会话', async () => {
@@ -425,6 +514,23 @@ describe('applyServerStatus', () => {
     expect(applyServerStatus(base, null)).toBe(null);
     expect(applyServerStatus(base, undefined)).toBe(null);
   });
+
+  it('对象记录：新鲜 idle（事件 5s 前）→ 覆盖 completed', () => {
+    const statuses = new Map([['ses_x', { status: 'idle', at: Date.now() - 5000 }]]);
+    expect(applyServerStatus(base, statuses)).toBe('completed');
+    expect(applyServerStatus({ ...base, lastPartType: 'tool' }, statuses)).toBe('interrupted');
+  });
+
+  it('对象记录：旧 idle（事件 2 分钟前）→ null（不覆盖，保留 DB 推断）', () => {
+    const statuses = new Map([['ses_x', { status: 'idle', at: Date.now() - 120000 }]]);
+    expect(applyServerStatus(base, statuses)).toBe(null);
+    expect(applyServerStatus({ ...base, lastPartType: 'tool' }, statuses)).toBe(null);
+  });
+
+  it('对象记录：旧 busy 始终覆盖 → active（强信号不看时间）', () => {
+    const statuses = new Map([['ses_x', { status: 'busy', at: Date.now() - 3600000 }]]);
+    expect(applyServerStatus(base, statuses)).toBe('active');
+  });
 });
 
 describe('parseSSEChunk', () => {
@@ -505,8 +611,9 @@ describe('createOpencodeServerStatusProvider', () => {
     // 等待 SSE 流异步送达
     await new Promise(r => setTimeout(r, 50));
     const statuses = provider.getStatuses();
-    expect(statuses.get('ses_1')).toBe('busy');
-    expect(statuses.get('ses_2')).toBe('idle');
+    expect(statuses.get('ses_1').status).toBe('busy');
+    expect(statuses.get('ses_2').status).toBe('idle');
+    expect(typeof statuses.get('ses_1').at).toBe('number');
   });
 
   it('health 验证排除端口被无关程序占用', async () => {
@@ -576,7 +683,7 @@ describe('createOpencodeServerStatusProvider', () => {
   it('探测结果缓存：缓存有效期内不重复 connect', async () => {
     let connects = 0;
     const provider = trackedProvider({ 
-      // 两个候选端口都可达：一次探测 = 2 次 connect
+      // 默认端口列表（4096）可达：一次探测 = 1 次 connect
       connectFn: async () => { connects++; return true; },
       fetchFn: makeFetch({ events: [{ type: 'session.status', properties: { sessionID: 'ses_1', status: { type: 'busy' } } }] })
     });
@@ -584,7 +691,7 @@ describe('createOpencodeServerStatusProvider', () => {
     await new Promise(r => setTimeout(r, 30));
     provider.getStatuses();
     await new Promise(r => setTimeout(r, 30));
-    expect(connects).toBe(2); // 缓存期内第二次调用不重新探测
+    expect(connects).toBe(1); // 缓存期内第二次调用不重新探测
   });
 });
 
@@ -628,6 +735,23 @@ describe('AgentMonitor', () => {
     const monitor = new AgentMonitor({ adapters: [adapter], activeWindowMs: ACTIVE_MS, now: () => NOW });
     await monitor.poll();
     expect(monitor.getSnapshot()[0].status).toBe('interrupted');
+  });
+
+  it('旧 idle 记录不覆盖 DB 推断（跨端继续会话不污染状态）', async () => {
+    const adapter = {
+      id: 'opencode',
+      displayName: 'opencode',
+      listSessions: () => [
+        // s1: 最近活跃（timeUpdated 新鲜）→ DB 推断 active；但 serve 上有 2 分钟前的旧 idle 记录
+        { id: 's1', title: 'T', directory: 'F:/p', agent: 'build', timeUpdated: NOW - 3000, lastPartType: 'text' }
+      ],
+      getServerStatuses: async () => new Map([
+        ['s1', { status: 'idle', at: NOW - 120000 }]
+      ])
+    };
+    const monitor = new AgentMonitor({ adapters: [adapter], activeWindowMs: ACTIVE_MS, now: () => NOW });
+    await monitor.poll();
+    expect(monitor.getSnapshot()[0].status).toBe('active');
   });
 
   it('start 后立即轮询，快照变化时推送（含状态判定），停止后不再轮询', () => {

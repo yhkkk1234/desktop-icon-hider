@@ -68,6 +68,8 @@ let agentSessions = []; // agent 组件：主进程推送的会话快照
 let agentReadSessions = new Set(); // agent 组件：已读（已跳转查看）的会话 id
 let agentPrevStatus = new Map(); // agent 组件：上一轮状态，用于检测 active→完成 转换
 let agentDoneRetentionDays = 7; // agent 组件：已完成会话保留天数（0 = 不限制）
+let agentServerPort = 0; // agent 组件：server 端口（0 = 默认 4096）
+let agentServerPassword = ''; // agent 组件：server 密码（空 = 无认证）
 let agentRuntimeRunning = true; // agent 组件：opencode 是否在运行（关闭时锁定条目点击）
 let weatherFxEnabled = true; // 天气组件动态背景开关
 let weatherCity = null; // 天气城市配置 { name, lat, lon }
@@ -93,7 +95,7 @@ let groupsList, addGroupBtn, autoGroupBtn;
 let selectionToolbar, selectionCount, selOpenBtn, selCopyBtn, selCutBtn, selPasteBtn, selDeleteBtn, selClearBtn;
 let folderPreview, boxSelectEl;
 let iconsLockToggle, rulesList, addRuleBtn, applyRulesBtn;
-let startupDelayInput, languageSelect, agentRetentionInput;
+let startupDelayInput, languageSelect, agentRetentionInput, agentServerPortInput, agentServerPasswordInput;
 let gpuAccelerationToggle;
 let shortcutToggleInput, shortcutRefreshInput, shortcutWidgetsInput;
 let exportLayoutBtn, importLayoutBtn, quitAppBtn;
@@ -163,6 +165,8 @@ document.addEventListener('DOMContentLoaded', () => {
   applyRulesBtn = document.getElementById('apply-rules-btn');
   startupDelayInput = document.getElementById('startup-delay-input');
   agentRetentionInput = document.getElementById('agent-retention-input');
+  agentServerPortInput = document.getElementById('agent-server-port-input');
+  agentServerPasswordInput = document.getElementById('agent-server-password-input');
   gpuAccelerationToggle = document.getElementById('gpu-acceleration-toggle');
   languageSelect = document.getElementById('language-select');
   shortcutToggleInput = document.getElementById('shortcut-toggle-input');
@@ -268,6 +272,8 @@ document.addEventListener('DOMContentLoaded', () => {
   applyRulesBtn.addEventListener('click', applyArrangeRules);
   startupDelayInput.addEventListener('change', handleStartupDelayChange);
   if (agentRetentionInput) agentRetentionInput.addEventListener('change', handleAgentRetentionChange);
+  if (agentServerPortInput) agentServerPortInput.addEventListener('change', handleAgentServerConfigChange);
+  if (agentServerPasswordInput) agentServerPasswordInput.addEventListener('change', handleAgentServerConfigChange);
   gpuAccelerationToggle.addEventListener('change', handleGpuAccelerationChange);
   languageSelect.addEventListener('change', handleLanguageChange);
   exportLayoutBtn.addEventListener('click', handleExportLayout);
@@ -550,6 +556,8 @@ document.addEventListener('DOMContentLoaded', () => {
     agentDoneRetentionDays = Number.isFinite(data.agentDoneRetentionDays)
       ? data.agentDoneRetentionDays
       : 7;
+    agentServerPort = Number.isFinite(data.agentServerPort) ? data.agentServerPort : 0;
+    agentServerPassword = typeof data.agentServerPassword === 'string' ? data.agentServerPassword : '';
     loadAgentSessions();
 
     setLanguage(data.language || 'zh-CN');
@@ -568,6 +576,7 @@ document.addEventListener('DOMContentLoaded', () => {
     updateIconsLockUI();
     updateStartupDelayUI();
     updateAgentRetentionUI();
+    updateAgentServerConfigUI();
     updateGpuAccelerationUI();
     updateShortcutInputs();
     renderRules();
@@ -973,6 +982,21 @@ async function handleAgentRetentionChange() {
 
 function updateAgentRetentionUI() {
   if (agentRetentionInput) agentRetentionInput.value = String(agentDoneRetentionDays);
+}
+
+// Agent server 连接配置（desktop 自设 server 的端口/密码；端口 0/密码空 = 默认无认证）
+async function handleAgentServerConfigChange() {
+  const port = parseInt(agentServerPortInput.value) || 0;
+  const password = agentServerPasswordInput.value || '';
+  agentServerPort = Math.max(0, Math.min(65535, port));
+  agentServerPassword = password;
+  agentServerPortInput.value = String(agentServerPort);
+  await window.api.setAgentServerConfig({ port: agentServerPort, password: agentServerPassword });
+}
+
+function updateAgentServerConfigUI() {
+  if (agentServerPortInput) agentServerPortInput.value = String(agentServerPort);
+  if (agentServerPasswordInput) agentServerPasswordInput.value = agentServerPassword;
 }
 
 // GPU 加速（重启后生效）

@@ -483,6 +483,17 @@
         <div class="setting-description" data-i18n="settings.agentRetentionDesc">
           已完成会话超过该天数后不再显示（重新对话会自动恢复）；0 表示不限制。
         </div>
+        <div class="setting-item">
+          <label for="agent-server-port-input" data-i18n="settings.agentServerPort">Server 端口:</label>
+          <input type="number" id="agent-server-port-input" min="0" max="65535" value="0" class="number-input">
+        </div>
+        <div class="setting-item">
+          <label for="agent-server-password-input" data-i18n="settings.agentServerPassword">Server 密码:</label>
+          <input type="password" id="agent-server-password-input" class="text-input" placeholder="">
+        </div>
+        <div class="setting-description" data-i18n="settings.agentServerDesc">
+          在 OpenCode 桌面端自设了 server（自定义端口/密码）时在此填入；留空则使用默认端口（4096）且不携带认证。
+        </div>
         <div class="setting-description" data-i18n="settings.weatherFxDesc">
           多云时云层飘动，雨雪天界面下起雨雪（随雨量分级），关闭后恢复静态样式。
         </div>

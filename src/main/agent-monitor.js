@@ -19,8 +19,14 @@ const DEFAULT_POLL_INTERVAL_MS = 2500;
 // 最后 part 为 step-finish（AI 完成一轮输出）后的完成确认窗口：
 // 超过该时长无新活动 → 直接判定完成，不必等活跃阈值（120s）到期
 const STEP_FINISH_CONFIRM_MS = 15 * 1000;
-// opencode server 探测端口：4948 = OpenCode Desktop 内置 sidecar；4096 = serve 默认 / TUI 优先端口
-const DEFAULT_SERVER_PORTS = [4948, 4096];
+// idle 覆盖时间窗：SSE 的 idle 记录只在事件后该时长内覆盖 DB 推断（保留 busy→idle 零延迟），
+// 超过则视为"旧记录"不覆盖——会话曾在 serve 上跑完、之后切到其他端继续时不会被污染
+const IDLE_OVERRIDE_WINDOW_MS = 60 * 1000;
+// opencode server 探测端口：4096 = `opencode serve` 默认端口。
+// 注意：OpenCode Desktop 的 sidecar 端口为随机（listen(0)）且带随机密码（randomUUID），
+// 外部应用无法连接（实测 /global/health 返回 401）——SSE 校准通道仅对自跑 serve 生效，
+// 实际主通道是 DB 推断（time_updated + last part）。
+const DEFAULT_SERVER_PORTS = [4096];
 const PROBE_CACHE_TTL = 10 * 1000;
 
 // 懒加载 better-sqlite3：Electron 环境下加载编译好的 .node；
@@ -131,19 +137,41 @@ function normalizeOpencodeRow(row) {
 // ============ opencode 适配器 ============
 
 /**
+ * 从 tasklist /V 输出判定 OpenCode Desktop 是否有可见主窗口。
+ * 桌面版关闭窗口后进程仍后台常驻（Electron 托盘），仅凭进程存在会误判；
+ * 窗口标题列是可靠信号（GBK 正确解码后）：无窗口 = '暂缺'/'N/A'，
+ * Electron 后台线程窗口 = 'OleMainThreadWndName'，真实主窗口 = 其他标题（如 'OpenCode'）。
+ * @param {string} output tasklist /V /FO CSV 输出（已按 GBK 解码）
+ * @returns {boolean}
+ */
+function hasVisibleOpencodeWindow(output) {
+  if (!output) return false;
+  for (const line of output.split(/\r?\n/)) {
+    if (!/^"OpenCode\.exe"/i.test(line)) continue;
+    const m = line.match(/^"[^"]*","\d*","[^"]*","[^"]*","[^"]*","[^"]*","[^"]*","[^"]*","(.*)"$/);
+    if (!m) continue;
+    const title = m[1].trim();
+    // \uFFFD = 解码失败的替换符（真实 GBK 输出不会产生；测试注入的 UTF-8 字节误解码时出现）→ 视为无窗口
+    if (!title || title.includes('\uFFFD') || title === '暂缺' || title === 'N/A' || title === 'OleMainThreadWndName') continue;
+    return true;
+  }
+  return false;
+}
+
+/**
  * 检测正在使用的 opencode 客户端类型。
- * OpenCode Desktop（Electron 桌面版）进程存在 → 'desktop'，否则 'terminal'。
+ * OpenCode Desktop 有可见主窗口 → 'desktop'，否则 'terminal'。
  * 桌面版支持 opencode:// 深链（open-project/new-session），可直接跳到对应项目窗口。
  * @param {Function} execSyncFn 命令执行函数（测试注入）
  * @returns {'desktop'|'terminal'}
  */
 function detectOpencodeClient(execSyncFn = execFileSync) {
   try {
-    const out = execSyncFn('tasklist', ['/FI', 'IMAGENAME eq OpenCode.exe', '/NH'], {
+    const out = execSyncFn('tasklist', ['/FI', 'IMAGENAME eq OpenCode.exe', '/V', '/FO', 'CSV', '/NH'], {
       timeout: 5000,
-      encoding: 'utf8'
+      encoding: 'buffer'
     });
-    if (/OpenCode\.exe/i.test(out)) return 'desktop';
+    if (hasVisibleOpencodeWindow(new TextDecoder('gbk').decode(out))) return 'desktop';
   } catch (e) { /* 未找到进程，走终端 */ }
   return 'terminal';
 }
@@ -274,6 +302,8 @@ function resetRuntimeSignal() {
 
 /**
  * 异步检测客户端类型（不阻塞主进程），结果缓存 5s。
+ * 判定依据：OpenCode Desktop 是否有可见主窗口（tasklist /V 的窗口标题列，
+ * 排除后台残留进程的 '暂缺'/'N/A' 与 Electron 线程窗口 'OleMainThreadWndName'）。
  * @param {Function} spawnFn 进程启动函数（测试注入）
  * @returns {Promise<'desktop'|'terminal'>}
  */
@@ -285,20 +315,21 @@ function detectOpencodeClientAsync(spawnFn = spawn) {
   return new Promise((resolve) => {
     let child;
     try {
-      child = spawnFn('tasklist', ['/FI', 'IMAGENAME eq OpenCode.exe', '/NH'], { windowsHide: true });
+      child = spawnFn('tasklist', ['/FI', 'IMAGENAME eq OpenCode.exe', '/V', '/FO', 'CSV', '/NH'], { windowsHide: true });
     } catch (e) {
       clientDetectCache = { at: Date.now(), result: 'terminal' };
       resolve('terminal');
       return;
     }
-    let out = '';
-    child.stdout.on('data', (d) => { out += d.toString('utf8'); });
+    const chunks = [];
+    child.stdout.on('data', (d) => { chunks.push(Buffer.isBuffer(d) ? d : Buffer.from(d)); });
     child.on('error', () => {
       clientDetectCache = { at: Date.now(), result: 'terminal' };
       resolve('terminal');
     });
     child.on('close', () => {
-      const result = /OpenCode\.exe/i.test(out) ? 'desktop' : 'terminal';
+      const out = new TextDecoder('gbk').decode(Buffer.concat(chunks));
+      const result = hasVisibleOpencodeWindow(out) ? 'desktop' : 'terminal';
       clientDetectCache = { at: Date.now(), result };
       resolve(result);
     });
@@ -367,18 +398,26 @@ function resetTerminalShellCache() {
 /**
  * 用 server 的权威状态校准会话状态（方案 A 核心）。
  * - busy / retry → active（服务端确认正在运行/重试中，覆盖推断）
- * - idle → 服务端确认没在跑：按最后 part 类型判 completed / interrupted
+ * - idle → 服务端确认没在跑：按最后 part 类型判 completed / interrupted。
+ *   仅"新鲜"的 idle 记录覆盖（事件时间 ≤ IDLE_OVERRIDE_WINDOW_MS）——旧 idle 记录
+ *   （会话曾在 serve 上跑完、之后切到其他端继续）不覆盖，保留 DB 推断，避免状态污染
  * - server 无该会话记录 → null（不覆盖，保留 DB 推断）
  * @param {{id: string, status: string, lastPartType: ?string}} session
- * @param {Map<string, string>} serverStatuses sessionID → 'busy'|'idle'|'retry'
+ * @param {Map<string, string|{status: string, at: number}>} serverStatuses
+ *   sessionID → 'busy'|'idle'|'retry'（旧格式字符串）或 {status, at}（SSE 事件带时间戳）
  * @returns {?string} 覆盖后的状态；null 表示不覆盖
  */
 function applyServerStatus(session, serverStatuses) {
   if (!serverStatuses || serverStatuses.size === 0) return null;
-  const serverState = serverStatuses.get(session.id);
-  if (!serverState) return null;
+  const record = serverStatuses.get(session.id);
+  if (!record) return null;
+  // 兼容旧格式字符串（视为新鲜记录，保持历史行为）
+  const serverState = typeof record === 'string' ? record : record.status;
+  const at = typeof record === 'string' ? 0 : (record.at || 0);
   if (serverState === 'busy' || serverState === 'retry') return 'active';
   if (serverState === 'idle') {
+    // 旧 idle 记录（超过时间窗）：不覆盖，保留 DB 推断
+    if (at > 0 && Date.now() - at > IDLE_OVERRIDE_WINDOW_MS) return null;
     if (!session.lastPartType || session.lastPartType === 'step-finish') return 'completed';
     return 'interrupted';
   }
@@ -405,11 +444,13 @@ function parseSSEChunk(chunk) {
 }
 
 /**
- * opencode server 状态提供器：探测本地 server（desktop 4948 / TUI·serve 4096），
+ * opencode server 状态提供器：探测本地 `opencode serve`（默认 4096，可配置端口），
  * 订阅其 SSE 事件流（/event），从 `session.status` 事件获取权威运行状态（busy/idle/retry）。
  * 实测结论：/session/status HTTP 接口在 serve 实例下返回空，不可依赖；
  * SSE 事件流是可靠通道，且实时推送（busy→idle 零延迟，免轮询）。
- * - 认证：环境变量 OPENCODE_SERVER_PASSWORD/USERNAME（与 desktop 同源）；无密码 → 免认证
+ * - 认证：环境变量 OPENCODE_SERVER_PASSWORD/USERNAME；无密码 → 免认证。
+ *   桌面端 sidecar 的密码是 randomUUID（端口也随机），外部不可连接——校准仅对自跑 serve 生效，
+ *   desktop/TUI 场景自动回落纯 DB 推断模式（主通道）
  * - 探测结果缓存；断线自动重连（指数退避）；全部失败 → 空 Map（上层回落 DB 推断模式）
  * @param {{ ports?: number[], username?: string, password?: string, fetchFn?: Function, connectFn?: Function }} options
  * @returns {{ getStatuses: Function, invalidateCache: Function }}
@@ -426,7 +467,7 @@ function createOpencodeServerStatusProvider(options = {}) {
   let probeCache = null; // { at, baseUrls }
   let probing = false;
   let disposed = false;
-  let statusMap = new Map(); // sessionID → 'busy'|'idle'|'retry'（SSE 实时累计）
+  let statusMap = new Map(); // sessionID → { status: 'busy'|'idle'|'retry', at }（SSE 实时累计，带事件时间戳）
   let sseControllers = new Map(); // base → AbortController（每 server 独立连接）
 
   function authHeaders() {
@@ -479,9 +520,9 @@ function createOpencodeServerStatusProvider(options = {}) {
         buffer = '';
         for (const ev of events) {
           if (ev.type === 'session.status' && ev.properties && ev.properties.sessionID && ev.properties.status) {
-            statusMap.set(ev.properties.sessionID, ev.properties.status.type);
+            statusMap.set(ev.properties.sessionID, { status: ev.properties.status.type, at: Date.now() });
           } else if (ev.type === 'session.idle' && ev.properties && ev.properties.sessionID) {
-            statusMap.set(ev.properties.sessionID, 'idle');
+            statusMap.set(ev.properties.sessionID, { status: 'idle', at: Date.now() });
           }
         }
       }
@@ -564,7 +605,7 @@ function createOpencodeAdapter(options = {}) {
   const DB = options.Database || getDatabaseModule();
   const spawnFn = options.spawnFn || spawn;
   const shellFn = options.shellFn || null;
-  const statusProvider = options.statusProvider || null;
+  let statusProvider = options.statusProvider || null;
   let db = null;
   let lastError = null;
   let stmtSession = null;
@@ -690,10 +731,11 @@ function createOpencodeAdapter(options = {}) {
     },
 
     /**
-     * 跳转到指定会话：优先跟随正在使用的客户端。
-     * - 检测到 OpenCode Desktop → opencode://open-project 深链（打开对应项目窗口，
-     *   桌面端会话列表可见）；desktop 深链不支持直达指定会话，这是官方能力上限
-     * - 否则 → 新终端窗口（pwsh 优先，无则 powershell/cmd）运行 `opencode -s <id>`
+     * 跳转到指定会话。
+     * 策略（已拍板）：桌面端优先——检测到 OpenCode Desktop 进程即走 opencode://open-project
+     * 深链（打开对应项目窗口，桌面端会话列表可见）；双端并存时同样以桌面端为准（桌面端不可达
+     * 再进终端）。desktop 深链不支持直达指定会话，这是官方能力上限。
+     * 否则 → 新终端窗口（pwsh 优先，无则 powershell/cmd）运行 `opencode -s <id>`。
      * 客户端检测为异步（spawn tasklist），不阻塞主进程
      * @returns {Promise<{ ok: boolean, target?: string, error?: string }>}
      */
@@ -748,6 +790,14 @@ function createOpencodeAdapter(options = {}) {
       } catch (e) {
         return new Map();
       }
+    },
+
+    /**
+     * 运行时替换 server 状态提供器（设置中修改端口/密码后重建，旧 SSE 连接由调用方释放）。
+     * @param {?Object} provider createOpencodeServerStatusProvider 产物或 null
+     */
+    setStatusProvider(provider) {
+      statusProvider = provider || null;
     }
   };
 }
@@ -870,6 +920,7 @@ module.exports = {
   detectOpencodeRunningNow,
   filterVisibleSessions,
   findTerminalShell,
+  hasVisibleOpencodeWindow,
   findTerminalShellAsync,
   getOpencodeDbPath,
   hasProcessAsync,
@@ -884,6 +935,7 @@ module.exports = {
   DEFAULT_ACTIVE_WINDOW_MS,
   DEFAULT_POLL_INTERVAL_MS,
   DEFAULT_SERVER_PORTS,
+  IDLE_OVERRIDE_WINDOW_MS,
   RUNTIME_CONFIRM_MS,
   STEP_FINISH_CONFIRM_MS
 };

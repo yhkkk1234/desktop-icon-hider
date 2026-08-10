@@ -33,12 +33,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
     UI ~0.7s every 2.5s); snapshots are only pushed to the renderer when the
     session list/status actually changes
   - Status calibration via the opencode server: the app probes for a local
-    opencode server (OpenCode Desktop sidecar on 4948, `serve`/TUI on 4096,
-    authenticated with `OPENCODE_SERVER_PASSWORD` or open if unset) and
-    subscribes to its SSE `/event` stream. Authoritative `session.status`
-    events (busy/retry → running, idle → finished) override the DB-based
-    inference in real time; when no server is reachable it silently falls back
-    to DB inference
+    opencode server (`opencode serve` on 4096 by default, custom port/password
+    configurable in settings; authenticated with `OPENCODE_SERVER_PASSWORD` or
+    open if unset) and subscribes to its SSE `/event` stream. Authoritative
+    `session.status` events (busy/retry → running, idle → finished) override the
+    DB-based inference in real time; when no server is reachable it silently
+    falls back to DB inference. Note: the OpenCode Desktop sidecar uses a
+    random port and a random password (verified: `/global/health` returns 401),
+    so the calibration channel only works with a user-run `opencode serve`
   - Faster completion detection without a server: a session whose last message
     part is `step-finish` now flips to "done" after a 15s confirmation window
     instead of waiting for the 120s activity threshold
