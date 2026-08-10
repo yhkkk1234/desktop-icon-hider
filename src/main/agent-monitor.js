@@ -701,10 +701,13 @@ function createOpencodeAdapter(options = {}) {
       if (!session || !isValidSessionId(session.id)) return { ok: false, error: '无效的会话 id' };
       const cwd = typeof session.directory === 'string' && session.directory ? session.directory : os.homedir();
 
-      // 桌面客户端优先：深链打开对应项目窗口
+      // 桌面客户端优先：深链打开对应项目窗口。
+      // Windows 路径必须用反斜杠（与 desktop 内部存储一致，见官方 deep-links 文档）；
+      // 用 DB 里的正斜杠会被当成不同项目 → 重复打开窗口而不是聚焦已有窗口
       if (shellFn && (await detectOpencodeClientAsync(spawnFn)) === 'desktop') {
         try {
-          const url = 'opencode://open-project?directory=' + encodeURIComponent(cwd);
+          const linkPath = process.platform === 'win32' ? cwd.replace(/\//g, '\\') : cwd;
+          const url = 'opencode://open-project?directory=' + encodeURIComponent(linkPath);
           shellFn(url);
           return { ok: true, target: 'desktop' };
         } catch (e) {

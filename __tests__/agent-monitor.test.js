@@ -334,7 +334,9 @@ describe('createOpencodeAdapter', () => {
     expect(result.ok).toBe(true);
     expect(result.target).toBe('desktop');
     expect(shellUrls).toHaveLength(1);
-    expect(shellUrls[0]).toBe('opencode://open-project?directory=' + encodeURIComponent('F:/我的项目'));
+    // Windows 平台深链路径应为反斜杠（与 desktop 内部存储一致，避免重复开项目窗口）
+    const expectedDir = process.platform === 'win32' ? 'F:\\我的项目' : 'F:/我的项目';
+    expect(shellUrls[0]).toBe('opencode://open-project?directory=' + encodeURIComponent(expectedDir));
     // 仅 tasklist 探测一次，未 spawn 终端
     expect(spawnCalls.filter(c => c[0] !== 'tasklist')).toHaveLength(0);
   });

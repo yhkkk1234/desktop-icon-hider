@@ -68,6 +68,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
     process + port probe, ~300ms) before jumping: even within the 15s
     confirmation window, clicking after opencode closed is rejected — no
     terminal launch, no read-marking, the row stays put
+  - Deep links now send Windows backslash paths (`F:\project`) matching what
+    the desktop app stores internally — the forward slashes from the DB were
+    treated as a different project, causing duplicate project windows instead
+    of focusing the already-open one (per official deep-links docs)
 
 ## [1.8.4] - 2026-08-06
 
