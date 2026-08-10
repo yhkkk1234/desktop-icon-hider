@@ -2747,13 +2747,55 @@ body.icons-locked .file-item.draggable:active {
 .widget-agent {
   width: 264px;
   max-width: 320px;
+  display: flex;
+  flex-direction: column;
+}
+
+/* 拉伸后：宽度/高度由内联样式控制，列表区填满剩余空间 */
+.widget-agent.wa-resized {
+  max-width: none;
 }
 
 .wa-body {
+  flex: 1 1 auto;
+  min-height: 0;
   max-height: 300px;
   overflow-y: auto;
   /* 滚动只影响自身，避免滚动时触发父级重排/模糊重算导致的卡顿 */
   contain: content;
+}
+
+.widget-agent.wa-resized .wa-body {
+  max-height: none;
+}
+
+/* 右下角拉伸手柄（仅 agent 组件创建，hover 显示） */
+.widget-resize-handle {
+  position: absolute;
+  right: 0;
+  bottom: 0;
+  width: 16px;
+  height: 16px;
+  cursor: nwse-resize;
+  opacity: 0;
+  transition: opacity 0.15s;
+  z-index: 1;
+}
+
+.widget-item:hover .widget-resize-handle {
+  opacity: 1;
+}
+
+.widget-resize-handle::after {
+  content: '';
+  position: absolute;
+  right: 4px;
+  bottom: 4px;
+  width: 7px;
+  height: 7px;
+  border-right: 2px solid var(--text-muted);
+  border-bottom: 2px solid var(--text-muted);
+  border-radius: 0 0 3px 0;
 }
 
 /* 主题化滚动条（与 .content 同款变量，窄版） */
@@ -2784,6 +2826,11 @@ body.icons-locked .file-item.draggable:active {
 
 /* 滚动/拖拽期间禁用模糊背景，避免每帧重算开销 */
 .widget-item.wa-scrolling {
+  backdrop-filter: none;
+}
+
+/* 拉伸期间同样禁用模糊（组件尺寸变化时背景区域持续改变） */
+.widget-item.wa-resizing {
   backdrop-filter: none;
 }
 

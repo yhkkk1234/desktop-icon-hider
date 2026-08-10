@@ -57,6 +57,7 @@ let widgets = []; // 小组件: [{ id, type: 'clock'|'calendar'|'weather', x, y 
 let showWidgets = true; // 小组件显示开关
 let widgetsAvoidIcons = false; // 图标自动绕开小组件区域
 let widgetDrag = null; // 组件拖拽状态
+let widgetResize = null; // 组件拉伸状态
 let widgetSaveTimer = null;
 let clockTimer = null;
 let calendarTimer = null;
@@ -4139,6 +4140,11 @@ function refreshAllWeatherWidgets() {
 function syncWidgetElement(node, widget) {
   node.style.left = widget.x + '%';
   node.style.top = widget.y + '%';
+  if (Number.isFinite(widget.w) && widget.w > 0) {
+    node.style.width = widget.w + 'px';
+    node.style.height = widget.h + 'px';
+    node.classList.add('wa-resized');
+  }
 }
 
 function createWidgetElement(widget) {
@@ -4205,8 +4211,24 @@ function createWidgetElement(widget) {
     node.innerHTML = `
       <div class="wa-body"></div>
       <button class="widget-close" title="${t('widget.delete')}">×</button>
+      <div class="widget-resize-handle" title="${t('widget.resize')}"></div>
     `;
     renderAgentWidget(node);
+    const handle = node.querySelector('.widget-resize-handle');
+    handle.addEventListener('mousedown', (e) => {
+      e.stopPropagation();
+      e.preventDefault();
+      widgetResize = {
+        widget,
+        node,
+        startX: e.clientX,
+        startY: e.clientY,
+        startW: node.offsetWidth,
+        startH: node.offsetHeight
+      };
+      window.addEventListener('mousemove', handleWidgetResizeMove);
+      window.addEventListener('mouseup', handleWidgetResizeEnd);
+    });
   }
 
   // 删除
@@ -4231,7 +4253,7 @@ function createWidgetElement(widget) {
   // 拖拽移动
   node.addEventListener('mousedown', (e) => {
     if (e.button !== 0) return;
-    if (e.target.closest('.widget-close') || e.target.closest('.widget-cal-nav') || e.target.closest('.wm-style-btn') || e.target.closest('.wa-item')) return;
+    if (e.target.closest('.widget-close') || e.target.closest('.widget-cal-nav') || e.target.closest('.wm-style-btn') || e.target.closest('.wa-item') || e.target.closest('.widget-resize-handle')) return;
     e.preventDefault();
     widgetDrag = {
       widget,
@@ -4282,6 +4304,33 @@ function handleWidgetDragEnd() {
   const node = widgetDrag.node;
   if (node) node.classList.remove('widget-dragging');
   widgetDrag = null;
+}
+
+// ============ 组件拉伸（右下角手柄，仅 agent 组件） ============
+const AGENT_WIDGET_MIN_W = 220; // 最小宽度：防止过小看不到内容
+const AGENT_WIDGET_MIN_H = 140; // 最小高度
+const AGENT_WIDGET_MAX_W = 1200;
+const AGENT_WIDGET_MAX_H = 1200;
+
+function handleWidgetResizeMove(e) {
+  if (!widgetResize) return;
+  const { widget, node, startX, startY, startW, startH } = widgetResize;
+  widget.w = Math.max(AGENT_WIDGET_MIN_W, Math.min(AGENT_WIDGET_MAX_W, startW + (e.clientX - startX)));
+  widget.h = Math.max(AGENT_WIDGET_MIN_H, Math.min(AGENT_WIDGET_MAX_H, startH + (e.clientY - startY)));
+  node.style.width = widget.w + 'px';
+  node.style.height = widget.h + 'px';
+  node.classList.add('wa-resized');
+  node.classList.add('wa-resizing');
+  saveWidgets();
+  scheduleIconLayout();
+}
+
+function handleWidgetResizeEnd() {
+  if (!widgetResize) return;
+  window.removeEventListener('mousemove', handleWidgetResizeMove);
+  window.removeEventListener('mouseup', handleWidgetResizeEnd);
+  if (widgetResize.node) widgetResize.node.classList.remove('wa-resizing');
+  widgetResize = null;
 }
 
 // ============ 性能监控组件 ============

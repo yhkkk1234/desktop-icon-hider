@@ -997,6 +997,8 @@ ipcMain.handle('set-widgets', async (event, widgets) => {
       type: ['clock', 'calendar', 'weather', 'monitor', 'agent'].includes(w.type) ? w.type : 'clock',
       x: Number.isFinite(w.x) ? Math.max(0, Math.min(95, w.x)) : 2,
       y: Number.isFinite(w.y) ? Math.max(0, Math.min(90, w.y)) : 2,
+      w: Number.isFinite(w.w) ? Math.max(120, Math.min(1200, Math.round(w.w))) : undefined,
+      h: Number.isFinite(w.h) ? Math.max(120, Math.min(1200, Math.round(w.h))) : undefined,
       style: ['gauge', 'chart', 'bar'].includes(w.style) ? w.style : 'gauge'
     })).filter(w => w.id);
     store.set('widgets', sanitized);
