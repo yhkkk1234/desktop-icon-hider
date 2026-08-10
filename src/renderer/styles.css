@@ -2798,19 +2798,13 @@ body.icons-locked .file-item.draggable:active {
   border-radius: 0 0 3px 0;
 }
 
-/* opencode 未运行提示条 */
-.wa-offline-banner {
-  margin: -4px -14px 8px;
-  padding: 4px 8px;
-  font-size: 11px;
-  line-height: 1.5;
-  color: #ffa726;
-  background: rgba(255, 167, 38, 0.12);
-  border-bottom: 1px solid rgba(255, 167, 38, 0.25);
-  border-radius: 0;
-  white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
+/* opencode 未运行：harness 名后的"（未开启）"浅色标记 */
+.wa-offline-tag {
+  margin-left: 5px;
+  font-size: 10px;
+  font-weight: 400;
+  color: var(--text-muted);
+  opacity: 0.65;
 }
 
 /* opencode 未运行时：条目灰化禁用（点击已在 JS 层锁定） */

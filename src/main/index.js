@@ -2237,7 +2237,7 @@ app.whenReady().then(async () => {
     // 每 5s 检测一次（内部缓存 10s + 60s 确认期，信号抖动不会误判），变化才推送
     const checkRuntime = async () => {
       try {
-        const running = await detectOpencodeRunning(spawn, agentStatusProvider);
+        const running = await detectOpencodeRunning(spawn);
         if (running !== agentRuntimeRunning) {
           agentRuntimeRunning = running;
           if (mainWindow && !mainWindow.isDestroyed() && mainWindow.webContents) {

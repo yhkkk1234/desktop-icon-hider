@@ -162,35 +162,34 @@ describe('detectOpencodeRunning', () => {
   }
 
   it('Desktop 进程存在 → 运行中', async () => {
-    expect(await detectOpencodeRunning(tasklistSpawn(['OpenCode.exe']), null)).toBe(true);
+    expect(await detectOpencodeRunning(tasklistSpawn(['OpenCode.exe']))).toBe(true);
   });
 
   it('CLI/TUI 进程（opencode.exe）存在 → 运行中', async () => {
-    expect(await detectOpencodeRunning(tasklistSpawn(['opencode.exe']), null)).toBe(true);
+    expect(await detectOpencodeRunning(tasklistSpawn(['opencode.exe']))).toBe(true);
   });
 
-  it('无进程但 server 可达 → 运行中', async () => {
-    const provider = { isReachable: () => true };
-    expect(await detectOpencodeRunning(tasklistSpawn([]), provider)).toBe(true);
+  it('无进程但 server 可达（实时端口探测）→ 运行中', async () => {
+    expect(await detectOpencodeRunning(tasklistSpawn([]), async () => true)).toBe(true);
   });
 
   it('无任何信号 + 确认期内 → 仍视为运行（防误锁）', async () => {
     const spawn = tasklistSpawn(['OpenCode.exe']);
-    expect(await detectOpencodeRunning(spawn, null)).toBe(true); // 记录信号
-    // 模拟信号消失：换成无进程 spawn，确认期 60s 内
+    expect(await detectOpencodeRunning(spawn, async () => false)).toBe(true); // 记录信号
+    // 模拟信号消失：换成无进程 spawn + 端口不通，确认期 15s 内
     jest.useFakeTimers();
     try {
-      jest.setSystemTime(Date.now() + 30 * 1000);
-      expect(await detectOpencodeRunning(tasklistSpawn([]), null)).toBe(true);
-      jest.setSystemTime(Date.now() + 40 * 1000); // 累计 70s > 60s
-      expect(await detectOpencodeRunning(tasklistSpawn([]), null)).toBe(false);
+      jest.setSystemTime(Date.now() + 8 * 1000);
+      expect(await detectOpencodeRunning(tasklistSpawn([]), async () => false)).toBe(true);
+      jest.setSystemTime(Date.now() + 10 * 1000); // 累计 18s > 15s
+      expect(await detectOpencodeRunning(tasklistSpawn([]), async () => false)).toBe(false);
     } finally {
       jest.useRealTimers();
     }
   });
 
-  it('确认期常量为 60s', () => {
-    expect(RUNTIME_CONFIRM_MS).toBe(60000);
+  it('确认期常量为 15s', () => {
+    expect(RUNTIME_CONFIRM_MS).toBe(15000);
   });
 
   it('hasProcessAsync 结果缓存 10s', async () => {

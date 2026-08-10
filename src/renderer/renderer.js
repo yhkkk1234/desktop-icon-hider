@@ -4216,7 +4216,6 @@ function createWidgetElement(widget) {
     });
   } else if (widget.type === 'agent') {
     node.innerHTML = `
-      <div class="wa-offline-banner" style="display:none">${t('widget.agentOffline')}</div>
       <div class="wa-body"></div>
       <button class="widget-close" title="${t('widget.delete')}">×</button>
       <div class="widget-resize-handle" title="${t('widget.resize')}"></div>
@@ -4736,9 +4735,8 @@ function renderAgentWidget(node) {
   const body = node.querySelector('.wa-body');
   if (!body) return;
   const visible = getVisibleAgentSessions();
-  // opencode 未运行且列表非空：显示提示条 + 灰化条目（点击已在 handleAgentItemClick 锁定）
-  const banner = node.querySelector('.wa-offline-banner');
-  if (banner) banner.style.display = (!agentRuntimeRunning && visible.length > 0) ? 'block' : 'none';
+  // opencode 未运行且列表非空：灰化条目（点击已在 handleAgentItemClick 锁定），
+  // harness 名后追加"（未开启）"浅色标记（未来多 harness 时各自独立显示）
   node.classList.toggle('wa-offline', !agentRuntimeRunning && visible.length > 0);
   if (visible.length === 0) {
     if (body.dataset.empty === '1') return;
@@ -4780,7 +4778,15 @@ function renderAgentWidget(node) {
     }
     const nameEl = group.querySelector('.wa-name');
     const countEl = group.querySelector('.wa-count');
-    if (nameEl) nameEl.textContent = sessions[0].harnessName || h;
+    if (nameEl) {
+      nameEl.textContent = sessions[0].harnessName || h;
+      if (!agentRuntimeRunning) {
+        const tag = document.createElement('span');
+        tag.className = 'wa-offline-tag';
+        tag.textContent = t('widget.agentOffline');
+        nameEl.appendChild(tag);
+      }
+    }
     if (countEl) countEl.textContent = String(sessions.length);
     syncAgentList(group.querySelector('.wa-list'), sessions);
   }

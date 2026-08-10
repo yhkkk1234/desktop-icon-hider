@@ -58,11 +58,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
     widget); backdrop blur is suspended while resizing to avoid stutter.
     Double-click the handle to reset to the default size (content-adaptive
     height)
-  - When opencode is not running the widget shows a warning banner and locks
-    the session rows (clicks are ignored, no read-marking). Runtime detection
-    uses desktop/CLI process checks plus server reachability, with a 60s
-    confirmation window so probe hiccups never lock the list while opencode is
-    actually open
+  - When opencode is not running the widget greys out the session rows
+    (clicks are ignored, no read-marking) and appends a light "(off)" tag to
+    the harness name. Runtime detection combines desktop/CLI process checks
+    (5s cache) with a real-time port probe and a short 15s confirmation
+    window, so the closed state is reflected within ~20s instead of relying
+    on a slow 60s+ settle
 
 ## [1.8.4] - 2026-08-06
 

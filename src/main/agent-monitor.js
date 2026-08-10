@@ -162,7 +162,7 @@ function resetClientDetectCache() {
 const processDetectCaches = new Map(); // name -> { at, found }
 
 /**
- * 异步检测指定进程是否存在（spawn tasklist，不阻塞主进程），结果缓存 10s。
+ * 异步检测指定进程是否存在（spawn tasklist，不阻塞主进程），结果缓存 5s。
  * @param {string} name 进程映像名（如 'OpenCode.exe' / 'opencode.exe'）
  * @param {Function} spawnFn 进程启动函数（测试注入）
  * @returns {Promise<boolean>}
@@ -170,7 +170,7 @@ const processDetectCaches = new Map(); // name -> { at, found }
 function hasProcessAsync(name, spawnFn = spawn) {
   const now = Date.now();
   const cached = processDetectCaches.get(name);
-  if (cached && now - cached.at < 10 * 1000) {
+  if (cached && now - cached.at < 5 * 1000) {
     return Promise.resolve(cached.found);
   }
   return new Promise((resolve) => {
@@ -197,22 +197,46 @@ function hasProcessAsync(name, spawnFn = spawn) {
 }
 
 // opencode 运行状态判定（保守策略：宁可多等也不误锁）
-const RUNTIME_CONFIRM_MS = 60 * 1000; // 信号消失后的确认期：60s 内仍视为运行中
+// 确认期 15s：server 探测抖动/进程检测偶发失败不会导致误判"关闭"而锁死列表。
+// 配合 5s 检测周期 + 5s 进程缓存 + 实时端口探测，opencode 关闭后 ~20s 内反映
+const RUNTIME_CONFIRM_MS = 15 * 1000;
 let lastRuntimeSignalAt = 0;
+
+/** 默认端口连接函数（127.0.0.1 快速探测，失败立即返回） */
+function defaultConnect(port, timeoutMs = 300) {
+  return new Promise((resolve) => {
+    const sock = net.connect(port, '127.0.0.1');
+    const finish = (ok) => {
+      try { sock.destroy(); } catch (e) { /* 忽略 */ }
+      resolve(ok);
+    };
+    sock.setTimeout(timeoutMs);
+    sock.once('connect', () => finish(true));
+    sock.once('error', () => finish(false));
+    sock.once('timeout', () => finish(false));
+  });
+}
+
+/** 实时探测候选端口是否有可达服务（毫秒级，不缓存） */
+async function probeAnyPort(connectFn, ports = DEFAULT_SERVER_PORTS) {
+  for (const port of ports) {
+    if (await connectFn(port, 200)) return true;
+  }
+  return false;
+}
 
 /**
  * 判定 opencode 是否在运行（供"关闭时锁定列表"用）。
  * 信号源（任一命中即视为运行）：
  * 1. OpenCode.exe 进程（Desktop 版）
  * 2. opencode.exe 进程（CLI / TUI / serve）
- * 3. server 可达（SSE 订阅中，兜底 TUI 场景）
- * 4. 确认期：信号刚消失 60s 内仍视为运行——server 探测抖动/进程检测偶发失败
- *    不会导致误判"关闭"而锁死列表
+ * 3. 实时端口探测（server 可达，毫秒级不缓存，弥补进程缓存滞后）
+ * 4. 确认期：信号刚消失 15s 内仍视为运行——探测抖动不误锁
  * @param {Function} spawnFn 进程启动函数（测试注入）
- * @param {?Object} statusProvider server 状态提供器（可选，需有 isReachable）
+ * @param {?Function} connectFn 端口连接函数（测试注入）
  * @returns {Promise<boolean>}
  */
-async function detectOpencodeRunning(spawnFn = spawn, statusProvider = null) {
+async function detectOpencodeRunning(spawnFn = spawn, connectFn = defaultConnect) {
   const [desktop, cli] = await Promise.all([
     hasProcessAsync('OpenCode.exe', spawnFn),
     hasProcessAsync('opencode.exe', spawnFn)
@@ -221,7 +245,7 @@ async function detectOpencodeRunning(spawnFn = spawn, statusProvider = null) {
     lastRuntimeSignalAt = Date.now();
     return true;
   }
-  if (statusProvider && typeof statusProvider.isReachable === 'function' && statusProvider.isReachable()) {
+  if (connectFn && (await probeAnyPort(connectFn))) {
     lastRuntimeSignalAt = Date.now();
     return true;
   }
@@ -237,13 +261,13 @@ function resetRuntimeSignal() {
 }
 
 /**
- * 异步检测客户端类型（不阻塞主进程），结果缓存 10s。
+ * 异步检测客户端类型（不阻塞主进程），结果缓存 5s。
  * @param {Function} spawnFn 进程启动函数（测试注入）
  * @returns {Promise<'desktop'|'terminal'>}
  */
 function detectOpencodeClientAsync(spawnFn = spawn) {
   const now = Date.now();
-  if (clientDetectCache && now - clientDetectCache.at < 10 * 1000) {
+  if (clientDetectCache && now - clientDetectCache.at < 5 * 1000) {
     return Promise.resolve(clientDetectCache.result);
   }
   return new Promise((resolve) => {
@@ -385,17 +409,7 @@ function createOpencodeServerStatusProvider(options = {}) {
   const password = typeof options.password === 'string' ? options.password
     : (typeof process.env.OPENCODE_SERVER_PASSWORD === 'string' ? process.env.OPENCODE_SERVER_PASSWORD : null);
   const fetchFn = options.fetchFn || ((url, init) => globalThis.fetch(url, init));
-  const connectFn = options.connectFn || ((port, timeoutMs) => new Promise((resolve) => {
-    const sock = net.connect(port, '127.0.0.1');
-    const finish = (ok) => {
-      try { sock.destroy(); } catch (e) { /* 忽略 */ }
-      resolve(ok);
-    };
-    sock.setTimeout(timeoutMs || 300);
-    sock.once('connect', () => finish(true));
-    sock.once('error', () => finish(false));
-    sock.once('timeout', () => finish(false));
-  }));
+  const connectFn = options.connectFn || defaultConnect;
 
   let probeCache = null; // { at, baseUrls }
   let probing = false;
@@ -847,6 +861,7 @@ module.exports = {
   normalizeOpencodeRow,
   parseLastPartType,
   parseSSEChunk,
+  probeAnyPort,
   resetClientDetectCache,
   resetRuntimeSignal,
   resetTerminalShellCache,
