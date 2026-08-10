@@ -163,14 +163,16 @@ const processDetectCaches = new Map(); // name -> { at, found }
 
 /**
  * 异步检测指定进程是否存在（spawn tasklist，不阻塞主进程），结果缓存 5s。
+ * opts.noCache=true 时绕过缓存实时查询（点击验证用，~230ms 异步可接受）。
  * @param {string} name 进程映像名（如 'OpenCode.exe' / 'opencode.exe'）
  * @param {Function} spawnFn 进程启动函数（测试注入）
+ * @param {{ noCache?: boolean }} opts
  * @returns {Promise<boolean>}
  */
-function hasProcessAsync(name, spawnFn = spawn) {
+function hasProcessAsync(name, spawnFn = spawn, opts = {}) {
   const now = Date.now();
   const cached = processDetectCaches.get(name);
-  if (cached && now - cached.at < 5 * 1000) {
+  if (!opts.noCache && cached && now - cached.at < 5 * 1000) {
     return Promise.resolve(cached.found);
   }
   return new Promise((resolve) => {
@@ -226,7 +228,25 @@ async function probeAnyPort(connectFn, ports = DEFAULT_SERVER_PORTS) {
 }
 
 /**
- * 判定 opencode 是否在运行（供"关闭时锁定列表"用）。
+ * 实时判定 opencode 是否在运行（进程 + 端口，无确认期、无进程缓存）。
+ * 供"点击条目"时的即时验证：关闭后任意时刻点击都会被拦截，
+ * 不受周期检测的 15s 确认期影响。
+ * @param {Function} spawnFn 进程启动函数（测试注入）
+ * @param {?Function} connectFn 端口连接函数（测试注入）
+ * @returns {Promise<boolean>}
+ */
+async function detectOpencodeRunningNow(spawnFn = spawn, connectFn = defaultConnect) {
+  const [desktop, cli] = await Promise.all([
+    hasProcessAsync('OpenCode.exe', spawnFn, { noCache: true }),
+    hasProcessAsync('opencode.exe', spawnFn, { noCache: true })
+  ]);
+  if (desktop || cli) return true;
+  if (connectFn && (await probeAnyPort(connectFn))) return true;
+  return false;
+}
+
+/**
+ * 判定 opencode 是否在运行（供"关闭时锁定列表"用，周期检测）。
  * 信号源（任一命中即视为运行）：
  * 1. OpenCode.exe 进程（Desktop 版）
  * 2. opencode.exe 进程（CLI / TUI / serve）
@@ -237,15 +257,7 @@ async function probeAnyPort(connectFn, ports = DEFAULT_SERVER_PORTS) {
  * @returns {Promise<boolean>}
  */
 async function detectOpencodeRunning(spawnFn = spawn, connectFn = defaultConnect) {
-  const [desktop, cli] = await Promise.all([
-    hasProcessAsync('OpenCode.exe', spawnFn),
-    hasProcessAsync('opencode.exe', spawnFn)
-  ]);
-  if (desktop || cli) {
-    lastRuntimeSignalAt = Date.now();
-    return true;
-  }
-  if (connectFn && (await probeAnyPort(connectFn))) {
+  if (await detectOpencodeRunningNow(spawnFn, connectFn)) {
     lastRuntimeSignalAt = Date.now();
     return true;
   }
@@ -852,6 +864,7 @@ module.exports = {
   detectOpencodeClient,
   detectOpencodeClientAsync,
   detectOpencodeRunning,
+  detectOpencodeRunningNow,
   filterVisibleSessions,
   findTerminalShell,
   findTerminalShellAsync,

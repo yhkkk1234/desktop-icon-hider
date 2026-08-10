@@ -4669,9 +4669,15 @@ function agentStatusLabel(status) {
 }
 
 /** 点击条目：跳转会话并标记已读（条目随即从列表消失）。
- * opencode 未运行时拒绝点击（不跳转、不标记已读）。 */
+ * 双重守卫：① 周期状态（UI 灰化时快速拒绝）；② 点击瞬间实时验证
+ * （无缓存/无确认期）——opencode 刚关闭、UI 尚未灰化的窗口期也拦截，
+ * 不跳转、不标记已读，条目保留 */
 async function handleAgentItemClick(item, harness, sessionId) {
-  if (!agentRuntimeRunning) return; // opencode 已关闭：锁定
+  if (!agentRuntimeRunning) return; // 周期检测已锁定（快路径）
+  try {
+    const rt = await window.api.checkAgentRuntime();
+    if (!rt || rt.running === false) return; // 实时验证：已关闭
+  } catch (e) { /* 检测失败保守放行 */ }
   try {
     const result = await window.api.openAgentSession(harness, sessionId);
     if (result && result.ok) {

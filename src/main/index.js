@@ -15,7 +15,7 @@ const {
 } = require('./window-manager');
 const { createTray, updateTrayMenu, destroyTray, autoLauncher } = require('./tray');
 const { startSampler, stopSampler, getSystemStats } = require('./hardware-monitor');
-const { AgentMonitor, createOpencodeAdapter, createOpencodeServerStatusProvider, detectOpencodeRunning, isValidSessionId } = require('./agent-monitor');
+const { AgentMonitor, createOpencodeAdapter, createOpencodeServerStatusProvider, detectOpencodeRunning, detectOpencodeRunningNow, isValidSessionId } = require('./agent-monitor');
 
 const store = new Store({
   name: 'desktop-icon-hider',
@@ -1089,6 +1089,17 @@ ipcMain.handle('set-agent-retention-days', async (event, days) => {
   const value = Number.isFinite(days) ? Math.max(0, Math.min(365, Math.round(days))) : 7;
   store.set('agentDoneRetentionDays', value);
   return true;
+});
+
+// 点击条目前的实时运行验证：无缓存、无确认期，opencode 关闭时拒绝跳转
+ipcMain.handle('check-agent-runtime', async () => {
+  try {
+    const running = await detectOpencodeRunningNow(spawn);
+    return { running };
+  } catch (e) {
+    // 检测失败保守放行（不锁死点击）
+    return { running: true };
+  }
 });
 
 // ============ 天气组件（Open-Meteo，免费无需 key） ============

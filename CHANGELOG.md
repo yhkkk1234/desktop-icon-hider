@@ -64,6 +64,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
     (5s cache) with a real-time port probe and a short 15s confirmation
     window, so the closed state is reflected within ~20s instead of relying
     on a slow 60s+ settle
+  - Clicking a session now re-verifies the runtime in real time (uncached
+    process + port probe, ~300ms) before jumping: even within the 15s
+    confirmation window, clicking after opencode closed is rejected — no
+    terminal launch, no read-marking, the row stays put
 
 ## [1.8.4] - 2026-08-06
 

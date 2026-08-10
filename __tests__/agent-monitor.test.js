@@ -138,7 +138,7 @@ describe('getOpencodeDbPath', () => {
   });
 });
 describe('detectOpencodeRunning', () => {
-  const { detectOpencodeRunning, hasProcessAsync, resetRuntimeSignal, RUNTIME_CONFIRM_MS } = require('../src/main/agent-monitor');
+  const { detectOpencodeRunning, detectOpencodeRunningNow, hasProcessAsync, resetRuntimeSignal, RUNTIME_CONFIRM_MS } = require('../src/main/agent-monitor');
 
   beforeEach(() => resetRuntimeSignal());
 
@@ -190,6 +190,27 @@ describe('detectOpencodeRunning', () => {
 
   it('确认期常量为 15s', () => {
     expect(RUNTIME_CONFIRM_MS).toBe(15000);
+  });
+
+  it('detectOpencodeRunningNow 无缓存实时判定：无进程+端口不通 → false（不受确认期影响）', async () => {
+    // 先让周期检测记录信号（确认期内）
+    expect(await detectOpencodeRunning(tasklistSpawn(['OpenCode.exe']), async () => false)).toBe(true);
+    // 实时判定不受确认期影响：进程消失 + 端口不通 → 立即 false
+    expect(await detectOpencodeRunningNow(tasklistSpawn([]), async () => false)).toBe(false);
+  });
+
+  it('detectOpencodeRunningNow 绕过进程缓存：desktop 刚关闭 5s 缓存内也能判定 false', async () => {
+    // 第一次：进程存在 → 缓存 true
+    expect(await hasProcessAsync('OpenCode.exe', tasklistSpawn(['OpenCode.exe']))).toBe(true);
+    // 进程消失后：缓存命中仍 true（周期检测会这样）
+    expect(await hasProcessAsync('OpenCode.exe', tasklistSpawn([]))).toBe(true);
+    // 但实时判定（noCache）能立即发现 false
+    expect(await detectOpencodeRunningNow(tasklistSpawn([]), async () => false)).toBe(false);
+  });
+
+  it('detectOpencodeRunningNow 进程或端口任一存在 → true', async () => {
+    expect(await detectOpencodeRunningNow(tasklistSpawn(['OpenCode.exe']), async () => false)).toBe(true);
+    expect(await detectOpencodeRunningNow(tasklistSpawn([]), async () => true)).toBe(true);
   });
 
   it('hasProcessAsync 结果缓存 10s', async () => {
