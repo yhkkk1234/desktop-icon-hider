@@ -10,8 +10,6 @@ const {
   isValidSessionId,
   parseLastPartType,
   parseSSEChunk,
-  resetClientDetectCache,
-  resetTerminalShellCache,
   DEFAULT_ACTIVE_WINDOW_MS
 } = require('../src/main/agent-monitor');
 
@@ -138,57 +136,6 @@ describe('getOpencodeDbPath', () => {
   });
 });
 
-describe('hasVisibleOpencodeWindow', () => {
-  const { hasVisibleOpencodeWindow } = require('../src/main/agent-monitor');
-
-  it('有可见主窗口（标题为 OpenCode）→ true', () => {
-    const out = '"OpenCode.exe","6364","Console","1","166,728 K","Running","DESKTOP-X\\u","0:00:08","OpenCode"\n';
-    expect(hasVisibleOpencodeWindow(out)).toBe(true);
-  });
-
-  it('后台残留进程（真实 GBK 编码的"暂缺"解码后）→ false', () => {
-    // "暂缺" 的 GBK 字节 D4 DD C8 B1（中文 Windows tasklist /V 的 N/A），模拟真实解码链路
-    const gbk = (hex) => new TextDecoder('gbk').decode(Buffer.from(hex, 'hex'));
-    const out = `"OpenCode.exe","46388","Console","1","40,760 K","Running","DESKTOP-X\\u","0:00:00","${gbk('d4ddc8b1')}"\n`;
-    expect(hasVisibleOpencodeWindow(out)).toBe(false);
-  });
-
-  it('英文 N/A → false', () => {
-    const out = '"OpenCode.exe","46388","Console","1","40,760 K","Running","DESKTOP-X\\u","0:00:00","N/A"\n';
-    expect(hasVisibleOpencodeWindow(out)).toBe(false);
-  });
-
-  it('Electron 线程窗口（OleMainThreadWndName）→ false', () => {
-    const out = '"OpenCode.exe","26476","Console","1","62,064 K","Running","DESKTOP-X\\u","0:00:01","OleMainThreadWndName"\n';
-    expect(hasVisibleOpencodeWindow(out)).toBe(false);
-  });
-
-  it('多进程混合：仅 OLE 线程窗口 + 暂缺 → false', () => {
-    const out = [
-      '"OpenCode.exe","46388","Console","1","40,760 K","Running","DESKTOP-X\\u","0:00:00","暂缺"',
-      '"OpenCode.exe","26476","Console","1","62,064 K","Running","DESKTOP-X\\u","0:00:01","OleMainThreadWndName"'
-    ].join('\n');
-    expect(hasVisibleOpencodeWindow(out)).toBe(false);
-  });
-
-  it('混合：后台残留 + 一个可见窗口 → true', () => {
-    const out = [
-      '"OpenCode.exe","46388","Console","1","40,760 K","Running","DESKTOP-X\\u","0:00:00","暂缺"',
-      '"OpenCode.exe","6364","Console","1","166,728 K","Running","DESKTOP-X\\u","0:00:08","OpenCode"'
-    ].join('\n');
-    expect(hasVisibleOpencodeWindow(out)).toBe(true);
-  });
-
-  it('无 OpenCode.exe 行（仅 TUI）→ false', () => {
-    const out = '"opencode.exe","45144","Console","1","1,033,316 K","Unknown","DESKTOP-X\\u","0:16:12","暂缺"\n';
-    expect(hasVisibleOpencodeWindow(out)).toBe(false);
-  });
-
-  it('空输出 → false', () => {
-    expect(hasVisibleOpencodeWindow('')).toBe(false);
-  });
-});
-
 describe('detectOpencodeRunning', () => {
   const { detectOpencodeRunning, detectOpencodeRunningNow, hasProcessAsync, resetRuntimeSignal, RUNTIME_CONFIRM_MS } = require('../src/main/agent-monitor');
 
@@ -280,83 +227,14 @@ describe('detectOpencodeRunning', () => {
   });
 });
 
-describe('findTerminalShellAsync', () => {
-  const { findTerminalShellAsync } = require('../src/main/agent-monitor');
-
-  beforeEach(() => resetTerminalShellCache());
-
-  function whereSpawn(available) {
-    return (...args) => {
-      const target = args[1] && args[1][0];
-      return {
-        on: (ev, cb) => {
-          if (ev === 'close') setTimeout(() => cb(available.includes(target) ? 0 : 1), 0);
-        }
-      };
-    };
-  }
-
-  it('pwsh 存在时优先选择 pwsh', async () => {
-    expect(await findTerminalShellAsync(whereSpawn(['pwsh']))).toBe('pwsh');
-  });
-
-  it('无 pwsh 时回退 powershell', async () => {
-    expect(await findTerminalShellAsync(whereSpawn(['powershell']))).toBe('powershell');
-  });
-
-  it('都不可用时回退 cmd', async () => {
-    expect(await findTerminalShellAsync(whereSpawn([]))).toBe('cmd');
-  });
-
-  it('结果缓存 10s 内不重复探测', async () => {
-    let calls = 0;
-    const spawnFn = (...args) => {
-      calls++;
-      return {
-        on: (ev, cb) => {
-          if (ev === 'close') setTimeout(() => cb(0), 0);
-        }
-      };
-    };
-    expect(await findTerminalShellAsync(spawnFn)).toBe('pwsh');
-    expect(await findTerminalShellAsync(spawnFn)).toBe('pwsh');
-    expect(calls).toBe(1);
-  });
-});
-
 describe('createOpencodeAdapter', () => {
-  beforeEach(() => {
-    resetClientDetectCache();
-    resetTerminalShellCache();
-  });
-
-  // 模拟 spawn：tasklist 子进程（stdout 输出 + close）；where 子进程（按配置返回退出码）
-  // whereResult: 'pwsh'（pwsh 存在）| 'powershell'（仅 powershell）| ''（都不存在）
-  function makeSpawnFn(calls, { tasklistOutput = '', whereResult = 'pwsh' } = {}) {
+  // 通用 spawn mock：记录调用，触发 close，提供 unref
+  function makeSpawnFn(calls) {
     return (...args) => {
       calls.push(args);
-      const isTasklist = args[0] === 'tasklist';
-      const isWhere = args[0] === 'where';
       return {
-        stdout: {
-          on: (ev, cb) => {
-            if (ev === 'data' && isTasklist && tasklistOutput) {
-              setTimeout(() => cb(Buffer.from(tasklistOutput, 'utf8')), 0);
-            }
-          }
-        },
-        on: (ev, cb) => {
-          if (ev === 'close') {
-            setTimeout(() => {
-              if (isWhere) {
-                const target = args[1] && args[1][0];
-                cb(target === whereResult ? 0 : 1);
-              } else {
-                cb(0);
-              }
-            }, 0);
-          }
-        },
+        stdout: { on: () => {} },
+        on: (ev, cb) => { if (ev === 'close') setTimeout(() => cb(0), 0); },
         unref: () => {}
       };
     };
@@ -373,98 +251,31 @@ describe('createOpencodeAdapter', () => {
     expect(result.ok).toBe(false);
   });
 
-  it('openSession 检测到桌面客户端（可见主窗口）→ 深链打开对应项目窗口', async () => {
+  it('openSession 统一用 cmd /c start 打开新终端窗口继续会话', async () => {
     const spawnCalls = [];
-    // tasklist /V CSV 格式：最后列是窗口标题（OpenCode 主窗口可见）
-    const tasklistOutput = '"OpenCode.exe","12345","Console","1","200,000 K","Running","USER","0:00:01","OpenCode"\n';
-    const spawnFn = makeSpawnFn(spawnCalls, { tasklistOutput });
-    const shellUrls = [];
-    const adapter = createOpencodeAdapter({
-      Database: null,
-      spawnFn,
-      shellFn: (url) => shellUrls.push(url)
-    });
-    const result = await adapter.openSession({ id: 'ses_abc123', directory: 'F:/我的项目' });
-    expect(result.ok).toBe(true);
-    expect(result.target).toBe('desktop');
-    expect(shellUrls).toHaveLength(1);
-    // Windows 平台深链路径应为反斜杠（与 desktop 内部存储一致，避免重复开项目窗口）
-    const expectedDir = process.platform === 'win32' ? 'F:\\我的项目' : 'F:/我的项目';
-    expect(shellUrls[0]).toBe('opencode://open-project?directory=' + encodeURIComponent(expectedDir));
-    // 仅 tasklist 探测一次，未 spawn 终端
-    expect(spawnCalls.filter(c => c[0] !== 'tasklist')).toHaveLength(0);
-  });
-
-  it('openSession 桌面端仅后台残留（无可见窗口）→ 走终端而非深链', async () => {
-    const spawnCalls = [];
-    // OpenCode.exe 进程存在但窗口标题为 N/A（关闭窗口后 Electron 后台常驻；中文系统为"暂缺"）
-    const tasklistOutput = '"OpenCode.exe","12345","Console","1","200,000 K","Running","USER","0:00:01","N/A"\n';
-    const spawnFn = makeSpawnFn(spawnCalls, { tasklistOutput, whereResult: 'pwsh' });
-    const shellUrls = [];
-    const adapter = createOpencodeAdapter({
-      Database: null,
-      spawnFn,
-      shellFn: (url) => shellUrls.push(url)
-    });
+    const spawnFn = makeSpawnFn(spawnCalls);
+    const adapter = createOpencodeAdapter({ Database: null, spawnFn });
     const result = await adapter.openSession({ id: 'ses_abc123', directory: 'F:/我的项目' });
     expect(result.ok).toBe(true);
     expect(result.target).toBe('terminal');
-    expect(result.shell).toBe('pwsh');
-    expect(shellUrls).toHaveLength(0);
-    const terminalCalls = spawnCalls.filter(c => c[0] === 'pwsh');
-    expect(terminalCalls).toHaveLength(1);
-    expect(terminalCalls[0][1]).toEqual(['-NoExit', '-Command', 'opencode -s ses_abc123']);
-  });
-
-  it('openSession 桌面端仅 OLE 线程窗口（Electron 后台）→ 走终端', async () => {
-    const spawnCalls = [];
-    const tasklistOutput = '"OpenCode.exe","12345","Console","1","200,000 K","Running","USER","0:00:01","OleMainThreadWndName"\n';
-    const spawnFn = makeSpawnFn(spawnCalls, { tasklistOutput, whereResult: 'pwsh' });
-    const adapter = createOpencodeAdapter({
-      Database: null,
-      spawnFn,
-      shellFn: () => { throw new Error('不应调用深链'); }
-    });
-    const result = await adapter.openSession({ id: 'ses_abc123', directory: 'F:/我的项目' });
-    expect(result.ok).toBe(true);
-    expect(result.target).toBe('terminal');
-  });
-
-  it('无桌面客户端时优先用 pwsh 打开终端会话', async () => {
-    const spawnCalls = [];
-    const spawnFn = makeSpawnFn(spawnCalls, { whereResult: 'pwsh' }); // tasklist 无输出 → terminal；where pwsh 命中
-    const adapter = createOpencodeAdapter({ Database: null, spawnFn, shellFn: () => {} });
-    const result = await adapter.openSession({ id: 'ses_abc123', directory: 'F:/我的项目' });
-    expect(result.ok).toBe(true);
-    expect(result.target).toBe('terminal');
-    expect(result.shell).toBe('pwsh');
-    const terminalCalls = spawnCalls.filter(c => c[0] === 'pwsh');
-    expect(terminalCalls).toHaveLength(1);
-    const [cmd, args, opts] = terminalCalls[0];
-    expect(cmd).toBe('pwsh');
-    expect(args).toEqual(['-NoExit', '-Command', 'opencode -s ses_abc123']);
+    expect(spawnCalls).toHaveLength(1);
+    const [cmd, args, opts] = spawnCalls[0];
+    expect(cmd).toBe('cmd.exe');
+    // start 创建新控制台窗口（CREATE_NEW_CONSOLE），外层 cmd 隐藏自身窗口
+    expect(args).toEqual(['/c', 'start', '""', 'cmd', '/k', 'opencode -s ses_abc123']);
     expect(opts.cwd).toBe('F:/我的项目');
-  });
-
-  it('无 pwsh/powershell 时回退 cmd', async () => {
-    const spawnCalls = [];
-    const spawnFn = makeSpawnFn(spawnCalls, { whereResult: '' }); // where 全部失败
-    const adapter = createOpencodeAdapter({ Database: null, spawnFn, shellFn: () => {} });
-    const result = await adapter.openSession({ id: 'ses_abc123', directory: 'F:/proj' });
-    expect(result.ok).toBe(true);
-    expect(result.shell).toBe('cmd');
-    const terminalCalls = spawnCalls.filter(c => c[0] === 'cmd.exe');
-    expect(terminalCalls).toHaveLength(1);
-    expect(terminalCalls[0][1]).toEqual(['/k', 'opencode -s ses_abc123']);
+    expect(opts.windowsHide).toBe(true);
+    expect(opts.stdio).toBe('ignore');
+    // 关键回归：不能 detached（Windows 上 DETACHED_PROCESS 导致无控制台窗口，点击无感知）
+    expect(opts.detached).toBeUndefined();
   });
 
   it('openSession 目录缺失时回退到用户主目录', async () => {
     const spawnCalls = [];
-    const spawnFn = makeSpawnFn(spawnCalls, { whereResult: '' });
-    const adapter = createOpencodeAdapter({ Database: null, spawnFn, shellFn: () => {} });
+    const spawnFn = makeSpawnFn(spawnCalls);
+    const adapter = createOpencodeAdapter({ Database: null, spawnFn });
     await adapter.openSession({ id: 'ses_abc123', directory: '' });
-    const terminalCalls = spawnCalls.filter(c => c[0] === 'cmd.exe');
-    expect(terminalCalls[0][2].cwd).toBe(require('os').homedir());
+    expect(spawnCalls[0][2].cwd).toBe(require('os').homedir());
   });
 
   it('listSessions 查询异常时降级为空列表并恢复可用', () => {

@@ -4702,6 +4702,12 @@ async function handleAgentItemClick(item, harness, sessionId) {
     const rt = await window.api.checkAgentRuntime();
     if (!rt || rt.running === false) return; // 实时验证：已关闭
   } catch (e) { /* 检测失败保守放行 */ }
+  // 运行中会话已在某个端运行，跳转会造成双实例驱动同一会话冲突（opencode 限制），仅提示
+  const session = agentSessions.find(s => s.id === sessionId && s.harness === harness);
+  if (session && session.status === 'active') {
+    showToast(t('widget.agentRunningHint'));
+    return;
+  }
   try {
     const result = await window.api.openAgentSession(harness, sessionId);
     if (result && result.ok) {

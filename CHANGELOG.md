@@ -15,12 +15,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
     of rounded session rows (project name + conversation title + status)
   - Running sessions show a spinning indicator; finished ones show a green
     checkmark; interrupted ones (Ctrl+C / closed terminal) show a warning mark
-  - Clicking a session opens it following the client in use: if the OpenCode
-    Desktop app is running it receives an `opencode://open-project` deep link
-    (switches to the session's project window); otherwise a new terminal window
-    runs `opencode -s <id>` (PowerShell 7 preferred, falls back to Windows
-    PowerShell, then cmd). Clicking any session (including running ones) marks
-    it as read and hides it from the list
+  - Clicking a session opens it in a new terminal window running
+    `opencode -s <id>` via `cmd /c start` (forces a new console window;
+    the deep-link to the Desktop app was dropped — it has no per-session
+    deep link and cross-client detection proved fragile). Running sessions
+    are not clickable (they are already running in some client) and show a
+    hint instead; clicking finished/interrupted sessions marks them read
+    and hides them from the list
   - Status is derived by polling the opencode SQLite database (last activity
     timestamp + last message part type, e.g. `step-finish`)
   - Read sessions are persisted locally and the active window threshold

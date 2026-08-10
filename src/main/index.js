@@ -2266,8 +2266,6 @@ app.whenReady().then(async () => {
     });
     agentMonitor = new AgentMonitor({
       adapters: [createOpencodeAdapter({
-        // opencode:// 深链走系统默认处理（OpenCode Desktop 已注册该协议）
-        shellFn: (url) => shell.openExternal(url),
         // server 权威状态校准：探测 `opencode serve`(默认 4096)，
         // 用 busy/idle/retry 覆盖 DB 推断；探测失败自动回落纯 DB 模式（desktop/TUI 场景即此模式）
         statusProvider: agentStatusProvider

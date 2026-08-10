@@ -7,7 +7,7 @@
 const path = require('path');
 const os = require('os');
 const net = require('net');
-const { spawn, execFileSync } = require('child_process');
+const { spawn } = require('child_process');
 
 const SESSION_ID_RE = /^[A-Za-z0-9_-]+$/;
 // 查询范围：必须显著大于用户实际会话量，否则跑完（不再活跃）的会话会被新会话
@@ -136,56 +136,6 @@ function normalizeOpencodeRow(row) {
 
 // ============ opencode 适配器 ============
 
-/**
- * 从 tasklist /V 输出判定 OpenCode Desktop 是否有可见主窗口。
- * 桌面版关闭窗口后进程仍后台常驻（Electron 托盘），仅凭进程存在会误判；
- * 窗口标题列是可靠信号（GBK 正确解码后）：无窗口 = '暂缺'/'N/A'，
- * Electron 后台线程窗口 = 'OleMainThreadWndName'，真实主窗口 = 其他标题（如 'OpenCode'）。
- * @param {string} output tasklist /V /FO CSV 输出（已按 GBK 解码）
- * @returns {boolean}
- */
-function hasVisibleOpencodeWindow(output) {
-  if (!output) return false;
-  for (const line of output.split(/\r?\n/)) {
-    if (!/^"OpenCode\.exe"/i.test(line)) continue;
-    const m = line.match(/^"[^"]*","\d*","[^"]*","[^"]*","[^"]*","[^"]*","[^"]*","[^"]*","(.*)"$/);
-    if (!m) continue;
-    const title = m[1].trim();
-    // \uFFFD = 解码失败的替换符（真实 GBK 输出不会产生；测试注入的 UTF-8 字节误解码时出现）→ 视为无窗口
-    if (!title || title.includes('\uFFFD') || title === '暂缺' || title === 'N/A' || title === 'OleMainThreadWndName') continue;
-    return true;
-  }
-  return false;
-}
-
-/**
- * 检测正在使用的 opencode 客户端类型。
- * OpenCode Desktop 有可见主窗口 → 'desktop'，否则 'terminal'。
- * 桌面版支持 opencode:// 深链（open-project/new-session），可直接跳到对应项目窗口。
- * @param {Function} execSyncFn 命令执行函数（测试注入）
- * @returns {'desktop'|'terminal'}
- */
-function detectOpencodeClient(execSyncFn = execFileSync) {
-  try {
-    const out = execSyncFn('tasklist', ['/FI', 'IMAGENAME eq OpenCode.exe', '/V', '/FO', 'CSV', '/NH'], {
-      timeout: 5000,
-      encoding: 'buffer'
-    });
-    if (hasVisibleOpencodeWindow(new TextDecoder('gbk').decode(out))) return 'desktop';
-  } catch (e) { /* 未找到进程，走终端 */ }
-  return 'terminal';
-}
-
-// 客户端检测结果缓存（tasklist 启动 ~230ms，点击跳转时同步执行会阻塞主进程）
-let clientDetectCache = null;
-
-/**
- * 清空客户端检测缓存（测试用）
- */
-function resetClientDetectCache() {
-  clientDetectCache = null;
-}
-
 // 进程存在性检测缓存（每进程名独立）
 const processDetectCaches = new Map(); // name -> { at, found }
 
@@ -298,101 +248,6 @@ async function detectOpencodeRunning(spawnFn = spawn, connectFn = defaultConnect
 function resetRuntimeSignal() {
   lastRuntimeSignalAt = 0;
   processDetectCaches.clear();
-}
-
-/**
- * 异步检测客户端类型（不阻塞主进程），结果缓存 5s。
- * 判定依据：OpenCode Desktop 是否有可见主窗口（tasklist /V 的窗口标题列，
- * 排除后台残留进程的 '暂缺'/'N/A' 与 Electron 线程窗口 'OleMainThreadWndName'）。
- * @param {Function} spawnFn 进程启动函数（测试注入）
- * @returns {Promise<'desktop'|'terminal'>}
- */
-function detectOpencodeClientAsync(spawnFn = spawn) {
-  const now = Date.now();
-  if (clientDetectCache && now - clientDetectCache.at < 5 * 1000) {
-    return Promise.resolve(clientDetectCache.result);
-  }
-  return new Promise((resolve) => {
-    let child;
-    try {
-      child = spawnFn('tasklist', ['/FI', 'IMAGENAME eq OpenCode.exe', '/V', '/FO', 'CSV', '/NH'], { windowsHide: true });
-    } catch (e) {
-      clientDetectCache = { at: Date.now(), result: 'terminal' };
-      resolve('terminal');
-      return;
-    }
-    const chunks = [];
-    child.stdout.on('data', (d) => { chunks.push(Buffer.isBuffer(d) ? d : Buffer.from(d)); });
-    child.on('error', () => {
-      clientDetectCache = { at: Date.now(), result: 'terminal' };
-      resolve('terminal');
-    });
-    child.on('close', () => {
-      const out = new TextDecoder('gbk').decode(Buffer.concat(chunks));
-      const result = hasVisibleOpencodeWindow(out) ? 'desktop' : 'terminal';
-      clientDetectCache = { at: Date.now(), result };
-      resolve(result);
-    });
-  });
-}
-
-/**
- * 按优先级查找可用终端：PowerShell 7（pwsh）→ Windows PowerShell → cmd（兜底）。
- * 仅在用户没有桌面客户端时使用。
- * @param {Function} execSyncFn 命令执行函数（测试注入）
- * @returns {string} 'pwsh' | 'powershell' | 'cmd'
- */
-function findTerminalShell(execSyncFn = execFileSync) {
-  for (const name of ['pwsh', 'powershell']) {
-    try {
-      execSyncFn('where', [name], { stdio: 'ignore', timeout: 5000 });
-      return name;
-    } catch (e) { /* 未安装，尝试下一个 */ }
-  }
-  return 'cmd';
-}
-
-// 终端检测结果缓存（where 启动也有开销，与客户端检测缓存同理）
-let terminalShellCache = null;
-
-/**
- * 异步查找终端（不阻塞主进程），结果缓存 10s。
- * @param {Function} spawnFn 进程启动函数（测试注入）
- * @returns {Promise<string>} 'pwsh' | 'powershell' | 'cmd'
- */
-function findTerminalShellAsync(spawnFn = spawn) {
-  const now = Date.now();
-  if (terminalShellCache && now - terminalShellCache.at < 10 * 1000) {
-    return Promise.resolve(terminalShellCache.result);
-  }
-  const probe = (name) => new Promise((resolve) => {
-    let child;
-    try {
-      child = spawnFn('where', [name], { windowsHide: true });
-    } catch (e) {
-      resolve(false);
-      return;
-    }
-    child.on('error', () => resolve(false));
-    child.on('close', (code) => resolve(code === 0));
-  });
-  return (async () => {
-    for (const name of ['pwsh', 'powershell']) {
-      if (await probe(name)) {
-        terminalShellCache = { at: Date.now(), result: name };
-        return name;
-      }
-    }
-    terminalShellCache = { at: Date.now(), result: 'cmd' };
-    return 'cmd';
-  })();
-}
-
-/**
- * 清空终端检测缓存（测试用）
- */
-function resetTerminalShellCache() {
-  terminalShellCache = null;
 }
 
 /**
@@ -595,8 +450,7 @@ function createOpencodeServerStatusProvider(options = {}) {
 
 /**
  * 创建 opencode harness 适配器（依赖注入便于测试）
- * @param {{ dbPath?: string, Database?: Function, spawnFn?: Function, shellFn?: Function, statusProvider?: Object }} options
- *   shellFn：electron shell.openExternal（打开 opencode:// 深链），由主进程注入
+ * @param {{ dbPath?: string, Database?: Function, spawnFn?: Function, statusProvider?: Object }} options
  *   statusProvider：createOpencodeServerStatusProvider 产物，用于 server 权威状态校准
  * @returns {{ id: string, displayName: string, listSessions: Function, openSession: Function, getServerStatuses: Function }}
  */
@@ -604,7 +458,6 @@ function createOpencodeAdapter(options = {}) {
   const dbPath = options.dbPath || getOpencodeDbPath();
   const DB = options.Database || getDatabaseModule();
   const spawnFn = options.spawnFn || spawn;
-  const shellFn = options.shellFn || null;
   let statusProvider = options.statusProvider || null;
   let db = null;
   let lastError = null;
@@ -731,47 +584,26 @@ function createOpencodeAdapter(options = {}) {
     },
 
     /**
-     * 跳转到指定会话。
-     * 策略（已拍板）：桌面端优先——检测到 OpenCode Desktop 进程即走 opencode://open-project
-     * 深链（打开对应项目窗口，桌面端会话列表可见）；双端并存时同样以桌面端为准（桌面端不可达
-     * 再进终端）。desktop 深链不支持直达指定会话，这是官方能力上限。
-     * 否则 → 新终端窗口（pwsh 优先，无则 powershell/cmd）运行 `opencode -s <id>`。
-     * 客户端检测为异步（spawn tasklist），不阻塞主进程
+     * 跳转到指定会话：统一在新控制台窗口运行 `opencode -s <id>`。
+     * 不做跨端检测/深链——desktop 无会话直达深链、各端互通是 opencode 生态限制，
+     * 统一新实例最可靠（权衡：每次点击开新实例，无聚焦已有端能力）。
      * @returns {Promise<{ ok: boolean, target?: string, error?: string }>}
      */
     async openSession(session) {
       if (!session || !isValidSessionId(session.id)) return { ok: false, error: '无效的会话 id' };
       const cwd = typeof session.directory === 'string' && session.directory ? session.directory : os.homedir();
-
-      // 桌面客户端优先：深链打开对应项目窗口。
-      // Windows 路径必须用反斜杠（与 desktop 内部存储一致，见官方 deep-links 文档）；
-      // 用 DB 里的正斜杠会被当成不同项目 → 重复打开窗口而不是聚焦已有窗口
-      if (shellFn && (await detectOpencodeClientAsync(spawnFn)) === 'desktop') {
-        try {
-          const linkPath = process.platform === 'win32' ? cwd.replace(/\//g, '\\') : cwd;
-          const url = 'opencode://open-project?directory=' + encodeURIComponent(linkPath);
-          shellFn(url);
-          return { ok: true, target: 'desktop' };
-        } catch (e) {
-          // 深链失败则降级终端
-        }
-      }
-
-      // 终端方案：pwsh / powershell / cmd，新控制台窗口（Electron 主进程无控制台，
-      // spawn 控制台程序会自动分配新窗口），-NoExit 保持窗口不退
       try {
-        const shell = await findTerminalShellAsync(spawnFn);
-        const cmd = `opencode -s ${session.id}`;
-        if (shell === 'cmd') {
-          const child = spawnFn('cmd.exe', ['/k', cmd], { cwd, windowsHide: false, detached: true });
-          child.on('error', () => { /* 打开终端失败静默 */ });
-          child.unref();
-        } else {
-          const child = spawnFn(shell, ['-NoExit', '-Command', cmd], { cwd, windowsHide: false, detached: true });
-          child.on('error', () => { /* 打开终端失败静默 */ });
-          child.unref();
-        }
-        return { ok: true, target: 'terminal', shell };
+        // cmd /c start：start 创建新控制台窗口（CREATE_NEW_CONSOLE），外层 cmd 隐藏自身窗口。
+        // 不直接 spawn 终端进程：Electron 从终端启动时继承控制台 → 子进程共享控制台不弹窗；
+        // detached:true 则 DETACHED_PROCESS 无控制台。start 绕开这两坑，且不依赖 pwsh（避开 pwsh7 兼容坑）
+        const child = spawnFn('cmd.exe', ['/c', 'start', '""', 'cmd', '/k', `opencode -s ${session.id}`], {
+          cwd,
+          windowsHide: true,
+          stdio: 'ignore'
+        });
+        child.on('error', () => { /* 打开终端失败静默 */ });
+        child.unref();
+        return { ok: true, target: 'terminal' };
       } catch (e) {
         return { ok: false, error: e.message };
       }
@@ -914,14 +746,9 @@ module.exports = {
   classifySession,
   createOpencodeAdapter,
   createOpencodeServerStatusProvider,
-  detectOpencodeClient,
-  detectOpencodeClientAsync,
   detectOpencodeRunning,
   detectOpencodeRunningNow,
   filterVisibleSessions,
-  findTerminalShell,
-  hasVisibleOpencodeWindow,
-  findTerminalShellAsync,
   getOpencodeDbPath,
   hasProcessAsync,
   isValidSessionId,
@@ -929,9 +756,7 @@ module.exports = {
   parseLastPartType,
   parseSSEChunk,
   probeAnyPort,
-  resetClientDetectCache,
   resetRuntimeSignal,
-  resetTerminalShellCache,
   DEFAULT_ACTIVE_WINDOW_MS,
   DEFAULT_POLL_INTERVAL_MS,
   DEFAULT_SERVER_PORTS,
