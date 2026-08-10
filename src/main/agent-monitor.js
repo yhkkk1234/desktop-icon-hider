@@ -158,6 +158,84 @@ function resetClientDetectCache() {
   clientDetectCache = null;
 }
 
+// 进程存在性检测缓存（每进程名独立）
+const processDetectCaches = new Map(); // name -> { at, found }
+
+/**
+ * 异步检测指定进程是否存在（spawn tasklist，不阻塞主进程），结果缓存 10s。
+ * @param {string} name 进程映像名（如 'OpenCode.exe' / 'opencode.exe'）
+ * @param {Function} spawnFn 进程启动函数（测试注入）
+ * @returns {Promise<boolean>}
+ */
+function hasProcessAsync(name, spawnFn = spawn) {
+  const now = Date.now();
+  const cached = processDetectCaches.get(name);
+  if (cached && now - cached.at < 10 * 1000) {
+    return Promise.resolve(cached.found);
+  }
+  return new Promise((resolve) => {
+    let child;
+    try {
+      child = spawnFn('tasklist', ['/FI', `IMAGENAME eq ${name}`, '/NH'], { windowsHide: true });
+    } catch (e) {
+      processDetectCaches.set(name, { at: Date.now(), found: false });
+      resolve(false);
+      return;
+    }
+    let out = '';
+    child.stdout.on('data', (d) => { out += d.toString('utf8'); });
+    child.on('error', () => {
+      processDetectCaches.set(name, { at: Date.now(), found: false });
+      resolve(false);
+    });
+    child.on('close', () => {
+      const found = new RegExp(name.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'), 'i').test(out);
+      processDetectCaches.set(name, { at: Date.now(), found });
+      resolve(found);
+    });
+  });
+}
+
+// opencode 运行状态判定（保守策略：宁可多等也不误锁）
+const RUNTIME_CONFIRM_MS = 60 * 1000; // 信号消失后的确认期：60s 内仍视为运行中
+let lastRuntimeSignalAt = 0;
+
+/**
+ * 判定 opencode 是否在运行（供"关闭时锁定列表"用）。
+ * 信号源（任一命中即视为运行）：
+ * 1. OpenCode.exe 进程（Desktop 版）
+ * 2. opencode.exe 进程（CLI / TUI / serve）
+ * 3. server 可达（SSE 订阅中，兜底 TUI 场景）
+ * 4. 确认期：信号刚消失 60s 内仍视为运行——server 探测抖动/进程检测偶发失败
+ *    不会导致误判"关闭"而锁死列表
+ * @param {Function} spawnFn 进程启动函数（测试注入）
+ * @param {?Object} statusProvider server 状态提供器（可选，需有 isReachable）
+ * @returns {Promise<boolean>}
+ */
+async function detectOpencodeRunning(spawnFn = spawn, statusProvider = null) {
+  const [desktop, cli] = await Promise.all([
+    hasProcessAsync('OpenCode.exe', spawnFn),
+    hasProcessAsync('opencode.exe', spawnFn)
+  ]);
+  if (desktop || cli) {
+    lastRuntimeSignalAt = Date.now();
+    return true;
+  }
+  if (statusProvider && typeof statusProvider.isReachable === 'function' && statusProvider.isReachable()) {
+    lastRuntimeSignalAt = Date.now();
+    return true;
+  }
+  return Date.now() - lastRuntimeSignalAt < RUNTIME_CONFIRM_MS;
+}
+
+/**
+ * 清空运行状态（测试用）
+ */
+function resetRuntimeSignal() {
+  lastRuntimeSignalAt = 0;
+  processDetectCaches.clear();
+}
+
 /**
  * 异步检测客户端类型（不阻塞主进程），结果缓存 10s。
  * @param {Function} spawnFn 进程启动函数（测试注入）
@@ -423,6 +501,10 @@ function createOpencodeServerStatusProvider(options = {}) {
 
   return {
     getStatuses,
+    /** 最近一次探测（缓存有效期内）是否有可达 server */
+    isReachable() {
+      return !!(probeCache && probeCache.baseUrls.length > 0);
+    },
     /** 停止订阅与重连（应用退出/测试清理用） */
     dispose() {
       disposed = true;
@@ -755,18 +837,22 @@ module.exports = {
   createOpencodeServerStatusProvider,
   detectOpencodeClient,
   detectOpencodeClientAsync,
+  detectOpencodeRunning,
   filterVisibleSessions,
   findTerminalShell,
   findTerminalShellAsync,
   getOpencodeDbPath,
+  hasProcessAsync,
   isValidSessionId,
   normalizeOpencodeRow,
   parseLastPartType,
   parseSSEChunk,
   resetClientDetectCache,
+  resetRuntimeSignal,
   resetTerminalShellCache,
   DEFAULT_ACTIVE_WINDOW_MS,
   DEFAULT_POLL_INTERVAL_MS,
   DEFAULT_SERVER_PORTS,
+  RUNTIME_CONFIRM_MS,
   STEP_FINISH_CONFIRM_MS
 };

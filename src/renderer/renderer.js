@@ -68,6 +68,7 @@ let agentSessions = []; // agent 组件：主进程推送的会话快照
 let agentReadSessions = new Set(); // agent 组件：已读（已跳转查看）的会话 id
 let agentPrevStatus = new Map(); // agent 组件：上一轮状态，用于检测 active→完成 转换
 let agentDoneRetentionDays = 7; // agent 组件：已完成会话保留天数（0 = 不限制）
+let agentRuntimeRunning = true; // agent 组件：opencode 是否在运行（关闭时锁定条目点击）
 let weatherFxEnabled = true; // 天气组件动态背景开关
 let weatherCity = null; // 天气城市配置 { name, lat, lon }
 
@@ -381,6 +382,12 @@ document.addEventListener('DOMContentLoaded', () => {
   // agent 组件：主进程轮询推送会话状态变化
   window.api.onAgentStatusChanged((sessions) => {
     agentSessions = Array.isArray(sessions) ? sessions : [];
+    updateAgentWidgets();
+  });
+
+  // agent 组件：opencode 运行状态变化（关闭时锁定条目点击 + 显示提示）
+  window.api.onAgentRuntimeChanged((data) => {
+    agentRuntimeRunning = !data || data.running !== false;
     updateAgentWidgets();
   });
 
@@ -4209,6 +4216,7 @@ function createWidgetElement(widget) {
     });
   } else if (widget.type === 'agent') {
     node.innerHTML = `
+      <div class="wa-offline-banner" style="display:none">${t('widget.agentOffline')}</div>
       <div class="wa-body"></div>
       <button class="widget-close" title="${t('widget.delete')}">×</button>
       <div class="widget-resize-handle" title="${t('widget.resize')}"></div>
@@ -4662,9 +4670,9 @@ function agentStatusLabel(status) {
 }
 
 /** 点击条目：跳转会话并标记已读（条目随即从列表消失）。
- * 运行中的会话标记已读后若仍在活跃，下一轮推送会重新显示——正在跑的对话本就该可见；
- * 已停止的会话则保持隐藏，直到它再次活跃（用户回该对话继续干活）。 */
+ * opencode 未运行时拒绝点击（不跳转、不标记已读）。 */
 async function handleAgentItemClick(item, harness, sessionId) {
+  if (!agentRuntimeRunning) return; // opencode 已关闭：锁定
   try {
     const result = await window.api.openAgentSession(harness, sessionId);
     if (result && result.ok) {
@@ -4728,6 +4736,10 @@ function renderAgentWidget(node) {
   const body = node.querySelector('.wa-body');
   if (!body) return;
   const visible = getVisibleAgentSessions();
+  // opencode 未运行且列表非空：显示提示条 + 灰化条目（点击已在 handleAgentItemClick 锁定）
+  const banner = node.querySelector('.wa-offline-banner');
+  if (banner) banner.style.display = (!agentRuntimeRunning && visible.length > 0) ? 'block' : 'none';
+  node.classList.toggle('wa-offline', !agentRuntimeRunning && visible.length > 0);
   if (visible.length === 0) {
     if (body.dataset.empty === '1') return;
     body.dataset.empty = '1';

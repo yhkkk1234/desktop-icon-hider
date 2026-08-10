@@ -53,6 +53,7 @@ contextBridge.exposeInMainWorld('api', {
   unmarkAgentRead: (sessionIds) => ipcRenderer.invoke('unmark-agent-read', sessionIds),
   setAgentRetentionDays: (days) => ipcRenderer.invoke('set-agent-retention-days', days),
   onAgentStatusChanged: (callback) => ipcRenderer.on('agent-status-changed', (event, sessions) => callback(sessions)),
+  onAgentRuntimeChanged: (callback) => ipcRenderer.on('agent-runtime-changed', (event, data) => callback(data)),
   
   // 天气组件
   searchCity: (name) => ipcRenderer.invoke('search-city', name),

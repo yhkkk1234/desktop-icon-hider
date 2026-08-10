@@ -15,7 +15,7 @@ const {
 } = require('./window-manager');
 const { createTray, updateTrayMenu, destroyTray, autoLauncher } = require('./tray');
 const { startSampler, stopSampler, getSystemStats } = require('./hardware-monitor');
-const { AgentMonitor, createOpencodeAdapter, createOpencodeServerStatusProvider, isValidSessionId } = require('./agent-monitor');
+const { AgentMonitor, createOpencodeAdapter, createOpencodeServerStatusProvider, detectOpencodeRunning, isValidSessionId } = require('./agent-monitor');
 
 const store = new Store({
   name: 'desktop-icon-hider',
@@ -90,6 +90,8 @@ let tray = null;
 let fsWatchers = [];
 let agentMonitor = null;
 let agentStatusProvider = null; // agent 组件 server 状态提供器（退出时释放 SSE 连接）
+let agentRuntimeTimer = null; // agent 运行状态检测定时器
+let agentRuntimeRunning = true; // opencode 是否在运行（变化时推送渲染端）
 
 // 获取桌面路径
 function getDesktopPath() {
@@ -2230,6 +2232,22 @@ app.whenReady().then(async () => {
       }
     });
     agentMonitor.start();
+
+    // opencode 运行状态检测：关闭时渲染端锁定条目点击并显示提示。
+    // 每 5s 检测一次（内部缓存 10s + 60s 确认期，信号抖动不会误判），变化才推送
+    const checkRuntime = async () => {
+      try {
+        const running = await detectOpencodeRunning(spawn, agentStatusProvider);
+        if (running !== agentRuntimeRunning) {
+          agentRuntimeRunning = running;
+          if (mainWindow && !mainWindow.isDestroyed() && mainWindow.webContents) {
+            mainWindow.webContents.send('agent-runtime-changed', { running });
+          }
+        }
+      } catch (e) { /* 检测失败保持上次状态 */ }
+    };
+    checkRuntime();
+    agentRuntimeTimer = setInterval(checkRuntime, 5000);
     
     // 监听系统主题变化
     nativeTheme.on('updated', () => {
@@ -2273,6 +2291,11 @@ app.on('before-quit', () => {
   if (agentMonitor) {
     agentMonitor.stop();
     agentMonitor = null;
+  }
+  // 停止运行状态检测
+  if (agentRuntimeTimer) {
+    clearInterval(agentRuntimeTimer);
+    agentRuntimeTimer = null;
   }
   // 释放 server SSE 订阅连接
   if (agentStatusProvider) {

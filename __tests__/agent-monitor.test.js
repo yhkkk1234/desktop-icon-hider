@@ -137,6 +137,77 @@ describe('getOpencodeDbPath', () => {
     expect(p.endsWith('opencode.db')).toBe(true);
   });
 });
+describe('detectOpencodeRunning', () => {
+  const { detectOpencodeRunning, hasProcessAsync, resetRuntimeSignal, RUNTIME_CONFIRM_MS } = require('../src/main/agent-monitor');
+
+  beforeEach(() => resetRuntimeSignal());
+
+  // 按进程名返回 tasklist 输出的 spawn mock（同步触发回调，兼容 fake timers）
+  function tasklistSpawn(processes = []) {
+    return (...args) => {
+      const filter = args[1] && args[1][1]; // ['/FI', 'IMAGENAME eq X', '/NH']
+      const name = filter ? filter.replace('IMAGENAME eq ', '') : '';
+      const found = processes.includes(name);
+      return {
+        stdout: {
+          on: (ev, cb) => {
+            if (ev === 'data') cb(Buffer.from(found ? name + '  123 Console  1  10,000 K' : 'INFO: No tasks', 'utf8'));
+          }
+        },
+        on: (ev, cb) => {
+          if (ev === 'close') cb(0);
+        }
+      };
+    };
+  }
+
+  it('Desktop 进程存在 → 运行中', async () => {
+    expect(await detectOpencodeRunning(tasklistSpawn(['OpenCode.exe']), null)).toBe(true);
+  });
+
+  it('CLI/TUI 进程（opencode.exe）存在 → 运行中', async () => {
+    expect(await detectOpencodeRunning(tasklistSpawn(['opencode.exe']), null)).toBe(true);
+  });
+
+  it('无进程但 server 可达 → 运行中', async () => {
+    const provider = { isReachable: () => true };
+    expect(await detectOpencodeRunning(tasklistSpawn([]), provider)).toBe(true);
+  });
+
+  it('无任何信号 + 确认期内 → 仍视为运行（防误锁）', async () => {
+    const spawn = tasklistSpawn(['OpenCode.exe']);
+    expect(await detectOpencodeRunning(spawn, null)).toBe(true); // 记录信号
+    // 模拟信号消失：换成无进程 spawn，确认期 60s 内
+    jest.useFakeTimers();
+    try {
+      jest.setSystemTime(Date.now() + 30 * 1000);
+      expect(await detectOpencodeRunning(tasklistSpawn([]), null)).toBe(true);
+      jest.setSystemTime(Date.now() + 40 * 1000); // 累计 70s > 60s
+      expect(await detectOpencodeRunning(tasklistSpawn([]), null)).toBe(false);
+    } finally {
+      jest.useRealTimers();
+    }
+  });
+
+  it('确认期常量为 60s', () => {
+    expect(RUNTIME_CONFIRM_MS).toBe(60000);
+  });
+
+  it('hasProcessAsync 结果缓存 10s', async () => {
+    let spawns = 0;
+    const spawnFn = (...args) => {
+      spawns++;
+      return {
+        stdout: { on: (ev, cb) => { if (ev === 'data') setTimeout(() => cb(Buffer.from('opencode.exe  123', 'utf8')), 0); } },
+        on: (ev, cb) => { if (ev === 'close') setTimeout(cb, 0); }
+      };
+    };
+    expect(await hasProcessAsync('opencode.exe', spawnFn)).toBe(true);
+    expect(await hasProcessAsync('opencode.exe', spawnFn)).toBe(true);
+    expect(spawns).toBe(1);
+  });
+});
+
 describe('findTerminalShellAsync', () => {
   const { findTerminalShellAsync } = require('../src/main/agent-monitor');
 
