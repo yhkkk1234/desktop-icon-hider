@@ -63,6 +63,9 @@ let calendarTimer = null;
 let weatherTimer = null;
 let monitorTimer = null; // 性能监控组件刷新定时器
 let monitorHistory = new Map(); // 组件历史数据: id -> { cpu: [], mem: [], gpu: [], vram: [] }
+let agentSessions = []; // agent 组件：主进程推送的会话快照
+let agentReadSessions = new Set(); // agent 组件：已读（已跳转查看）的会话 id
+let agentPrevStatus = new Map(); // agent 组件：上一轮状态，用于检测 active→完成 转换
 let weatherFxEnabled = true; // 天气组件动态背景开关
 let weatherCity = null; // 天气城市配置 { name, lat, lon }
 
@@ -371,6 +374,12 @@ document.addEventListener('DOMContentLoaded', () => {
   document.addEventListener('pointerup', handleWidgetDragEnd);
   window.addEventListener('blur', handleWidgetDragEnd);
 
+  // agent 组件：主进程轮询推送会话状态变化
+  window.api.onAgentStatusChanged((sessions) => {
+    agentSessions = Array.isArray(sessions) ? sessions : [];
+    updateAgentWidgets();
+  });
+
   // 图标列表内容变化时重新计算绕开布局
   const listObserver = new MutationObserver(() => scheduleIconLayout());
   listObserver.observe(filesList, { childList: true });
@@ -526,6 +535,8 @@ document.addEventListener('DOMContentLoaded', () => {
     widgetsAvoidIcons = !!data.widgetsAvoidIcons;
     weatherFxEnabled = data.weatherFxEnabled !== false;
     weatherCity = data.weatherCity || null;
+    agentReadSessions = new Set(Array.isArray(data.agentReadSessions) ? data.agentReadSessions : []);
+    loadAgentSessions();
 
     setLanguage(data.language || 'zh-CN');
 
@@ -4087,6 +4098,13 @@ function renderWidgets() {
   } else {
     monitorHistory.clear();
   }
+
+  // agent 组件：无定时器，由主进程轮询推送驱动；此处兜底拉取一次全量
+  if (widgets.some(w => w.type === 'agent')) {
+    loadAgentSessions();
+  } else {
+    agentSessions = [];
+  }
 }
 
 // 刷新所有天气组件
@@ -4163,6 +4181,12 @@ function createWidgetElement(widget) {
       e.stopPropagation();
       switchMonitorStyle(widget);
     });
+  } else if (widget.type === 'agent') {
+    node.innerHTML = `
+      <div class="wa-body"></div>
+      <button class="widget-close" title="${t('widget.delete')}">×</button>
+    `;
+    renderAgentWidget(node);
   }
 
   // 删除
@@ -4187,7 +4211,7 @@ function createWidgetElement(widget) {
   // 拖拽移动
   node.addEventListener('mousedown', (e) => {
     if (e.button !== 0) return;
-    if (e.target.closest('.widget-close') || e.target.closest('.widget-cal-nav') || e.target.closest('.wm-style-btn')) return;
+    if (e.target.closest('.widget-close') || e.target.closest('.widget-cal-nav') || e.target.closest('.wm-style-btn') || e.target.closest('.wa-item')) return;
     e.preventDefault();
     widgetDrag = {
       widget,
@@ -4463,6 +4487,210 @@ function renderMonitorWidget(node, widget) {
   const hist = getMonitorHistory(widget.id);
   fillMonitorBody(body, style, hist);
   renderFanRow(node);
+}
+
+// ============ agent 会话监控组件 ============
+// 数据流：主进程每 2.5s 轮询 opencode 数据库 → 推送 agent-status-changed → 此处 diff 更新。
+// 显示规则：运行中的会话始终显示；已完成/中断的会话仅未读时显示（点击跳转后标记已读隐藏）。
+
+/** 拉取全量快照（初始化/组件重建时兜底） */
+async function loadAgentSessions() {
+  try {
+    const data = await window.api.getAgentSessions();
+    if (!data) return;
+    if (Array.isArray(data.readSessions)) {
+      agentReadSessions = new Set(data.readSessions);
+    }
+    agentSessions = Array.isArray(data.sessions) ? data.sessions : [];
+  } catch (e) {
+    return;
+  }
+  updateAgentWidgets();
+}
+
+/** 按"活跃全部显示 + 未读完成只保留最近 10 条"规则过滤可见会话。
+ * 更老的未读完成会话自动隐藏（不标记已读，重新活跃会重新出现） */
+const MAX_VISIBLE_DONE = 10;
+
+function getVisibleAgentSessions() {
+  const active = [];
+  const done = [];
+  for (const s of agentSessions) {
+    if (s.status === 'active') {
+      active.push(s);
+    } else if (!agentReadSessions.has(s.id)) {
+      done.push(s);
+    }
+  }
+  return active.concat(done.slice(0, MAX_VISIBLE_DONE));
+}
+
+/** 更新所有 agent widget 内容（推送到达/已读标记后调用）。
+ * 附带逻辑：会话状态发生转换（如 completed→active 重新活跃、active→completed 跑完）
+ * 时自动清除其已读标记——状态变化 = 有新进展，已读作废：
+ * - 重新活跃的会话恢复"未读"语义（用户确认：重新开始对话 → 重新变为未读+未完成）
+ * - 跑完的会话重新显示对勾，而不是被旧已读标记直接隐藏
+ * 点击后状态未变的会话（如点击已完成的条目）保持已读，立即隐藏 */
+function updateAgentWidgets() {
+  const cleared = [];
+  for (const s of agentSessions) {
+    const prev = agentPrevStatus.get(s.id);
+    if (prev && prev !== s.status && agentReadSessions.has(s.id)) {
+      agentReadSessions.delete(s.id);
+      cleared.push(s.id);
+    }
+    agentPrevStatus.set(s.id, s.status);
+  }
+  if (cleared.length > 0 && window.api.unmarkAgentRead) {
+    window.api.unmarkAgentRead(cleared);
+  }
+  // 清理已不在快照中的会话记录
+  if (agentPrevStatus.size > agentSessions.length * 2) {
+    const activeIds = new Set(agentSessions.map(s => s.id));
+    for (const id of agentPrevStatus.keys()) {
+      if (!activeIds.has(id)) agentPrevStatus.delete(id);
+    }
+  }
+  if (!widgetsLayer) return;
+  const nodes = widgetsLayer.querySelectorAll('.widget-item.widget-agent');
+  for (const node of nodes) {
+    renderAgentWidget(node);
+  }
+}
+
+/** 项目名 = 会话目录最后一段 */
+function getSessionProject(s) {
+  const dir = typeof s.directory === 'string' ? s.directory : '';
+  const parts = dir.split(/[\\/]/).filter(Boolean);
+  return parts.length > 0 ? parts[parts.length - 1] : '';
+}
+
+function agentStatusIcon(status) {
+  if (status === 'active') return '<span class="wa-spinner" aria-hidden="true"></span>';
+  if (status === 'interrupted') return '<span class="wa-mark wa-mark-warn" aria-hidden="true">!</span>';
+  return '<span class="wa-mark wa-mark-ok" aria-hidden="true">✓</span>';
+}
+
+function agentStatusLabel(status) {
+  if (status === 'active') return t('widget.agentRunning');
+  if (status === 'interrupted') return t('widget.agentInterrupted');
+  return t('widget.agentDone');
+}
+
+/** 点击条目：跳转会话并标记已读（条目随即从列表消失）。
+ * 运行中的会话标记已读后若仍在活跃，下一轮推送会重新显示——正在跑的对话本就该可见；
+ * 已停止的会话则保持隐藏，直到它再次活跃（用户回该对话继续干活）。 */
+async function handleAgentItemClick(item, harness, sessionId) {
+  try {
+    const result = await window.api.openAgentSession(harness, sessionId);
+    if (result && result.ok) {
+      await window.api.markAgentRead([sessionId]);
+      agentReadSessions.add(sessionId);
+      updateAgentWidgets();
+    }
+  } catch (e) { /* 忽略 */ }
+}
+
+/** 同步单个条目列表（按 id 做 diff，避免动画/焦点被打断），末尾校正 DOM 顺序 */
+function syncAgentList(list, sessions) {
+  const existing = new Map(Array.from(list.children).map(el => [el.dataset.sessionId, el]));
+  const seen = new Set();
+  for (const s of sessions) {
+    seen.add(s.id);
+    const project = getSessionProject(s);
+    let item = existing.get(s.id);
+    if (!item) {
+      item = document.createElement('div');
+      item.className = 'wa-item';
+      item.dataset.sessionId = s.id;
+      item.addEventListener('click', () => handleAgentItemClick(item, s.harness, s.id));
+      list.appendChild(item);
+    }
+    const changed = item.dataset.status !== s.status ||
+      item.dataset.title !== s.title ||
+      item.dataset.project !== project;
+    item.dataset.status = s.status;
+    item.dataset.title = s.title;
+    item.dataset.project = project;
+    item.title = agentStatusLabel(s.status) + ' · ' + t('widget.agentOpen');
+    if (changed) {
+      item.innerHTML = `
+        <span class="wa-icon">${agentStatusIcon(s.status)}</span>
+        <div class="wa-text">
+          <div class="wa-project"></div>
+          <div class="wa-title"></div>
+        </div>`;
+      item.querySelector('.wa-project').textContent = project;
+      item.querySelector('.wa-title').textContent = s.title || '';
+    }
+  }
+  for (const [id, el] of existing) {
+    if (!seen.has(id)) el.remove();
+  }
+  // 顺序校正：按快照顺序重排 DOM（实时查询，包含本轮新建的条目）。
+  // 活跃会话 timeUpdated 刷新后应居顶；新建会话首次出现即在正确位置
+  let prev = null;
+  for (const s of sessions) {
+    const el = list.querySelector(`[data-session-id="${CSS.escape(s.id)}"]`);
+    if (!el) continue;
+    const ref = prev ? prev.nextSibling : list.firstChild;
+    if (el !== ref) list.insertBefore(el, ref);
+    prev = el;
+  }
+}
+
+/** 渲染 agent widget 内容：按 harness 分组为多个框，框下为条目列表 */
+function renderAgentWidget(node) {
+  const body = node.querySelector('.wa-body');
+  if (!body) return;
+  const visible = getVisibleAgentSessions();
+  if (visible.length === 0) {
+    if (body.dataset.empty === '1') return;
+    body.dataset.empty = '1';
+    body.innerHTML = `<div class="wa-empty">${t('widget.agentEmpty')}</div>`;
+    return;
+  }
+  if (body.dataset.empty === '1') {
+    delete body.dataset.empty;
+    body.innerHTML = '';
+  }
+
+  const groups = new Map(Array.from(body.children).map(g => [g.dataset.harness, g]));
+  const seen = new Set();
+  const harnesses = [...new Set(visible.map(s => s.harness))];
+  for (const h of harnesses) {
+    seen.add(h);
+    const sessions = visible.filter(s => s.harness === h);
+    let group = groups.get(h);
+    if (!group) {
+      group = document.createElement('div');
+      group.className = 'wa-group';
+      group.dataset.harness = h;
+      group.innerHTML = `
+        <div class="wa-header">
+          <span class="wa-name"></span>
+          <span class="wa-count"></span>
+        </div>
+        <div class="wa-list"></div>`;
+      body.appendChild(group);
+      // 滚动期间禁用 backdrop-filter（滚动 + 每帧模糊重算会导致卡顿），
+      // 停止滚动 120ms 后恢复；与拖拽时的处理策略一致
+      group.querySelector('.wa-list').addEventListener('scroll', (e) => {
+        const listEl = e.currentTarget;
+        node.classList.add('wa-scrolling');
+        if (listEl._waScrollTimer) clearTimeout(listEl._waScrollTimer);
+        listEl._waScrollTimer = setTimeout(() => node.classList.remove('wa-scrolling'), 120);
+      });
+    }
+    const nameEl = group.querySelector('.wa-name');
+    const countEl = group.querySelector('.wa-count');
+    if (nameEl) nameEl.textContent = sessions[0].harnessName || h;
+    if (countEl) countEl.textContent = String(sessions.length);
+    syncAgentList(group.querySelector('.wa-list'), sessions);
+  }
+  for (const [h, group] of groups) {
+    if (!seen.has(h)) group.remove();
+  }
 }
 
 // 时钟内容更新

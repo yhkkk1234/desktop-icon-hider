@@ -15,6 +15,7 @@ const {
 } = require('./window-manager');
 const { createTray, updateTrayMenu, destroyTray, autoLauncher } = require('./tray');
 const { startSampler, stopSampler, getSystemStats } = require('./hardware-monitor');
+const { AgentMonitor, createOpencodeAdapter, createOpencodeServerStatusProvider, isValidSessionId } = require('./agent-monitor');
 
 const store = new Store({
   name: 'desktop-icon-hider',
@@ -74,6 +75,8 @@ const store = new Store({
     widgetsAvoidIcons: false,
     weatherFxEnabled: true,
     weatherCity: null, // { name, lat, lon }
+    agentReadSessions: [], // agent 组件已读（已查看并跳转）的会话 id
+    agentActiveThreshold: 120, // agent 会话活跃判定窗口（秒）
     shortcuts: {
       toggleWindow: 'CommandOrControl+Alt+D',
       refresh: 'CommandOrControl+Alt+R',
@@ -84,6 +87,8 @@ const store = new Store({
 let mainWindow = null;
 let tray = null;
 let fsWatchers = [];
+let agentMonitor = null;
+let agentStatusProvider = null; // agent 组件 server 状态提供器（退出时释放 SSE 连接）
 
 // 获取桌面路径
 function getDesktopPath() {
@@ -719,7 +724,8 @@ function createWindow() {
           showWidgets: store.get('showWidgets', true),
           widgetsAvoidIcons: store.get('widgetsAvoidIcons', false),
           weatherCity: store.get('weatherCity', null),
-          weatherFxEnabled: store.get('weatherFxEnabled', true)
+          weatherFxEnabled: store.get('weatherFxEnabled', true),
+          agentReadSessions: store.get('agentReadSessions', [])
         });
       } catch (error) {
         console.error('发送初始化数据失败:', error);
@@ -760,7 +766,8 @@ function createWindow() {
           showWidgets: store.get('showWidgets', true),
           widgetsAvoidIcons: store.get('widgetsAvoidIcons', false),
           weatherCity: store.get('weatherCity', null),
-          weatherFxEnabled: store.get('weatherFxEnabled', true)
+          weatherFxEnabled: store.get('weatherFxEnabled', true),
+          agentReadSessions: store.get('agentReadSessions', [])
         });
       }
     });
@@ -984,7 +991,7 @@ ipcMain.handle('set-widgets', async (event, widgets) => {
     if (!Array.isArray(widgets)) return false;
     const sanitized = widgets.map(w => ({
       id: String(w.id || ''),
-      type: ['clock', 'calendar', 'weather', 'monitor'].includes(w.type) ? w.type : 'clock',
+      type: ['clock', 'calendar', 'weather', 'monitor', 'agent'].includes(w.type) ? w.type : 'clock',
       x: Number.isFinite(w.x) ? Math.max(0, Math.min(95, w.x)) : 2,
       y: Number.isFinite(w.y) ? Math.max(0, Math.min(90, w.y)) : 2,
       style: ['gauge', 'chart', 'bar'].includes(w.style) ? w.style : 'gauge'
@@ -1008,6 +1015,66 @@ ipcMain.handle('set-show-widgets', async (event, enabled) => {
 ipcMain.handle('set-widgets-avoid', async (event, enabled) => {
   store.set('widgetsAvoidIcons', !!enabled);
   return true;
+});
+
+// ============ agent 会话监控组件 ============
+// 返回全部快照 + 已读标记，由渲染端按"活跃 || 未读"规则过滤显示
+ipcMain.handle('get-agent-sessions', async () => {
+  const sessions = agentMonitor ? agentMonitor.getSnapshot() : [];
+  return {
+    sessions,
+    readSessions: store.get('agentReadSessions', [])
+  };
+});
+
+// 跳转到指定会话（在会话目录打开新终端继续 opencode 对话）
+ipcMain.handle('open-agent-session', async (event, payload) => {
+  const { harness, sessionId } = payload || {};
+  if (!agentMonitor) return { ok: false, error: '监控未启动' };
+  const session = agentMonitor.getSnapshot().find(s => s.id === sessionId && s.harness === harness);
+  if (!session) return { ok: false, error: '会话不存在' };
+  const adapter = agentMonitor.adapters.find(a => a.id === harness);
+  if (!adapter) return { ok: false, error: '未知的 harness' };
+  const result = await adapter.openSession(session);
+  if (result && result.ok) yieldTopmost();
+  return result;
+});
+
+// 标记会话已读（点击完成条目跳转后调用；重新活跃的会话不受影响）
+ipcMain.handle('mark-agent-read', async (event, sessionIds) => {
+  try {
+    if (!Array.isArray(sessionIds)) return false;
+    const current = new Set(store.get('agentReadSessions', []));
+    for (const id of sessionIds) {
+      if (isValidSessionId(id)) current.add(id);
+    }
+    // 上限 500 条，超出丢弃最旧记录
+    if (current.size > 500) {
+      const arr = [...current];
+      store.set('agentReadSessions', arr.slice(arr.length - 500));
+    } else {
+      store.set('agentReadSessions', [...current]);
+    }
+    return true;
+  } catch (e) {
+    return false;
+  }
+});
+
+// 清除已读标记：会话从运行中转为完成时由渲染端调用，
+// 让"运行中点过（已读）"的会话跑完后重新显示对勾，而不是直接消失
+ipcMain.handle('unmark-agent-read', async (event, sessionIds) => {
+  try {
+    if (!Array.isArray(sessionIds)) return false;
+    const current = new Set(store.get('agentReadSessions', []));
+    for (const id of sessionIds) {
+      if (isValidSessionId(id)) current.delete(id);
+    }
+    store.set('agentReadSessions', [...current]);
+    return true;
+  } catch (e) {
+    return false;
+  }
 });
 
 // ============ 天气组件（Open-Meteo，免费无需 key） ============
@@ -2131,6 +2198,27 @@ app.whenReady().then(async () => {
     // 启动性能数据采样进程（小组件使用）
     startSampler();
     
+    // 启动 agent 会话监控（agent 小组件使用）：轮询 opencode 会话状态，
+    // 变化时推送渲染进程；opencode 未安装时适配器自动降级为空列表
+    const activeWindowMs = store.get('agentActiveThreshold', 120) * 1000;
+    agentStatusProvider = createOpencodeServerStatusProvider();
+    agentMonitor = new AgentMonitor({
+      adapters: [createOpencodeAdapter({
+        // opencode:// 深链走系统默认处理（OpenCode Desktop 已注册该协议）
+        shellFn: (url) => shell.openExternal(url),
+        // server 权威状态校准：探测 desktop(4948)/serve·TUI(4096)，
+        // 用 busy/idle/retry 覆盖 DB 推断；探测失败自动回落纯 DB 模式
+        statusProvider: agentStatusProvider
+      })],
+      activeWindowMs,
+      onUpdate: (sessions) => {
+        if (mainWindow && !mainWindow.isDestroyed() && mainWindow.webContents) {
+          mainWindow.webContents.send('agent-status-changed', sessions);
+        }
+      }
+    });
+    agentMonitor.start();
+    
     // 监听系统主题变化
     nativeTheme.on('updated', () => {
       if (mainWindow && !mainWindow.isDestroyed()) {
@@ -2168,6 +2256,17 @@ app.on('before-quit', () => {
 
   // 停止性能采样进程
   stopSampler();
+
+  // 停止 agent 会话监控
+  if (agentMonitor) {
+    agentMonitor.stop();
+    agentMonitor = null;
+  }
+  // 释放 server SSE 订阅连接
+  if (agentStatusProvider) {
+    try { agentStatusProvider.dispose(); } catch (e) { /* 忽略 */ }
+    agentStatusProvider = null;
+  }
 
   // 销毁托盘图标
   destroyTray();

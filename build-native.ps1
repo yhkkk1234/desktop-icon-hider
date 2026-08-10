@@ -79,3 +79,6 @@ Get-NugetLib 'HidSharp' '2.1.0' 'HidSharp.dll' 'lib\net35\HidSharp.dll'
 # 采样脚本一并放入资源目录（打包后 PowerShell 只能读取真实文件，不能读取 asar 内文件）
 Copy-Item (Join-Path $PSScriptRoot 'src\main\hardware-sampler.ps1') (Join-Path $hwDir 'hardware-sampler.ps1') -Force
 Write-Host '==> Hardware monitor libraries ready.'
+
+# 5. better-sqlite3（agent 监控组件读 opencode.db 用）
+& (Join-Path $PSScriptRoot 'scripts\rebuild-better-sqlite3.ps1')

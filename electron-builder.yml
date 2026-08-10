@@ -25,6 +25,7 @@ files:
 # 原生模块必须从 asar 解包，否则 require 失败
 asarUnpack:
   - build/Release/*.node
+  - node_modules/better-sqlite3/**/*.node
 
 # 性能监控采样脚本 + LibreHardwareMonitorLib 运行时（MPL-2.0, github.com/LibreHardwareMonitor/LibreHardwareMonitor）
 extraResources:
@@ -33,8 +34,10 @@ extraResources:
     filter:
       - "**/*"
 
-npmRebuild: true
-buildDependenciesFromSource: true
+# 关闭打包时的自动重建：本机 Windows SDK 版本不匹配会导致 node-gyp 重编译失败，
+# 原生模块（icon_extractor / better-sqlite3）由 build-native.ps1 预先编译
+npmRebuild: false
+buildDependenciesFromSource: false
 
 win:
   icon: build/icon.ico

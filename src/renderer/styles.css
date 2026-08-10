@@ -2743,6 +2743,183 @@ body.icons-locked .file-item.draggable:active {
   color: var(--text-primary);
 }
 
+/* ============ agent 会话监控组件 ============ */
+.widget-agent {
+  width: 264px;
+  max-width: 320px;
+}
+
+.wa-body {
+  max-height: 300px;
+  overflow-y: auto;
+  /* 滚动只影响自身，避免滚动时触发父级重排/模糊重算导致的卡顿 */
+  contain: content;
+}
+
+/* 主题化滚动条（与 .content 同款变量，窄版） */
+.wa-body::-webkit-scrollbar {
+  width: 6px;
+}
+
+.wa-body::-webkit-scrollbar-track {
+  background: transparent;
+  /* 轨道避开右上角的删除按钮（按钮 20px + 边距 4px），thumb 不再与其重叠 */
+  margin-top: 24px;
+  margin-bottom: 4px;
+}
+
+.wa-body::-webkit-scrollbar-thumb {
+  background: var(--scrollbar-thumb);
+  border-radius: 3px;
+}
+
+.wa-body::-webkit-scrollbar-thumb:hover {
+  background: var(--scrollbar-thumb-hover);
+}
+
+.wa-body {
+  scrollbar-width: thin;
+  scrollbar-color: var(--scrollbar-thumb) transparent;
+}
+
+/* 滚动/拖拽期间禁用模糊背景，避免每帧重算开销 */
+.widget-item.wa-scrolling {
+  backdrop-filter: none;
+}
+
+.wa-empty {
+  padding: 18px 0;
+  text-align: center;
+  font-size: 12px;
+  color: var(--text-muted);
+}
+
+.wa-group + .wa-group {
+  margin-top: 10px;
+  padding-top: 10px;
+  border-top: 1px dashed var(--border-primary);
+}
+
+.wa-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 6px;
+}
+
+.wa-name {
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--text-secondary);
+  letter-spacing: 0.3px;
+}
+
+.wa-count {
+  font-size: 11px;
+  color: var(--text-muted);
+  background: var(--bg-button-hover);
+  border-radius: 8px;
+  padding: 1px 7px;
+}
+
+.wa-list {
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+}
+
+/* 条目：圆角矩形条 */
+.wa-item {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 9px;
+  border-radius: 8px;
+  background: var(--bg-primary);
+  border: 1px solid var(--border-primary);
+  cursor: pointer;
+  user-select: none;
+  transition: background 0.15s, border-color 0.15s;
+}
+
+.wa-item:hover {
+  background: var(--bg-button-hover);
+  border-color: var(--border-hover, var(--border-primary));
+}
+
+.wa-icon {
+  flex: none;
+  width: 16px;
+  height: 16px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+/* 运行中：旋转圆环 */
+.wa-spinner {
+  width: 13px;
+  height: 13px;
+  border-radius: 50%;
+  border: 2px solid rgba(66, 165, 245, 0.22);
+  border-top-color: #42a5f5;
+  animation: wa-spin 0.8s linear infinite;
+}
+
+@keyframes wa-spin {
+  from { transform: rotate(0deg); }
+  to { transform: rotate(360deg); }
+}
+
+/* 完成/中断：静态标记 */
+.wa-mark {
+  width: 16px;
+  height: 16px;
+  border-radius: 50%;
+  font-size: 10px;
+  font-weight: 700;
+  line-height: 16px;
+  text-align: center;
+  color: #fff;
+  flex: none;
+}
+
+.wa-mark-ok {
+  background: #4caf50;
+}
+
+.wa-mark-warn {
+  background: #ffa726;
+}
+
+.wa-text {
+  min-width: 0;
+  flex: 1;
+}
+
+.wa-project {
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--text-secondary);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.wa-title {
+  font-size: 12px;
+  color: var(--text-primary);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  margin-top: 1px;
+}
+
+/* 主题皮肤深色下条目底色加深 */
+[data-theme='dark'] .wa-item {
+  background: rgba(255, 255, 255, 0.04);
+}
+
 /* ============ 主题皮肤套装 ============ */
 :root {
   --skin-pattern: none;

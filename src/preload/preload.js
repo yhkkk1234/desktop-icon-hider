@@ -45,6 +45,13 @@ contextBridge.exposeInMainWorld('api', {
   setShowWidgets: (enabled) => ipcRenderer.invoke('set-show-widgets', enabled),
   setWidgetsAvoidIcons: (enabled) => ipcRenderer.invoke('set-widgets-avoid', enabled),
   getSystemStats: () => ipcRenderer.invoke('get-system-stats'),
+
+  // agent 会话监控组件
+  getAgentSessions: () => ipcRenderer.invoke('get-agent-sessions'),
+  openAgentSession: (harness, sessionId) => ipcRenderer.invoke('open-agent-session', { harness, sessionId }),
+  markAgentRead: (sessionIds) => ipcRenderer.invoke('mark-agent-read', sessionIds),
+  unmarkAgentRead: (sessionIds) => ipcRenderer.invoke('unmark-agent-read', sessionIds),
+  onAgentStatusChanged: (callback) => ipcRenderer.on('agent-status-changed', (event, sessions) => callback(sessions)),
   
   // 天气组件
   searchCity: (name) => ipcRenderer.invoke('search-city', name),

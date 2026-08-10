@@ -5,6 +5,52 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.9.0] - 2026-08-10
+
+### Added
+
+- New "Agent Sessions" widget that monitors running local AI agent (harness)
+  conversations at a glance:
+  - Groups sessions by harness (currently opencode), each group shows a list
+    of rounded session rows (project name + conversation title + status)
+  - Running sessions show a spinning indicator; finished ones show a green
+    checkmark; interrupted ones (Ctrl+C / closed terminal) show a warning mark
+  - Clicking a session opens it following the client in use: if the OpenCode
+    Desktop app is running it receives an `opencode://open-project` deep link
+    (switches to the session's project window); otherwise a new terminal window
+    runs `opencode -s <id>` (PowerShell 7 preferred, falls back to Windows
+    PowerShell, then cmd). Clicking any session (including running ones) marks
+    it as read and hides it from the list
+  - Status is derived by polling the opencode SQLite database (last activity
+    timestamp + last message part type, e.g. `step-finish`)
+  - Read sessions are persisted locally and the active window threshold
+    (default 120s) can be tuned via `agentActiveThreshold`
+  - Widget scrollbar follows the app theme; scrolling temporarily disables the
+    backdrop blur to avoid stutter
+  - Performance: the opencode poll query went from ~700ms to ~1ms per cycle by
+    caching last-message-part lookups (the `part` table has no usable index, so
+    per-session subqueries used to scan 100k+ rows on every poll and froze the
+    UI ~0.7s every 2.5s); snapshots are only pushed to the renderer when the
+    session list/status actually changes
+  - Status calibration via the opencode server: the app probes for a local
+    opencode server (OpenCode Desktop sidecar on 4948, `serve`/TUI on 4096,
+    authenticated with `OPENCODE_SERVER_PASSWORD` or open if unset) and
+    subscribes to its SSE `/event` stream. Authoritative `session.status`
+    events (busy/retry → running, idle → finished) override the DB-based
+    inference in real time; when no server is reachable it silently falls back
+    to DB inference
+  - Faster completion detection without a server: a session whose last message
+    part is `step-finish` now flips to "done" after a 15s confirmation window
+    instead of waiting for the 120s activity threshold
+  - Clicking a session no longer freezes the UI: the desktop-client check runs
+    asynchronously (spawn instead of a blocking ~230ms `tasklist` call) with a
+    10s result cache; the poll snapshot signature ignores `time_updated`, so
+    running sessions don't trigger a renderer push every 2.5s
+  - Robustness: terminal shell detection (pwsh/powershell/cmd) is also
+    asynchronous with a 10s cache; SSE reconnect re-probes ports after 5
+    failures (desktop restart / port changes) and stops retrying on auth
+    errors; the server status provider is disposed on app quit
+
 ## [1.8.4] - 2026-08-06
 
 ### Fixed
