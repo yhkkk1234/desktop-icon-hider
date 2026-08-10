@@ -4139,14 +4139,14 @@ function renderWidgets() {
     weatherTimer = setInterval(refreshAllWeatherWidgets, 30 * 60 * 1000);
   }
 
-  // 性能监控组件：立即刷新 + 1 秒定时刷新
+  // 性能监控组件：立即刷新 + 2 秒定时刷新（透明窗软件渲染下，1s 级整窗重绘较贵）
   if (monitorTimer) {
     clearInterval(monitorTimer);
     monitorTimer = null;
   }
   if (widgets.some(w => w.type === 'monitor')) {
     refreshAllMonitorWidgets();
-    monitorTimer = setInterval(refreshAllMonitorWidgets, 1000);
+    monitorTimer = setInterval(refreshAllMonitorWidgets, 2000);
   } else {
     monitorHistory.clear();
   }
@@ -4980,11 +4980,14 @@ function weatherFxForCode(code) {
   return { kind: 'none', intensity: 0 };
 }
 
+// 粒子数量按软件渲染（透明窗口 + disable-gpu-compositing）优化过：透明窗口下
+// infinite CSS 动画由 GPU 进程逐帧软件合成，粒子过多会让 GPU 进程占到 70%+ 单核，
+// 因此数量压到原来的 ~1/4（保留视觉效果，CPU 代价降 ~75%）
 const WEATHER_FX_PARTICLES = {
-  drizzle: { count: 22, speed: [1.1, 1.6], size: [5, 8] },
-  rain: { count: [30, 55, 85], speed: [0.7, 1.05], size: [7, 12] }, // 按强度 1-3
-  snow: { count: [18, 32, 50], speed: [3.2, 4.6], size: [4, 6] },
-  thunder: { count: 85, speed: [0.55, 0.85], size: [9, 13] }
+  drizzle: { count: 8, speed: [1.1, 1.6], size: [5, 8] },
+  rain: { count: [12, 22, 35], speed: [0.7, 1.05], size: [7, 12] }, // 按强度 1-3
+  snow: { count: [8, 15, 24], speed: [3.2, 4.6], size: [4, 6] },
+  thunder: { count: 30, speed: [0.55, 0.85], size: [9, 13] }
 };
 
 function buildWeatherFx(plan) {
@@ -4995,7 +4998,7 @@ function buildWeatherFx(plan) {
 
   // 云（多云 / 阴 / 毛毛雨 / 雨 / 雪 / 雷暴都叠加云层，营造天空氛围）
   // 三峰饱满云形（单 path 单层填充，无半透明叠加加深）
-  const cloudCount = plan.kind === 'clouds' ? plan.intensity + 1 : 2;
+  const cloudCount = plan.kind === 'clouds' ? Math.max(2, plan.intensity) : 1;
   for (let i = 0; i < cloudCount; i++) {
     const scale = 0.7 + Math.random() * 0.9;
     const dur = 22 + Math.random() * 26;
@@ -5011,7 +5014,7 @@ function buildWeatherFx(plan) {
 
   // 雾带
   if (plan.kind === 'fog') {
-    for (let i = 0; i < 3; i++) {
+    for (let i = 0; i < 2; i++) {
       const dur = 18 + Math.random() * 14;
       const delay = -Math.random() * dur;
       const top = 30 + i * 18 + Math.random() * 10;

@@ -1,5 +1,5 @@
 # hardware-sampler.ps1 - resident hardware sampling process
-# Spawned by the main process. Every 2s prints one line `DATA: {json}` to stdout.
+# Spawned by the main process. Every 5s prints one line `DATA: {json}` to stdout.
 # Data sources:
 #   1. Windows performance counters (Get-Counter): CPU / GPU engine / VRAM usage
 #   2. LibreHardwareMonitorLib (3rd-party, MPL-2.0, https://github.com/LibreHardwareMonitor/LibreHardwareMonitor):
@@ -12,7 +12,7 @@ $ErrorActionPreference = 'SilentlyContinue'
 [Console]::OutputEncoding = [System.Text.Encoding]::UTF8
 
 $outPrefix = 'DATA: '
-$sampleIntervalSec = 2
+$sampleIntervalSec = 5
 
 function Write-Data($obj) {
   try {
@@ -201,13 +201,21 @@ while ($true) {
   if ($null -eq $row.vramTotal -and $null -ne $lhm.gpuMemTotal) { $row.vramTotal = $lhm.gpuMemTotal }
 
   # VRAM total fallback: Win32_VideoController.AdapterRAM (may be inaccurate > 4GB)
-  if ($null -eq $row.vramTotal) {
+  # Cached: vramTotal is a static hardware property, query it only once (-1 = queried,
+  # no usable value). Avoids an expensive WMI Get-CimInstance every round (was a major
+  # CPU cost of this sampler process). NOTE: keep this file pure ASCII - PS 5.1 parses
+  # no-BOM files as ANSI/GBK and UTF-8 CJK comments break the script.
+  if ($null -eq $row.vramTotal -and $null -eq $script:vramTotalCache) {
+    $script:vramTotalCache = -1
     try {
       $vc = Get-CimInstance Win32_VideoController -ErrorAction SilentlyContinue | Select-Object -First 1
       if ($vc -and $vc.AdapterRAM -gt 0) {
-        $row.vramTotal = [int][math]::Round([double]$vc.AdapterRAM / 1MB)
+        $script:vramTotalCache = [int][math]::Round([double]$vc.AdapterRAM / 1MB)
       }
     } catch { }
+  }
+  if ($null -eq $row.vramTotal -and $script:vramTotalCache -gt 0) {
+    $row.vramTotal = $script:vramTotalCache
   }
 
   Write-Data $row

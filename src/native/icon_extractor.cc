@@ -18,6 +18,8 @@
 #include <vector>
 #include <string>
 #include <algorithm>
+#include <cstdlib>
+#include <cstring>
 
 #pragma comment(lib, "shell32.lib")
 #pragma comment(lib, "gdi32.lib")
@@ -288,9 +290,59 @@ Napi::Value ExtractIconsBatch(const Napi::CallbackInfo& info) {
     return result;
 }
 
+Napi::Value IsFullscreenAppForeground(const Napi::CallbackInfo& info) {
+    Napi::Env env = info.Env();
+    // 可选参数：本窗口 HWND 字符串（getWindowHwnd 的十进制），用于"前台全屏窗口与本窗口
+    // 同屏"判定——第二屏的全屏应用不会误禁第一屏窗口的边缘唤出。
+    HWND selfHwnd = nullptr;
+    if (info.Length() >= 1 && info[0].IsString()) {
+        std::string hwndStr = info[0].As<Napi::String>().Utf8Value();
+        if (!hwndStr.empty()) {
+            unsigned long long v = strtoull(hwndStr.c_str(), nullptr, 10);
+            if (v != 0 && v != ULLONG_MAX) selfHwnd = reinterpret_cast<HWND>(v);
+        }
+    }
+
+    HWND fg = GetForegroundWindow();
+    if (!fg) return Napi::Boolean::New(env, false);
+
+    // 桌面（Progman / WorkerW）不算全屏应用
+    wchar_t cls[256];
+    if (GetClassNameW(fg, cls, 256) > 0) {
+        if (wcscmp(cls, L"Progman") == 0 || wcscmp(cls, L"WorkerW") == 0) {
+            return Napi::Boolean::New(env, false);
+        }
+    }
+
+    // 不可见窗口不算全屏
+    LONG_PTR style = GetWindowLongPtrW(fg, GWL_STYLE);
+    if ((style & WS_VISIBLE) == 0) return Napi::Boolean::New(env, false);
+
+    RECT r;
+    if (!GetWindowRect(fg, &r)) return Napi::Boolean::New(env, false);
+    int w = r.right - r.left;
+    int h = r.bottom - r.top;
+
+    HMONITOR mon = MonitorFromWindow(fg, MONITOR_DEFAULTTONEAREST);
+    if (!mon) return Napi::Boolean::New(env, false);
+    MONITORINFO mi;
+    mi.cbSize = sizeof(mi);
+    if (!GetMonitorInfoW(mon, &mi)) return Napi::Boolean::New(env, false);
+    int mw = mi.rcMonitor.right - mi.rcMonitor.left;
+    int mh = mi.rcMonitor.bottom - mi.rcMonitor.top;
+
+    if (selfHwnd) {
+        HMONITOR selfMon = MonitorFromWindow(selfHwnd, MONITOR_DEFAULTTONEAREST);
+        if (selfMon != mon) return Napi::Boolean::New(env, false);
+    }
+
+    return Napi::Boolean::New(env, w >= mw && h >= mh);
+}
+
 Napi::Object Init(Napi::Env env, Napi::Object exports) {
     exports.Set("extractIcon", Napi::Function::New(env, [](const Napi::CallbackInfo& info) -> Napi::Value { return ExtractIcon(info); }));
     exports.Set("extractIconsBatch", Napi::Function::New(env, [](const Napi::CallbackInfo& info) -> Napi::Value { return ExtractIconsBatch(info); }));
+    exports.Set("isFullscreenAppForeground", Napi::Function::New(env, [](const Napi::CallbackInfo& info) -> Napi::Value { return IsFullscreenAppForeground(info); }));
     return exports;
 }
 

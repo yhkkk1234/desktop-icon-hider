@@ -28,11 +28,24 @@ const EDGE_TYPES = {
 
 // ============ 全屏应用检测 ============
 // 前台窗口全屏（覆盖整个显示器，如全屏 IDE/视频/游戏）时，边缘自动隐藏/唤出与
-// 置顶解锁的 minimize/restore 会造成窗口闪烁、打扰全屏使用。此处用 spawn 异步
-// 查询（每 1.5s 缓存刷新，不阻塞主进程），失败时默认"非全屏"降级安全。
-// 关键：通过窗口 HWND 在 PowerShell 内比对"前台全屏窗口"与"本窗口"所在显示器
+// 置顶解锁的 minimize/restore 会造成窗口闪烁、打扰全屏使用。
+// 优先走原生模块同步检测（icon_extractor.node 的 GetForegroundWindow/GetWindowRect
+// 调用为微秒级，无需缓存）；原生模块不可用时回退到 spawn PowerShell 低频缓存模式
+// （每 1.5s 刷新，不阻塞主进程），失败时默认"非全屏"降级安全。
+// 关键：通过窗口 HWND 比对"前台全屏窗口"与"本窗口"所在显示器
 // （MonitorFromWindow 同屏判定，全程物理像素域，避免多屏 DPI 缩放下 DIP/物理混算
 // 产生的假相交），第二屏的全屏应用不会误禁第一屏窗口的边缘唤出。
+let nativeFsCheck = null;
+try {
+  nativeFsCheck = require('../../build/Release/icon_extractor.node');
+} catch (e) {
+  try {
+    nativeFsCheck = require(path.join(process.resourcesPath, 'app.asar.unpacked', 'build', 'Release', 'icon_extractor.node'));
+  } catch (e2) {
+    nativeFsCheck = null;
+  }
+}
+
 let fullscreenForeground = false;
 let fullscreenMonitorKey = null;
 let fullscreenCheckedAt = 0;
@@ -49,6 +62,16 @@ function getWindowHwnd(win) {
 }
 
 function isFullscreenAppForeground(win) {
+  // 原生同步检测：开销可忽略，直接即时判定
+  if (nativeFsCheck && typeof nativeFsCheck.isFullscreenAppForeground === 'function') {
+    try {
+      const hwndStr = win && !win.isDestroyed() ? (getWindowHwnd(win) || '') : '';
+      return !!nativeFsCheck.isFullscreenAppForeground(hwndStr);
+    } catch (e) {
+      return false;
+    }
+  }
+  // fallback：spawn PowerShell 低频缓存模式
   let key = null;
   if (win && !win.isDestroyed()) {
     try {
