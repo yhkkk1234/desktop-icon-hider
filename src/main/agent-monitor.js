@@ -456,7 +456,8 @@ function createOpencodeServerStatusProvider(options = {}) {
  */
 function createOpencodeAdapter(options = {}) {
   const dbPath = options.dbPath || getOpencodeDbPath();
-  const DB = options.Database || getDatabaseModule();
+  // 显式传入 Database（含 null=禁用）时尊重调用方；未传时才自动加载
+  const DB = Object.prototype.hasOwnProperty.call(options, 'Database') ? options.Database : getDatabaseModule();
   const spawnFn = options.spawnFn || spawn;
   let statusProvider = options.statusProvider || null;
   let db = null;
