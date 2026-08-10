@@ -66,6 +66,7 @@ let monitorHistory = new Map(); // 组件历史数据: id -> { cpu: [], mem: [],
 let agentSessions = []; // agent 组件：主进程推送的会话快照
 let agentReadSessions = new Set(); // agent 组件：已读（已跳转查看）的会话 id
 let agentPrevStatus = new Map(); // agent 组件：上一轮状态，用于检测 active→完成 转换
+let agentDoneRetentionDays = 7; // agent 组件：已完成会话保留天数（0 = 不限制）
 let weatherFxEnabled = true; // 天气组件动态背景开关
 let weatherCity = null; // 天气城市配置 { name, lat, lon }
 
@@ -90,7 +91,7 @@ let groupsList, addGroupBtn, autoGroupBtn;
 let selectionToolbar, selectionCount, selOpenBtn, selCopyBtn, selCutBtn, selPasteBtn, selDeleteBtn, selClearBtn;
 let folderPreview, boxSelectEl;
 let iconsLockToggle, rulesList, addRuleBtn, applyRulesBtn;
-let startupDelayInput, languageSelect;
+let startupDelayInput, languageSelect, agentRetentionInput;
 let gpuAccelerationToggle;
 let shortcutToggleInput, shortcutRefreshInput, shortcutWidgetsInput;
 let exportLayoutBtn, importLayoutBtn, quitAppBtn;
@@ -159,6 +160,7 @@ document.addEventListener('DOMContentLoaded', () => {
   addRuleBtn = document.getElementById('add-rule-btn');
   applyRulesBtn = document.getElementById('apply-rules-btn');
   startupDelayInput = document.getElementById('startup-delay-input');
+  agentRetentionInput = document.getElementById('agent-retention-input');
   gpuAccelerationToggle = document.getElementById('gpu-acceleration-toggle');
   languageSelect = document.getElementById('language-select');
   shortcutToggleInput = document.getElementById('shortcut-toggle-input');
@@ -263,6 +265,7 @@ document.addEventListener('DOMContentLoaded', () => {
   addRuleBtn.addEventListener('click', () => promptRuleEditor(null));
   applyRulesBtn.addEventListener('click', applyArrangeRules);
   startupDelayInput.addEventListener('change', handleStartupDelayChange);
+  if (agentRetentionInput) agentRetentionInput.addEventListener('change', handleAgentRetentionChange);
   gpuAccelerationToggle.addEventListener('change', handleGpuAccelerationChange);
   languageSelect.addEventListener('change', handleLanguageChange);
   exportLayoutBtn.addEventListener('click', handleExportLayout);
@@ -536,6 +539,9 @@ document.addEventListener('DOMContentLoaded', () => {
     weatherFxEnabled = data.weatherFxEnabled !== false;
     weatherCity = data.weatherCity || null;
     agentReadSessions = new Set(Array.isArray(data.agentReadSessions) ? data.agentReadSessions : []);
+    agentDoneRetentionDays = Number.isFinite(data.agentDoneRetentionDays)
+      ? data.agentDoneRetentionDays
+      : 7;
     loadAgentSessions();
 
     setLanguage(data.language || 'zh-CN');
@@ -553,6 +559,7 @@ document.addEventListener('DOMContentLoaded', () => {
     updateWeatherFxUI();
     updateIconsLockUI();
     updateStartupDelayUI();
+    updateAgentRetentionUI();
     updateGpuAccelerationUI();
     updateShortcutInputs();
     renderRules();
@@ -945,6 +952,19 @@ async function handleStartupDelayChange() {
 
 function updateStartupDelayUI() {
   if (startupDelayInput) startupDelayInput.value = String(startupDelay);
+}
+
+// Agent 已完成会话保留天数（0 = 不限制）
+async function handleAgentRetentionChange() {
+  const value = parseInt(agentRetentionInput.value) || 0;
+  agentDoneRetentionDays = Math.max(0, Math.min(365, value));
+  agentRetentionInput.value = String(agentDoneRetentionDays);
+  await window.api.setAgentRetentionDays(agentDoneRetentionDays);
+  updateAgentWidgets(); // 立即按新阈值刷新列表
+}
+
+function updateAgentRetentionUI() {
+  if (agentRetentionInput) agentRetentionInput.value = String(agentDoneRetentionDays);
 }
 
 // GPU 加速（重启后生效）
@@ -4508,17 +4528,21 @@ async function loadAgentSessions() {
   updateAgentWidgets();
 }
 
-/** 按"活跃全部显示 + 未读完成只保留最近 10 条"规则过滤可见会话。
- * 更老的未读完成会话自动隐藏（不标记已读，重新活跃会重新出现） */
+/** 按"活跃全部显示 + 未读完成只保留最近 10 条且未超保留天数"规则过滤可见会话。
+ * 更老的未读完成会话自动隐藏（不标记已读，重新活跃会重新出现）。
+ * 保留天数为 0 表示不限制。 */
 const MAX_VISIBLE_DONE = 10;
 
 function getVisibleAgentSessions() {
   const active = [];
   const done = [];
+  const cutoff = agentDoneRetentionDays > 0
+    ? Date.now() - agentDoneRetentionDays * 24 * 60 * 60 * 1000
+    : 0;
   for (const s of agentSessions) {
     if (s.status === 'active') {
       active.push(s);
-    } else if (!agentReadSessions.has(s.id)) {
+    } else if (!agentReadSessions.has(s.id) && (!cutoff || s.timeUpdated >= cutoff)) {
       done.push(s);
     }
   }

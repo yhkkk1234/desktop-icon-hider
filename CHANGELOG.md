@@ -50,6 +50,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
     asynchronous with a 10s cache; SSE reconnect re-probes ports after 5
     failures (desktop restart / port changes) and stops retrying on auth
     errors; the server status provider is disposed on app quit
+  - Finished-session retention: sessions completed more than N days ago (default
+    7, configurable in settings, 0 = keep all) are hidden from the widget list
+    until they become active again
 
 ## [1.8.4] - 2026-08-06
 

@@ -77,6 +77,7 @@ const store = new Store({
     weatherCity: null, // { name, lat, lon }
     agentReadSessions: [], // agent 组件已读（已查看并跳转）的会话 id
     agentActiveThreshold: 120, // agent 会话活跃判定窗口（秒）
+    agentDoneRetentionDays: 7, // 已完成会话保留天数（0 = 不限制）
     shortcuts: {
       toggleWindow: 'CommandOrControl+Alt+D',
       refresh: 'CommandOrControl+Alt+R',
@@ -725,7 +726,8 @@ function createWindow() {
           widgetsAvoidIcons: store.get('widgetsAvoidIcons', false),
           weatherCity: store.get('weatherCity', null),
           weatherFxEnabled: store.get('weatherFxEnabled', true),
-          agentReadSessions: store.get('agentReadSessions', [])
+          agentReadSessions: store.get('agentReadSessions', []),
+          agentDoneRetentionDays: store.get('agentDoneRetentionDays', 7)
         });
       } catch (error) {
         console.error('发送初始化数据失败:', error);
@@ -767,7 +769,8 @@ function createWindow() {
           widgetsAvoidIcons: store.get('widgetsAvoidIcons', false),
           weatherCity: store.get('weatherCity', null),
           weatherFxEnabled: store.get('weatherFxEnabled', true),
-          agentReadSessions: store.get('agentReadSessions', [])
+          agentReadSessions: store.get('agentReadSessions', []),
+          agentDoneRetentionDays: store.get('agentDoneRetentionDays', 7)
         });
       }
     });
@@ -1075,6 +1078,13 @@ ipcMain.handle('unmark-agent-read', async (event, sessionIds) => {
   } catch (e) {
     return false;
   }
+});
+
+// 已完成会话保留天数（0 = 不限制，超期隐藏）
+ipcMain.handle('set-agent-retention-days', async (event, days) => {
+  const value = Number.isFinite(days) ? Math.max(0, Math.min(365, Math.round(days))) : 7;
+  store.set('agentDoneRetentionDays', value);
+  return true;
 });
 
 // ============ 天气组件（Open-Meteo，免费无需 key） ============

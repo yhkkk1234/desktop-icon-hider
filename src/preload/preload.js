@@ -51,6 +51,7 @@ contextBridge.exposeInMainWorld('api', {
   openAgentSession: (harness, sessionId) => ipcRenderer.invoke('open-agent-session', { harness, sessionId }),
   markAgentRead: (sessionIds) => ipcRenderer.invoke('mark-agent-read', sessionIds),
   unmarkAgentRead: (sessionIds) => ipcRenderer.invoke('unmark-agent-read', sessionIds),
+  setAgentRetentionDays: (days) => ipcRenderer.invoke('set-agent-retention-days', days),
   onAgentStatusChanged: (callback) => ipcRenderer.on('agent-status-changed', (event, sessions) => callback(sessions)),
   
   // 天气组件
