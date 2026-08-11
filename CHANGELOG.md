@@ -5,6 +5,24 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+
+### Changed
+
+- Agent Sessions widget is now a pure status notifier (no jump/open):
+  - Running sessions are live status indicators and are not clickable
+  - Finished/interrupted sessions are messages: click marks them read and
+    removes them from the list (kept until clicked, within the retention
+    days setting)
+  - Resumed sessions automatically flip back to "running" in place (same id,
+    no duplicate entries); sessions that complete again re-appear because
+    read marks are cleared on status transitions
+  - Removed all client-ecosystem dependencies: no deep links, no process/
+    window detection, no terminal spawning, no runtime click guard
+    (DB polling is the only source of truth)
+  - Dropped `open-agent-session` IPC and `check-agent-runtime` IPC (the
+    "opencode not running" indicator still works via periodic detection)
+
 ## [1.9.0] - 2026-08-10
 
 ### Added

@@ -450,15 +450,14 @@ function createOpencodeServerStatusProvider(options = {}) {
 
 /**
  * 创建 opencode harness 适配器（依赖注入便于测试）
- * @param {{ dbPath?: string, Database?: Function, spawnFn?: Function, statusProvider?: Object }} options
+ * @param {{ dbPath?: string, Database?: Function, statusProvider?: Object }} options
  *   statusProvider：createOpencodeServerStatusProvider 产物，用于 server 权威状态校准
- * @returns {{ id: string, displayName: string, listSessions: Function, openSession: Function, getServerStatuses: Function }}
+ * @returns {{ id: string, displayName: string, listSessions: Function, getServerStatuses: Function }}
  */
 function createOpencodeAdapter(options = {}) {
   const dbPath = options.dbPath || getOpencodeDbPath();
   // 显式传入 Database（含 null=禁用）时尊重调用方；未传时才自动加载
   const DB = Object.prototype.hasOwnProperty.call(options, 'Database') ? options.Database : getDatabaseModule();
-  const spawnFn = options.spawnFn || spawn;
   let statusProvider = options.statusProvider || null;
   let db = null;
   let lastError = null;
@@ -581,32 +580,6 @@ function createOpencodeAdapter(options = {}) {
         lastError = e.message;
         closeDb();
         return [];
-      }
-    },
-
-    /**
-     * 跳转到指定会话：统一在新控制台窗口运行 `opencode -s <id>`。
-     * 不做跨端检测/深链——desktop 无会话直达深链、各端互通是 opencode 生态限制，
-     * 统一新实例最可靠（权衡：每次点击开新实例，无聚焦已有端能力）。
-     * @returns {Promise<{ ok: boolean, target?: string, error?: string }>}
-     */
-    async openSession(session) {
-      if (!session || !isValidSessionId(session.id)) return { ok: false, error: '无效的会话 id' };
-      const cwd = typeof session.directory === 'string' && session.directory ? session.directory : os.homedir();
-      try {
-        // cmd /c start：start 创建新控制台窗口（CREATE_NEW_CONSOLE），外层 cmd 隐藏自身窗口。
-        // 不直接 spawn 终端进程：Electron 从终端启动时继承控制台 → 子进程共享控制台不弹窗；
-        // detached:true 则 DETACHED_PROCESS 无控制台。start 绕开这两坑，且不依赖 pwsh（避开 pwsh7 兼容坑）
-        const child = spawnFn('cmd.exe', ['/c', 'start', '""', 'cmd', '/k', `opencode -s ${session.id}`], {
-          cwd,
-          windowsHide: true,
-          stdio: 'ignore'
-        });
-        child.on('error', () => { /* 打开终端失败静默 */ });
-        child.unref();
-        return { ok: true, target: 'terminal' };
-      } catch (e) {
-        return { ok: false, error: e.message };
       }
     },
 

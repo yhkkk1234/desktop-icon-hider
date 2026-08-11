@@ -75,7 +75,7 @@ let agentPrevStatus = new Map(); // agent 组件：上一轮状态，用于检�
 let agentDoneRetentionDays = 7; // agent 组件：已完成会话保留天数（0 = 不限制）
 let agentServerPort = 0; // agent 组件：server 端口（0 = 默认 4096）
 let agentServerPassword = ''; // agent 组件：server 密码（空 = 无认证）
-let agentRuntimeRunning = true; // agent 组件：opencode 是否在运行（关闭时锁定条目点击）
+let agentRuntimeRunning = true; // agent 组件：opencode 是否在运行（关闭时显示"未开启"标记）
 let weatherFxEnabled = true; // 天气组件动态背景开关
 let weatherCity = null; // 天气城市配置 { name, lat, lon }
 
@@ -4759,29 +4759,15 @@ function agentStatusLabel(status) {
   return t('widget.agentDone');
 }
 
-/** 点击条目：跳转会话并标记已读（条目随即从列表消失）。
- * 双重守卫：① 周期状态（UI 灰化时快速拒绝）；② 点击瞬间实时验证
- * （无缓存/无确认期）——opencode 刚关闭、UI 尚未灰化的窗口期也拦截，
- * 不跳转、不标记已读，条目保留 */
+/** 点击条目：通知模式——仅完成/中断会话可点击标记已读（条目随即从列表消失）；
+ * 运行中会话是实时状态指示，点击无操作。无需 opencode 运行验证（已读只读本地状态）。 */
 async function handleAgentItemClick(item, harness, sessionId) {
-  if (!agentRuntimeRunning) return; // 周期检测已锁定（快路径）
-  try {
-    const rt = await window.api.checkAgentRuntime();
-    if (!rt || rt.running === false) return; // 实时验证：已关闭
-  } catch (e) { /* 检测失败保守放行 */ }
-  // 运行中会话已在某个端运行，跳转会造成双实例驱动同一会话冲突（opencode 限制），仅提示
   const session = agentSessions.find(s => s.id === sessionId && s.harness === harness);
-  if (session && session.status === 'active') {
-    showToast(t('widget.agentRunningHint'));
-    return;
-  }
+  if (!session || session.status === 'active') return;
   try {
-    const result = await window.api.openAgentSession(harness, sessionId);
-    if (result && result.ok) {
-      await window.api.markAgentRead([sessionId]);
-      agentReadSessions.add(sessionId);
-      updateAgentWidgets();
-    }
+    await window.api.markAgentRead([sessionId]);
+    agentReadSessions.add(sessionId);
+    updateAgentWidgets();
   } catch (e) { /* 忽略 */ }
 }
 
@@ -4806,8 +4792,7 @@ function syncAgentList(list, sessions) {
     item.dataset.status = s.status;
     item.dataset.title = s.title;
     item.dataset.project = project;
-    item.title = agentStatusLabel(s.status) + ' · ' + t('widget.agentOpen');
-    if (changed) {
+    item.title = agentStatusLabel(s.status) + ' · ' + t('widget.agentOpen');    if (changed) {
       item.innerHTML = `
         <span class="wa-icon">${agentStatusIcon(s.status)}</span>
         <div class="wa-text">

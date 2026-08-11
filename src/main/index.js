@@ -15,7 +15,7 @@ const {
 } = require('./window-manager');
 const { createTray, updateTrayMenu, destroyTray, autoLauncher } = require('./tray');
 const { startSampler, stopSampler, getSystemStats } = require('./hardware-monitor');
-const { AgentMonitor, createOpencodeAdapter, createOpencodeServerStatusProvider, detectOpencodeRunning, detectOpencodeRunningNow, isValidSessionId } = require('./agent-monitor');
+const { AgentMonitor, createOpencodeAdapter, createOpencodeServerStatusProvider, detectOpencodeRunning, isValidSessionId } = require('./agent-monitor');
 
 const store = new Store({
   name: 'desktop-icon-hider',
@@ -1047,20 +1047,7 @@ ipcMain.handle('get-agent-sessions', async () => {
   };
 });
 
-// 跳转到指定会话（在会话目录打开新终端继续 opencode 对话）
-ipcMain.handle('open-agent-session', async (event, payload) => {
-  const { harness, sessionId } = payload || {};
-  if (!agentMonitor) return { ok: false, error: '监控未启动' };
-  const session = agentMonitor.getSnapshot().find(s => s.id === sessionId && s.harness === harness);
-  if (!session) return { ok: false, error: '会话不存在' };
-  const adapter = agentMonitor.adapters.find(a => a.id === harness);
-  if (!adapter) return { ok: false, error: '未知的 harness' };
-  const result = await adapter.openSession(session);
-  if (result && result.ok) yieldTopmost();
-  return result;
-});
-
-// 标记会话已读（点击完成条目跳转后调用；重新活跃的会话不受影响）
+// 标记会话已读（点击完成/中断条目后调用；重新活跃的会话不受影响）
 ipcMain.handle('mark-agent-read', async (event, sessionIds) => {
   try {
     if (!Array.isArray(sessionIds)) return false;
@@ -1125,17 +1112,6 @@ ipcMain.handle('set-agent-server-config', async (event, config) => {
     }
   }
   return true;
-});
-
-// 点击条目前的实时运行验证：无缓存、无确认期，opencode 关闭时拒绝跳转
-ipcMain.handle('check-agent-runtime', async () => {
-  try {
-    const running = await detectOpencodeRunningNow(spawn);
-    return { running };
-  } catch (e) {
-    // 检测失败保守放行（不锁死点击）
-    return { running: true };
-  }
 });
 
 // ============ 天气组件（Open-Meteo，免费无需 key） ============

@@ -48,12 +48,10 @@ contextBridge.exposeInMainWorld('api', {
 
   // agent 会话监控组件
   getAgentSessions: () => ipcRenderer.invoke('get-agent-sessions'),
-  openAgentSession: (harness, sessionId) => ipcRenderer.invoke('open-agent-session', { harness, sessionId }),
   markAgentRead: (sessionIds) => ipcRenderer.invoke('mark-agent-read', sessionIds),
   unmarkAgentRead: (sessionIds) => ipcRenderer.invoke('unmark-agent-read', sessionIds),
   setAgentRetentionDays: (days) => ipcRenderer.invoke('set-agent-retention-days', days),
   setAgentServerConfig: (config) => ipcRenderer.invoke('set-agent-server-config', config),
-  checkAgentRuntime: () => ipcRenderer.invoke('check-agent-runtime'),
   onAgentStatusChanged: (callback) => ipcRenderer.on('agent-status-changed', (event, sessions) => callback(sessions)),
   onAgentRuntimeChanged: (callback) => ipcRenderer.on('agent-runtime-changed', (event, data) => callback(data)),
   

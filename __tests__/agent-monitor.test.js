@@ -228,54 +228,9 @@ describe('detectOpencodeRunning', () => {
 });
 
 describe('createOpencodeAdapter', () => {
-  // 通用 spawn mock：记录调用，触发 close，提供 unref
-  function makeSpawnFn(calls) {
-    return (...args) => {
-      calls.push(args);
-      return {
-        stdout: { on: () => {} },
-        on: (ev, cb) => { if (ev === 'close') setTimeout(() => cb(0), 0); },
-        unref: () => {}
-      };
-    };
-  }
-
   it('DB 不可用（未加载原生模块）时降级为空列表', () => {
     const adapter = createOpencodeAdapter({ Database: null });
     expect(adapter.listSessions()).toEqual([]);
-  });
-
-  it('openSession 拒绝非法会话 id', async () => {
-    const adapter = createOpencodeAdapter({ Database: null });
-    const result = await adapter.openSession({ id: 'x; rm -rf /', directory: 'F:/proj' });
-    expect(result.ok).toBe(false);
-  });
-
-  it('openSession 统一用 cmd /c start 打开新终端窗口继续会话', async () => {
-    const spawnCalls = [];
-    const spawnFn = makeSpawnFn(spawnCalls);
-    const adapter = createOpencodeAdapter({ Database: null, spawnFn });
-    const result = await adapter.openSession({ id: 'ses_abc123', directory: 'F:/我的项目' });
-    expect(result.ok).toBe(true);
-    expect(result.target).toBe('terminal');
-    expect(spawnCalls).toHaveLength(1);
-    const [cmd, args, opts] = spawnCalls[0];
-    expect(cmd).toBe('cmd.exe');
-    // start 创建新控制台窗口（CREATE_NEW_CONSOLE），外层 cmd 隐藏自身窗口
-    expect(args).toEqual(['/c', 'start', '""', 'cmd', '/k', 'opencode -s ses_abc123']);
-    expect(opts.cwd).toBe('F:/我的项目');
-    expect(opts.windowsHide).toBe(true);
-    expect(opts.stdio).toBe('ignore');
-    // 关键回归：不能 detached（Windows 上 DETACHED_PROCESS 导致无控制台窗口，点击无感知）
-    expect(opts.detached).toBeUndefined();
-  });
-
-  it('openSession 目录缺失时回退到用户主目录', async () => {
-    const spawnCalls = [];
-    const spawnFn = makeSpawnFn(spawnCalls);
-    const adapter = createOpencodeAdapter({ Database: null, spawnFn });
-    await adapter.openSession({ id: 'ses_abc123', directory: '' });
-    expect(spawnCalls[0][2].cwd).toBe(require('os').homedir());
   });
 
   it('listSessions 查询异常时降级为空列表并恢复可用', () => {
