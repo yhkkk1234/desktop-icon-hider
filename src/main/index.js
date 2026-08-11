@@ -83,8 +83,10 @@ const store = new Store({
     agentReadSessions: [], // agent 组件已读（已查看并跳转）的会话 id
     agentActiveThreshold: 120, // agent 会话活跃判定窗口（秒）
     agentDoneRetentionDays: 7, // 已完成会话保留天数（0 = 不限制）
-    agentServerPort: 0, // agent server 端口（0 = 默认 4096，自跑 serve 自定义端口时手动指定）
-    agentServerPassword: '', // agent server 密码（空 = 无认证，desktop 自设 server 设密码时手动填入）
+    // agent 组件各 harness 的配置（嵌套结构，未来多 agent 各占一组）：
+    // { opencode: { port: 0, password: '' }, codex: { ... } }
+    // port 0 = 默认 4096（自跑 serve 自定义端口时手动指定）；password 空 = 无认证
+    agentConfigs: {},
     shortcuts: {
       toggleWindow: 'CommandOrControl+Alt+D',
       refresh: 'CommandOrControl+Alt+R',
@@ -737,9 +739,7 @@ function createWindow() {
           weatherFxEnabled: store.get('weatherFxEnabled', true),
           agentReadSessions: store.get('agentReadSessions', []),
           agentDoneRetentionDays: store.get('agentDoneRetentionDays', 7),
-          agentServerPort: store.get('agentServerPort', 0),
-          agentServerPassword: store.get('agentServerPassword', ''),
-          mouseEffects: store.get('mouseEffects', {})
+          agentConfigs: store.get('agentConfigs', {})
         });
       } catch (error) {
         console.error('发送初始化数据失败:', error);
@@ -783,9 +783,7 @@ function createWindow() {
           weatherFxEnabled: store.get('weatherFxEnabled', true),
           agentReadSessions: store.get('agentReadSessions', []),
           agentDoneRetentionDays: store.get('agentDoneRetentionDays', 7),
-          agentServerPort: store.get('agentServerPort', 0),
-          agentServerPassword: store.get('agentServerPassword', ''),
-          mouseEffects: store.get('mouseEffects', {})
+          agentConfigs: store.get('agentConfigs', {})
         });
       }
     });
@@ -1091,22 +1089,32 @@ ipcMain.handle('set-agent-retention-days', async (event, days) => {
   return true;
 });
 
-// 设置 agent server 连接配置（desktop 自设 server 的端口/密码；端口 0/密码空 = 默认无认证）
-ipcMain.handle('set-agent-server-config', async (event, config) => {
-  const { port, password } = config || {};
-  const p = Number.isFinite(port) ? Math.max(0, Math.min(65535, Math.round(port))) : 0;
-  const pw = typeof password === 'string' ? password.slice(0, 200) : '';
-  store.set('agentServerPort', p);
-  store.set('agentServerPassword', pw);
-  // 重建 server 状态提供器：新配置即时生效（旧 SSE 连接释放，下次探测用新端口/密码）
-  if (agentStatusProvider && typeof agentStatusProvider.dispose === 'function') {
-    agentStatusProvider.dispose();
+// 设置指定 harness 的 agent 配置（嵌套存储 agentConfigs[harness]）。
+// opencode 当前支持 port/password（自跑 serve 的校准通道；端口 0/密码空 = 默认无认证）；
+// 未来其他 harness 可扩展各自配置项。opencode 配置变更时重建 server 状态提供器即时生效
+ipcMain.handle('set-agent-config', async (event, payload) => {
+  const { harness, config } = payload || {};
+  const h = typeof harness === 'string' && harness ? harness : 'opencode';
+  const cfg = (config && typeof config === 'object') ? config : {};
+  const current = store.get('agentConfigs', {}) || {};
+  const merged = { ...(current[h] || {}) };
+  // 通用校验：port 0-65535 整数；password 字符串限长
+  if ('port' in cfg) {
+    merged.port = Number.isFinite(cfg.port) ? Math.max(0, Math.min(65535, Math.round(cfg.port))) : 0;
   }
-  agentStatusProvider = createOpencodeServerStatusProvider({
-    ports: p > 0 ? [p] : undefined,
-    password: pw ? pw : undefined
-  });
-  if (agentMonitor && Array.isArray(agentMonitor.adapters)) {
+  if ('password' in cfg) {
+    merged.password = typeof cfg.password === 'string' ? cfg.password.slice(0, 200) : '';
+  }
+  store.set('agentConfigs', { ...current, [h]: merged });
+  // opencode 的 server 校准通道：重建状态提供器（旧 SSE 连接释放，下次探测用新端口/密码）
+  if (h === 'opencode' && agentMonitor) {
+    if (agentStatusProvider && typeof agentStatusProvider.dispose === 'function') {
+      agentStatusProvider.dispose();
+    }
+    agentStatusProvider = createOpencodeServerStatusProvider({
+      ports: merged.port > 0 ? [merged.port] : undefined,
+      password: merged.password ? merged.password : undefined
+    });
     for (const adapter of agentMonitor.adapters) {
       if (adapter && typeof adapter.setStatusProvider === 'function') adapter.setStatusProvider(agentStatusProvider);
     }
@@ -2266,11 +2274,21 @@ app.whenReady().then(async () => {
     // 启动 agent 会话监控（agent 小组件使用）：轮询 opencode 会话状态，
     // 变化时推送渲染进程；opencode 未安装时适配器自动降级为空列表
     const activeWindowMs = store.get('agentActiveThreshold', 120) * 1000;
+    // 迁移旧版扁平配置（agentServerPort/agentServerPassword）→ 嵌套 agentConfigs.opencode
+    {
+      const cfg = store.get('agentConfigs', {}) || {};
+      const oldPort = store.get('agentServerPort', 0);
+      const oldPw = store.get('agentServerPassword', '');
+      if (!cfg.opencode && (oldPort || oldPw)) {
+        store.set('agentConfigs', { ...cfg, opencode: { port: oldPort, password: oldPw } });
+      }
+    }
     // server 状态校准通道配置：自跑 `opencode serve` 自定义端口/密码时由用户在设置中填入；
     // 未配置时用默认端口 4096 与无认证（serve 无密码免认证），env 密码兜底。
     // 注意：desktop sidecar 端口/密码均随机，此通道对 desktop 不可用，状态判定以 DB 推断为主
-    const serverPort = store.get('agentServerPort', 0);
-    const serverPassword = store.get('agentServerPassword', '');
+    const opencodeCfg = (store.get('agentConfigs', {}) || {}).opencode || {};
+    const serverPort = Number.isFinite(opencodeCfg.port) ? opencodeCfg.port : 0;
+    const serverPassword = typeof opencodeCfg.password === 'string' ? opencodeCfg.password : '';
     agentStatusProvider = createOpencodeServerStatusProvider({
       ports: serverPort > 0 ? [serverPort] : undefined,
       password: serverPassword ? serverPassword : undefined

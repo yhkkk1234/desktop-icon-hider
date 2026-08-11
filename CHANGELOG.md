@@ -22,6 +22,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
     (DB polling is the only source of truth)
   - Dropped `open-agent-session` IPC and `check-agent-runtime` IPC (the
     "opencode not running" indicator still works via periodic detection)
+  - Agent config storage is now nested per harness
+    (`agentConfigs.opencode.{port,password}`) with automatic migration from
+    the old flat keys; the IPC is generalized to `set-agent-config(harness,
+    config)` so future agents (Codex, Claude Code, ...) each get their own
+    config group without touching the settings plumbing
 
 ## [1.9.0] - 2026-08-10
 

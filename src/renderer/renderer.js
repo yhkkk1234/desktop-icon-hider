@@ -73,8 +73,8 @@ let agentSessions = []; // agent 组件：主进程推送的会话快照
 let agentReadSessions = new Set(); // agent 组件：已读（已跳转查看）的会话 id
 let agentPrevStatus = new Map(); // agent 组件：上一轮状态，用于检测 active→完成 转换
 let agentDoneRetentionDays = 7; // agent 组件：已完成会话保留天数（0 = 不限制）
-let agentServerPort = 0; // agent 组件：server 端口（0 = 默认 4096）
-let agentServerPassword = ''; // agent 组件：server 密码（空 = 无认证）
+let agentServerPort = 0; // agent 组件：opencode server 端口（0 = 默认 4096，来自 agentConfigs.opencode）
+let agentServerPassword = ''; // agent 组件：opencode server 密码（空 = 无认证，来自 agentConfigs.opencode）
 let agentRuntimeRunning = true; // agent 组件：opencode 是否在运行（关闭时显示"未开启"标记）
 let weatherFxEnabled = true; // 天气组件动态背景开关
 let weatherCity = null; // 天气城市配置 { name, lat, lon }
@@ -577,8 +577,10 @@ document.addEventListener('DOMContentLoaded', () => {
     agentDoneRetentionDays = Number.isFinite(data.agentDoneRetentionDays)
       ? data.agentDoneRetentionDays
       : 7;
-    agentServerPort = Number.isFinite(data.agentServerPort) ? data.agentServerPort : 0;
-    agentServerPassword = typeof data.agentServerPassword === 'string' ? data.agentServerPassword : '';
+    // 各 harness 配置嵌套存储（未来多 agent 各占一组）；当前读取 opencode 组
+    const opencodeCfg = (data.agentConfigs && data.agentConfigs.opencode) || {};
+    agentServerPort = Number.isFinite(opencodeCfg.port) ? opencodeCfg.port : 0;
+    agentServerPassword = typeof opencodeCfg.password === 'string' ? opencodeCfg.password : '';
     loadAgentSessions();
 
     setLanguage(data.language || 'zh-CN');
@@ -1015,14 +1017,14 @@ function updateAgentRetentionUI() {
   if (agentRetentionInput) agentRetentionInput.value = String(agentDoneRetentionDays);
 }
 
-// Agent server 连接配置（desktop 自设 server 的端口/密码；端口 0/密码空 = 默认无认证）
+// opencode harness 的 server 校准配置（自跑 serve 的端口/密码；端口 0/密码空 = 默认无认证）
 async function handleAgentServerConfigChange() {
   const port = parseInt(agentServerPortInput.value) || 0;
   const password = agentServerPasswordInput.value || '';
   agentServerPort = Math.max(0, Math.min(65535, port));
   agentServerPassword = password;
   agentServerPortInput.value = String(agentServerPort);
-  await window.api.setAgentServerConfig({ port: agentServerPort, password: agentServerPassword });
+  await window.api.setAgentConfig('opencode', { port: agentServerPort, password: agentServerPassword });
 }
 
 function updateAgentServerConfigUI() {

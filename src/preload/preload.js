@@ -51,7 +51,7 @@ contextBridge.exposeInMainWorld('api', {
   markAgentRead: (sessionIds) => ipcRenderer.invoke('mark-agent-read', sessionIds),
   unmarkAgentRead: (sessionIds) => ipcRenderer.invoke('unmark-agent-read', sessionIds),
   setAgentRetentionDays: (days) => ipcRenderer.invoke('set-agent-retention-days', days),
-  setAgentServerConfig: (config) => ipcRenderer.invoke('set-agent-server-config', config),
+  setAgentConfig: (harness, config) => ipcRenderer.invoke('set-agent-config', { harness, config }),
   onAgentStatusChanged: (callback) => ipcRenderer.on('agent-status-changed', (event, sessions) => callback(sessions)),
   onAgentRuntimeChanged: (callback) => ipcRenderer.on('agent-runtime-changed', (event, data) => callback(data)),
   
