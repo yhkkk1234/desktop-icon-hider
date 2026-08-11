@@ -96,6 +96,9 @@ contextBridge.exposeInMainWorld('api', {
 
   // GPU 加速开关（重启后生效）
   setGpuAcceleration: (enabled) => ipcRenderer.invoke('set-gpu-acceleration', enabled),
+
+  // 鼠标特效配置
+  setMouseEffects: (effects) => ipcRenderer.invoke('set-mouse-effects', effects),
   
   // 布局导出/导入
   exportLayout: (extraData) => ipcRenderer.invoke('export-layout', extraData),
@@ -156,6 +159,9 @@ contextBridge.exposeInMainWorld('api', {
   
   // 监听语言变化
   onLanguageChanged: (callback) => ipcRenderer.on('language-changed', (event, data) => callback(data)),
+
+  // 监听 GPU 进程崩溃（主进程自动降级后通知）
+  onGpuCrash: (callback) => ipcRenderer.on('gpu-crash', (event, data) => callback(data)),
   
   // 右键菜单 API
   showDesktopContextMenu: (x, y) => ipcRenderer.invoke('show-desktop-context-menu', x, y),

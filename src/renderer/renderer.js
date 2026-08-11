@@ -25,6 +25,11 @@ let arrangeRules = []; // 自动整理规则
 let shortcuts = {}; // 自定义快捷键
 let startupDelay = 0; // 开机延迟启动
 let gpuAcceleration = false; // GPU 加速（重启后生效）
+let mouseFx = { enabled: false, type: 'stars', customCursor: 'none' }; // 鼠标特效设置
+let mouseFxToggle = null; // 鼠标特效开关
+let mouseFxTypeSelect = null; // 特效类型选择
+let mouseFxCursorSelect = null; // 自定义光标选择
+let mouseFxGpuHint = null; // 水波 GPU 提示
 let iconsVisible = true; // 图标可见性（双击空白切换）
 let clipboard = null; // 剪贴板: { mode: 'copy'|'cut', paths: [] }
 let folderPreviewEnabled = true; // 文件夹悬停预览开关
@@ -168,6 +173,10 @@ document.addEventListener('DOMContentLoaded', () => {
   agentServerPortInput = document.getElementById('agent-server-port-input');
   agentServerPasswordInput = document.getElementById('agent-server-password-input');
   gpuAccelerationToggle = document.getElementById('gpu-acceleration-toggle');
+  mouseFxToggle = document.getElementById('mouse-fx-toggle');
+  mouseFxTypeSelect = document.getElementById('mouse-fx-type-select');
+  mouseFxCursorSelect = document.getElementById('mouse-fx-cursor-select');
+  mouseFxGpuHint = document.getElementById('mouse-fx-gpu-hint');
   languageSelect = document.getElementById('language-select');
   shortcutToggleInput = document.getElementById('shortcut-toggle-input');
   shortcutRefreshInput = document.getElementById('shortcut-refresh-input');
@@ -275,6 +284,9 @@ document.addEventListener('DOMContentLoaded', () => {
   if (agentServerPortInput) agentServerPortInput.addEventListener('change', handleAgentServerConfigChange);
   if (agentServerPasswordInput) agentServerPasswordInput.addEventListener('change', handleAgentServerConfigChange);
   gpuAccelerationToggle.addEventListener('change', handleGpuAccelerationChange);
+  mouseFxToggle.addEventListener('change', handleMouseFxChange);
+  mouseFxTypeSelect.addEventListener('change', handleMouseFxChange);
+  mouseFxCursorSelect.addEventListener('change', handleMouseFxChange);
   languageSelect.addEventListener('change', handleLanguageChange);
   exportLayoutBtn.addEventListener('click', handleExportLayout);
   importLayoutBtn.addEventListener('click', handleImportLayout);
@@ -494,6 +506,15 @@ document.addEventListener('DOMContentLoaded', () => {
     shortcuts = data.shortcuts || {};
     startupDelay = data.startupDelay || 0;
     gpuAcceleration = !!data.gpuAcceleration;
+    if (data.mouseEffects && typeof data.mouseEffects === 'object') {
+      mouseFx = {
+        enabled: !!data.mouseEffects.enabled,
+        type: ['ripple', 'stars', 'trail'].includes(data.mouseEffects.type) ? data.mouseEffects.type : 'stars',
+        customCursor: ['none', 'dot', 'arrow', 'star'].includes(data.mouseEffects.customCursor)
+          ? data.mouseEffects.customCursor
+          : 'none'
+      };
+    }
     iconsVisible = true;
     folderPreviewEnabled = data.folderPreviewEnabled !== false;
     everythingEnabled = !!data.everythingEnabled;
@@ -578,6 +599,7 @@ document.addEventListener('DOMContentLoaded', () => {
     updateAgentRetentionUI();
     updateAgentServerConfigUI();
     updateGpuAccelerationUI();
+    updateMouseFxUI();
     updateShortcutInputs();
     renderRules();
     updateEverythingUI();
@@ -669,6 +691,15 @@ document.addEventListener('DOMContentLoaded', () => {
     renderFiles();
     renderRules();
     updateAutoHideUI();
+  });
+
+  // GPU 进程崩溃：主进程已自动写回关闭设置，这里同步 UI 并提示
+  window.api.onGpuCrash((data) => {
+    if (data && data.autoDisabled) {
+      gpuAcceleration = false;
+      updateGpuAccelerationUI();
+      showToast(t('settings.mouseFxGpuCrashed'));
+    }
   });
 });
 
@@ -1008,6 +1039,32 @@ async function handleGpuAccelerationChange() {
 
 function updateGpuAccelerationUI() {
   if (gpuAccelerationToggle) gpuAccelerationToggle.checked = gpuAcceleration;
+}
+
+// 鼠标特效（实时生效）
+async function handleMouseFxChange() {
+  mouseFx = {
+    enabled: mouseFxToggle.checked,
+    type: mouseFxTypeSelect.value,
+    customCursor: mouseFxCursorSelect.value
+  };
+  updateMouseFxGpuHint();
+  await window.api.setMouseEffects(mouseFx);
+  if (window.fxManager) window.fxManager.apply(mouseFx);
+}
+
+function updateMouseFxUI() {
+  if (mouseFxToggle) mouseFxToggle.checked = mouseFx.enabled;
+  if (mouseFxTypeSelect) mouseFxTypeSelect.value = mouseFx.type;
+  if (mouseFxCursorSelect) mouseFxCursorSelect.value = mouseFx.customCursor;
+  updateMouseFxGpuHint();
+  if (window.fxManager) window.fxManager.apply(mouseFx);
+}
+
+function updateMouseFxGpuHint() {
+  if (mouseFxGpuHint) {
+    mouseFxGpuHint.style.display = mouseFx.type === 'ripple' ? 'block' : 'none';
+  }
 }
 
 // 语言
@@ -3175,6 +3232,7 @@ function applyBackground() {
   app.classList.toggle('has-bg', enabled);
   updateBgCustomSize();
   updateBgCustomControls();
+  if (window.fxManager) window.fxManager.setBgStatus(enabled);
 }
 
 // custom 模式：按"图片宽高比适配窗口"的 contain 基准尺寸 × 缩放系数。
@@ -3211,6 +3269,7 @@ function updateBgCustomSize() {
   bgImage.style.left = `calc(50% + ${bgConfig.offsetX || 0} * 1%)`;
   bgImage.style.top = `calc(50% + ${bgConfig.offsetY || 0} * 1%)`;
   bgImage.style.transform = 'translate(-50%, -50%)';
+  syncFxBgLayout();
 }
 
 function resetBgImageInlineStyles() {
@@ -3223,6 +3282,14 @@ function resetBgImageInlineStyles() {
   bgImage.style.removeProperty('bottom');
   bgImage.style.removeProperty('object-fit');
   bgImage.style.removeProperty('transform');
+  syncFxBgLayout();
+}
+
+// custom 模式拖动偏移/缩放滑块等布局变化后，同步水波特效画布布局
+function syncFxBgLayout() {
+  if (window.fxManager && window.fxManager.syncBgLayout) {
+    window.fxManager.syncBgLayout();
+  }
 }
 
 function updateBgCustomControls() {

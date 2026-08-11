@@ -39,8 +39,13 @@ const store = new Store({
     iconsLocked: false,
     arrangeRules: [],
     startupDelay: 0,
-    gpuAcceleration: false,
+    gpuAcceleration: true,
     folderPreviewEnabled: true,
+    mouseEffects: {
+      enabled: false,
+      type: 'stars', // 特效类型: ripple(水波) | stars(星星) | trail(彩虹拖尾)
+      customCursor: 'none' // 自定义光标: none | dot | arrow | star
+    },
     everythingEnabled: false,
     backgroundImage: {
       enabled: false,
@@ -710,7 +715,7 @@ function createWindow() {
           arrangeRules: store.get('arrangeRules', []),
           shortcuts: store.get('shortcuts', {}),
           startupDelay: store.get('startupDelay', 0),
-          gpuAcceleration: store.get('gpuAcceleration', false),
+          gpuAcceleration: store.get('gpuAcceleration', true),
           language: store.get('language', 'zh-CN'),
           everythingEnabled: store.get('everythingEnabled', false),
           everythingInstalled: !!findEverythingPath(),
@@ -733,7 +738,8 @@ function createWindow() {
           agentReadSessions: store.get('agentReadSessions', []),
           agentDoneRetentionDays: store.get('agentDoneRetentionDays', 7),
           agentServerPort: store.get('agentServerPort', 0),
-          agentServerPassword: store.get('agentServerPassword', '')
+          agentServerPassword: store.get('agentServerPassword', ''),
+          mouseEffects: store.get('mouseEffects', {})
         });
       } catch (error) {
         console.error('发送初始化数据失败:', error);
@@ -755,7 +761,7 @@ function createWindow() {
           arrangeRules: store.get('arrangeRules', []),
           shortcuts: store.get('shortcuts', {}),
           startupDelay: store.get('startupDelay', 0),
-          gpuAcceleration: store.get('gpuAcceleration', false),
+          gpuAcceleration: store.get('gpuAcceleration', true),
           language: store.get('language', 'zh-CN'),
           everythingEnabled: store.get('everythingEnabled', false),
           everythingInstalled: false,
@@ -778,7 +784,8 @@ function createWindow() {
           agentReadSessions: store.get('agentReadSessions', []),
           agentDoneRetentionDays: store.get('agentDoneRetentionDays', 7),
           agentServerPort: store.get('agentServerPort', 0),
-          agentServerPassword: store.get('agentServerPassword', '')
+          agentServerPassword: store.get('agentServerPassword', ''),
+          mouseEffects: store.get('mouseEffects', {})
         });
       }
     });
@@ -1304,6 +1311,20 @@ ipcMain.handle('set-startup-delay', async (event, seconds) => {
 // GPU 加速开关：保存配置，重启应用后生效（参数必须在 whenReady 之前设置，无法热切换）
 ipcMain.handle('set-gpu-acceleration', async (event, enabled) => {
   store.set('gpuAcceleration', !!enabled);
+  return true;
+});
+
+// 鼠标特效配置
+ipcMain.handle('set-mouse-effects', async (event, effects) => {
+  const current = store.get('mouseEffects', {});
+  const next = {
+    enabled: typeof effects.enabled === 'boolean' ? effects.enabled : !!current.enabled,
+    type: ['ripple', 'stars', 'trail'].includes(effects.type) ? effects.type : (current.type || 'stars'),
+    customCursor: ['none', 'dot', 'arrow', 'star'].includes(effects.customCursor)
+      ? effects.customCursor
+      : (current.customCursor || 'none')
+  };
+  store.set('mouseEffects', next);
   return true;
 });
 
@@ -2197,16 +2218,30 @@ ipcMain.handle('show-file-context-menu', async (event, filePath, x, y) => {
   }
 });
 
-// GPU 加速开关：透明窗口 + GPU 合成在部分机器上会崩溃（历史问题），默认禁用 GPU
-// （软件渲染）；用户可在设置中开启 GPU 加速实测稳定性（透明窗口闪白问题在 GPU
-// 合成下通常消失）。这些参数必须在 app.whenReady 之前设置，运行时切换需重启生效。
+// GPU 加速开关：默认开启（与 Chrome/Edge 等主流应用一致），透明窗口 + GPU 合成在部分
+// 旧机器上会崩溃，若崩溃则自动降级软件渲染（见下方 child-process-gone 监听）；用户也可
+// 在设置中手动关闭。这些参数必须在 app.whenReady 之前设置，运行时切换需重启生效。
 // --no-gpu 启动参数强制禁用（崩溃后无法进 UI 恢复时的兜底入口）
-const gpuAccelerationEnabled = !process.argv.includes('--no-gpu') && store.get('gpuAcceleration', false);
+const gpuAccelerationEnabled = !process.argv.includes('--no-gpu') && store.get('gpuAcceleration', true);
 if (!gpuAccelerationEnabled) {
   // 修复透明窗口的 GPU 进程错误（必须在 app.whenReady 之前调用）
   app.commandLine.appendSwitch('disable-software-rasterizer');
   app.commandLine.appendSwitch('disable-gpu-compositing');
 }
+
+// GPU 进程崩溃自动降级：写回设置（下次启动走软件渲染）+ 通知渲染进程提示，
+// 与 Chrome 的 gpu-process-crashed 自动回退机制一致，无需用户手动处理
+app.on('child-process-gone', (event, details) => {
+  if (details && details.type === 'GPU') {
+    console.warn('GPU 进程崩溃，自动关闭 GPU 加速:', details.reason || '');
+    try {
+      store.set('gpuAcceleration', false);
+    } catch (e) { /* 忽略 */ }
+    if (mainWindow && !mainWindow.isDestroyed() && mainWindow.webContents) {
+      mainWindow.webContents.send('gpu-crash', { autoDisabled: true });
+    }
+  }
+});
 
 app.whenReady().then(async () => {
   // 开机延迟启动：延迟初始化窗口，避免开机时抢占焦点

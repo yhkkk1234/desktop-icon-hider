@@ -12,6 +12,7 @@
     <!-- 自定义背景图层（最底层） -->
     <div id="bg-layer" class="bg-layer" style="display: none;">
       <img id="bg-image" alt="" draggable="false">
+      <canvas id="fx-bg-canvas" class="fx-bg-canvas" width="1" height="1"></canvas>
       <div id="bg-dim" class="bg-dim"></div>
       <div id="bg-vignette" class="bg-vignette"></div>
     </div>
@@ -548,6 +549,41 @@
           GPU 合成可能不稳定（崩溃/黑屏）；切换后需重启应用生效。
         </div>
       </div>
+
+      <!-- 鼠标特效 -->
+      <div class="settings-section">
+        <h3 data-i18n="settings.mouseFx">鼠标特效</h3>
+        <div class="setting-item">
+          <label class="switch">
+            <input type="checkbox" id="mouse-fx-toggle">
+            <span class="slider"></span>
+          </label>
+          <span class="setting-label" data-i18n="settings.mouseFxEnable">启用鼠标特效</span>
+        </div>
+        <div class="setting-item">
+          <label for="mouse-fx-type-select" data-i18n="settings.mouseFxType">特效类型:</label>
+          <select id="mouse-fx-type-select">
+            <option value="ripple" data-i18n="settings.mouseFxRipple">水波涟漪</option>
+            <option value="stars" data-i18n="settings.mouseFxStars">卡通星星</option>
+            <option value="trail" data-i18n="settings.mouseFxTrail">彩虹拖尾</option>
+          </select>
+        </div>
+        <div class="setting-item">
+          <label for="mouse-fx-cursor-select" data-i18n="settings.mouseFxCursor">自定义光标:</label>
+          <select id="mouse-fx-cursor-select">
+            <option value="none" data-i18n="settings.mouseFxCursorNone">无</option>
+            <option value="dot" data-i18n="settings.mouseFxCursorDot">圆点</option>
+            <option value="arrow" data-i18n="settings.mouseFxCursorArrow">箭头</option>
+            <option value="star" data-i18n="settings.mouseFxCursorStar">星光</option>
+          </select>
+        </div>
+        <div class="setting-warning" id="mouse-fx-gpu-hint" style="display:none;" data-i18n="settings.mouseFxGpuHint">
+          水波特效建议开启 GPU 加速
+        </div>
+        <div class="setting-description" data-i18n="settings.mouseFxDesc">
+          鼠标划过时在窗口内显示特效；关闭后完全无性能开销。水波特效仅在设置背景图后可用完整扭曲效果。
+        </div>
+      </div>
       
       <!-- 语言设置 -->
       <div class="settings-section">
@@ -761,7 +797,17 @@
     </div>
   </div>
 
+  <!-- 鼠标特效前景层（星星/拖尾/水波降级，最顶层、不拦截鼠标事件） -->
+  <canvas id="fx-fg-canvas" class="fx-fg-canvas" width="1" height="1"></canvas>
+  <!-- 自定义光标独立层（避免清除特效画面） -->
+  <canvas id="fx-cursor-canvas" class="fx-cursor-canvas" width="1" height="1"></canvas>
+
   <script src="i18n.js"></script>
+  <script src="effects/fx-manager.js"></script>
+  <script src="effects/ripple.js"></script>
+  <script src="effects/stars.js"></script>
+  <script src="effects/trail.js"></script>
+  <script src="effects/cursor.js"></script>
   <script src="renderer.js"></script>
 </body>
 </html>

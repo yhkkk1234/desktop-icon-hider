@@ -4565,3 +4565,61 @@ input:focus-visible,
   opacity: 0.45;
   pointer-events: none;
 }
+
+/* ============ 鼠标特效 ============ */
+
+/* 前景层（星星/拖尾）：固定全窗口、最顶层、不拦截鼠标事件 */
+.fx-fg-canvas {
+  position: fixed;
+  top: 0;
+  left: 0;
+  width: 100%;
+  height: 100%;
+  z-index: 10000;
+  pointer-events: none;
+  display: none;
+}
+
+/* 自定义光标独立层：与特效层分开，避免光标清除误擦特效画面 */
+.fx-cursor-canvas {
+  position: fixed;
+  top: 0;
+  left: 0;
+  width: 100%;
+  height: 100%;
+  z-index: 10001;
+  pointer-events: none;
+  display: none;
+}
+
+/* 背景层（水波真扭曲）：位于 bg-image 与暗化层之间，复制 bg-image 的滤镜规则，
+   使扭曲画面与常规背景视觉一致（blur/亮度/饱和度/对比度/透明度由合成层处理） */
+.fx-bg-canvas {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  display: none;
+  filter: blur(var(--bg-blur, 24px))
+    brightness(var(--bg-brightness, 1))
+    saturate(var(--bg-saturation, 1))
+    contrast(var(--bg-contrast, 1));
+  opacity: var(--opacity-bg, 0.92);
+}
+
+/* cover 模式：与 bg-image 相同的 1.2 倍基础放大，抵消边缘模糊扩散漏底。
+   用布局偏移（120% 尺寸 + 居中 -10%）代替 transform: scale(1.2)：
+   透明窗口下 filter+transform 组合在部分环境存在合成层内容偏移 bug（画面整体
+   平移一段），布局放大无此问题，且内容裁切由 shader 的 cover 映射处理 */
+.bg-layer[data-mode="cover"] .fx-bg-canvas {
+  width: 120%;
+  height: 120%;
+  left: -10%;
+  top: -10%;
+}
+
+/* 启用自定义光标时隐藏系统光标（仅窗口内生效） */
+body.fx-cursor-hidden,
+body.fx-cursor-hidden * {
+  cursor: none !important;
+}
