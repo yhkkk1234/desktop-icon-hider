@@ -462,12 +462,18 @@
           </label>
           <span class="setting-label" data-i18n="widget.showToggle">显示小组件（时钟 / 日历）</span>
         </div>
+        <div class="setting-description" data-i18n="widget.settingsDesc">
+          在分组栏点击组件按钮添加时钟或日历组件，拖动可自由摆放位置。
+        </div>
         <div class="setting-item">
           <label class="switch">
             <input type="checkbox" id="widgets-avoid-toggle">
             <span class="slider"></span>
           </label>
           <span class="setting-label" data-i18n="settings.widgetsAvoid">图标自动绕开组件</span>
+        </div>
+        <div class="setting-description" data-i18n="settings.widgetsAvoidDesc">
+          开启后，桌面图标会自动重新排列并绕开小组件覆盖的区域，不会被遮挡。
         </div>
         <div class="setting-item">
           <label class="switch">
@@ -476,8 +482,11 @@
           </label>
           <span class="setting-label" data-i18n="settings.weatherFx">天气动态背景</span>
         </div>
+        <div class="setting-description" data-i18n="settings.weatherFxDesc">
+          多云时云层飘动，雨雪天界面下起雨雪（随雨量分级），关闭后恢复静态样式。
+        </div>
         <div class="setting-item">
-          <label for="agent-retention-input" data-i18n="settings.agentRetention">Agent 会话保留:</label>
+          <label for="agent-retention-input" data-i18n="settings.agentRetention">OpenCode 会话保留:</label>
           <input type="number" id="agent-retention-input" min="0" max="365" value="7" class="number-input">
           <span class="setting-label" data-i18n="settings.days">天</span>
         </div>
@@ -485,24 +494,15 @@
           已完成会话超过该天数后不再显示（重新对话会自动恢复）；0 表示不限制。
         </div>
         <div class="setting-item">
-          <label for="agent-server-port-input" data-i18n="settings.agentServerPort">Server 端口:</label>
+          <label for="agent-server-port-input" data-i18n="settings.agentServerPort">OpenCode Server 端口:</label>
           <input type="number" id="agent-server-port-input" min="0" max="65535" value="0" class="number-input">
         </div>
         <div class="setting-item">
-          <label for="agent-server-password-input" data-i18n="settings.agentServerPassword">Server 密码:</label>
-          <input type="password" id="agent-server-password-input" class="text-input" placeholder="">
+          <label for="agent-server-password-input" data-i18n="settings.agentServerPassword">OpenCode Server 密码:</label>
+          <input type="password" id="agent-server-password-input" class="number-input" placeholder="">
         </div>
         <div class="setting-description" data-i18n="settings.agentServerDesc">
           在 OpenCode 桌面端自设了 server（自定义端口/密码）时在此填入；留空则使用默认端口（4096）且不携带认证。
-        </div>
-        <div class="setting-description" data-i18n="settings.weatherFxDesc">
-          多云时云层飘动，雨雪天界面下起雨雪（随雨量分级），关闭后恢复静态样式。
-        </div>
-        <div class="setting-description" data-i18n="settings.widgetsAvoidDesc">
-          开启后，桌面图标会自动重新排列并绕开小组件覆盖的区域，不会被遮挡。
-        </div>
-        <div class="setting-description" data-i18n="widget.settingsDesc">
-          在分组栏点击组件按钮添加时钟或日历组件，拖动可自由摆放位置。
         </div>
       </div>
       
@@ -748,7 +748,7 @@
           <div class="widget-menu-item" data-widget-type="calendar" data-i18n="widget.calendar">日历</div>
           <div class="widget-menu-item" data-widget-type="weather" data-i18n="widget.weather">天气</div>
           <div class="widget-menu-item" data-widget-type="monitor" data-i18n="widget.monitor">性能监控</div>
-          <div class="widget-menu-item" data-widget-type="agent" data-i18n="widget.agent">Agent 会话</div>
+          <div class="widget-menu-item" data-widget-type="agent" data-i18n="widget.agent">OpenCode 会话</div>
         </div>
       </div>
       <div id="files-list" class="files-list"></div>

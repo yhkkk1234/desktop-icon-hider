@@ -264,6 +264,7 @@ html, body {
   font-size: 11px;
   line-height: 1.4;
   margin-top: 8px;
+  margin-bottom: 12px;
   padding-top: 8px;
   border-top: 1px solid var(--border-secondary);
 }

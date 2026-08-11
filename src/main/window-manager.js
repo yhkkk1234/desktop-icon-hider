@@ -451,6 +451,20 @@ function hideWindow(window) {
   const display = getDisplayForWindow(window);
   const wa = getWorkArea(display);
   
+  // 探测"屏内 setBounds 偏移"：透明无边框窗口在屏内 setBounds(w) 实际得到 w+1
+  // （恒定 1px，仅屏内存在；出屏时精确）。探测后立即恢复原宽（设 w-1 得 w），
+  // 动画期间 width 传 w-1 即可保持实际宽度 w，显示完成无需再校正、无视觉跳变。
+  let dpiOffset = 0;
+  try {
+    window.setBounds({ x: bounds.x, y: bounds.y, width: bounds.width, height: bounds.height });
+    const probed = window.getBounds().width;
+    dpiOffset = probed - bounds.width;
+    if (dpiOffset !== 0) {
+      window.setBounds({ x: bounds.x, y: bounds.y, width: bounds.width - dpiOffset, height: bounds.height });
+    }
+  } catch (e) { /* 忽略 */ }
+  window.autoHideState.dpiOffset = dpiOffset;
+  
   let newBounds = { ...bounds };
   
   switch (window.autoHideState.currentEdge) {
@@ -475,7 +489,7 @@ function hideWindow(window) {
     window.autoHideState.isHidden = true;
     // 通知渲染进程
     window.webContents.send('auto-hide-changed', { isHidden: true });
-  });
+  }, dpiOffset);
 }
 
 // 恢复置顶（含"置顶能力解锁"）：窗口滑出屏幕（隐藏）后，Windows 会间歇性锁定该窗口
@@ -531,7 +545,7 @@ function showWindow(window) {
     return;
   }
   
-  // 使用动画效果移动窗口
+  // 使用动画效果移动窗口（width 传 w-offset 抵消屏内 1px 偏移，全程保持实际宽度）
   animateWindowMove(window, bounds, newBounds, AUTO_HIDE_CONFIG.ANIMATION_DURATION, () => {
     window.autoHideState.isHidden = false;
     // 鼠标移到隐藏线唤出 = 主动意图使用桌面：恢复置顶。
@@ -555,11 +569,15 @@ function showWindow(window) {
     }, 200);
     // 通知渲染进程
     window.webContents.send('auto-hide-changed', { isHidden: false });
-  });
+  }, window.autoHideState.dpiOffset || 0);
 }
 
-function animateWindowMove(window, startBounds, endBounds, duration, onComplete) {
+function animateWindowMove(window, startBounds, endBounds, duration, onComplete, widthOffset) {
   if (!window) return;
+  
+  // 屏内 1px 宽度偏移补偿：透明无边框窗口在屏内 setBounds(w) 实际得到 w+1，
+  // 动画/结束位置传 w-offset 使实际宽度保持 w（出屏时精确、offset 无副作用）
+  const wFix = Number(widthOffset) || 0;
   
   // 确保所有边界值都是有效数字
   const start = {
@@ -579,7 +597,12 @@ function animateWindowMove(window, startBounds, endBounds, duration, onComplete)
   // 如果没有变化，直接设置最终位置
   if (start.x === end.x && start.y === end.y && 
       start.width === end.width && start.height === end.height) {
-    window.setBounds(end);
+    window.setBounds({
+      x: end.x,
+      y: end.y,
+      width: Math.max(end.width - wFix, 1),
+      height: end.height
+    });
     if (onComplete) onComplete();
     return;
   }
@@ -615,7 +638,12 @@ function animateWindowMove(window, startBounds, endBounds, duration, onComplete)
       
       // 确保值有效
       if (isNaN(newX) || isNaN(newY) || isNaN(newWidth) || isNaN(newHeight)) {
-        window.setBounds(end);
+        window.setBounds({
+          x: end.x,
+          y: end.y,
+          width: Math.max(end.width - wFix, 1),
+          height: end.height
+        });
         window.autoHideState.isAnimating = false;
         if (onComplete) onComplete();
         return;
@@ -624,7 +652,7 @@ function animateWindowMove(window, startBounds, endBounds, duration, onComplete)
       window.setBounds({
         x: newX,
         y: newY,
-        width: Math.max(newWidth, 1),
+        width: Math.max(newWidth - wFix, 1),
         height: Math.max(newHeight, 1)
       });
       
@@ -640,7 +668,12 @@ function animateWindowMove(window, startBounds, endBounds, duration, onComplete)
         window.autoHideState.isAnimating = false;
         // 出错时直接设置最终位置
         try {
-          window.setBounds(end);
+          window.setBounds({
+            x: end.x,
+            y: end.y,
+            width: Math.max(end.width - wFix, 1),
+            height: end.height
+          });
         } catch (e) {
           // 忽略
         }
