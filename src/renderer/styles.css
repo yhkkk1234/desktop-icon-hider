@@ -1335,6 +1335,15 @@ kbd {
   border-color: var(--switch-active);
 }
 
+/* 数字输入框：隐藏原生微调箭头（Windows 白色样式与主题不搭，且不易操作），
+   直接填写数字即可 */
+.number-input::-webkit-outer-spin-button,
+.number-input::-webkit-inner-spin-button {
+  -webkit-appearance: none;
+  appearance: none;
+  margin: 0;
+}
+
 .shortcut-input {
   flex: 1;
   min-width: 100px;
