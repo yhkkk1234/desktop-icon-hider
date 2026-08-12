@@ -4476,8 +4476,9 @@ function handleWidgetResizeMove(e) {
   if (!widgetResize) return;
   const { widget, node, startX, startY, startW, startH } = widgetResize;
   if (widget.type === 'everything') {
-    // Everything 组件：高度固定，仅水平缩放（min 220，max 视口宽-16 留左右 8px 边距）
-    widget.w = Math.max(EVERYTHING_MIN_W, Math.min(window.innerWidth - 16, startW + (e.clientX - startX)));
+    // Everything 组件：高度固定，仅水平缩放（min 220，max 视口宽-8 留左右 4px 边距，
+    // 避开窗口右边缘 resize 热区又不影响拉满的视觉效果）
+    widget.w = Math.max(EVERYTHING_MIN_W, Math.min(window.innerWidth - 8, startW + (e.clientX - startX)));
     node.style.width = widget.w + 'px';
   } else {
     widget.w = Math.max(AGENT_WIDGET_MIN_W, Math.min(AGENT_WIDGET_MAX_W, startW + (e.clientX - startX)));
@@ -5267,10 +5268,10 @@ function focusEverythingInput() {
   if (input) input.focus();
 }
 
-// 窗口缩小后收敛 everything 组件宽度到窗口内（min(当前宽, 视口-16)，下限 220），
+// 窗口缩小后收敛 everything 组件宽度到窗口内（min(当前宽, 视口-8)，下限 220），
 // 避免组件超出窗口右边界被截断；窗口比 220 更窄时保持下限（允许被裁，符合最小宽度语义）
 function clampEverythingWidth() {
-  const maxW = window.innerWidth - 16;
+  const maxW = window.innerWidth - 8;
   let changed = false;
   for (const w of widgets) {
     if (w.type !== 'everything' || !Number.isFinite(w.w) || w.w <= maxW) continue;
