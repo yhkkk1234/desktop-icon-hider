@@ -158,6 +158,9 @@ html, body {
   border-radius: 8px;
   overflow: hidden;
   border: 1px solid var(--border-primary);
+  /* 让背景层、顶部覆盖层和透明窗口合成都以圆角根容器为边界 */
+  position: relative;
+  isolation: isolate;
 }
 
 .header {
@@ -174,6 +177,8 @@ html, body {
   flex-shrink: 0;
   -webkit-app-region: drag;
   padding-left: 14px;
+  border-top-left-radius: var(--skin-app-radius);
+  border-top-right-radius: var(--skin-app-radius);
 }
 
 .title {
@@ -1761,7 +1766,8 @@ body.icons-locked .file-item.draggable:active {
 /* 背景图模式下窗口底色透明，由图片层承担；去掉顶部白边/高光 */
 #app.has-bg {
   background: transparent;
-  border-color: transparent;
+  /* 背景模式不保留透明边框，否则贴屏时会露出 1px 缝隙 */
+  border: 0;
   box-shadow: none;
 }
 
@@ -4136,7 +4142,7 @@ input:focus-visible,
 [data-theme="glass-light"] #app.has-bg,
 [data-theme="glass-dark"] #app.has-bg {
   background: var(--glass-surface);
-  border-color: var(--glass-border);
+  border: 1px solid var(--glass-border);
 }
 
 [data-theme="glass-light"] .header,
