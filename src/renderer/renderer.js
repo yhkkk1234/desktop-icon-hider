@@ -106,7 +106,7 @@ let shortcutToggleInput, shortcutRefreshInput, shortcutWidgetsInput;
 let exportLayoutBtn, importLayoutBtn, quitAppBtn;
 let groupModeSelect, groupsBar, thumbStyleSelect;
 let widgetsLayer, addWidgetBtn, widgetMenu, showWidgetsToggle, widgetsAvoidToggle, weatherFxToggle, toggleWidgetsBtn;
-let everythingBar, everythingInput, everythingGo, everythingToggle, everythingStatus, everythingDownloadBtn, everythingAdminWarn;
+let everythingToggle, everythingStatus, everythingDownloadBtn, everythingAdminWarn;
 let folderPreviewToggle;
 let bgLayer, bgImage, bgToggle, selectBgBtn, clearBgBtn, bgBlurSlider, bgBlurValue, bgDimSlider, bgDimValue;
 let bgModeSelect, bgScaleSlider, bgScaleValue, bgOffsetXSlider, bgOffsetXValue, bgOffsetYSlider, bgOffsetYValue;
@@ -194,9 +194,6 @@ document.addEventListener('DOMContentLoaded', () => {
   widgetsAvoidToggle = document.getElementById('widgets-avoid-toggle');
   weatherFxToggle = document.getElementById('weather-fx-toggle');
   toggleWidgetsBtn = document.getElementById('toggle-widgets-btn');
-  everythingBar = document.getElementById('everything-bar');
-  everythingInput = document.getElementById('everything-input');
-  everythingGo = document.getElementById('everything-go');
   everythingToggle = document.getElementById('everything-toggle');
   everythingStatus = document.getElementById('everything-status');
   everythingDownloadBtn = document.getElementById('everything-download-btn');
@@ -297,13 +294,6 @@ document.addEventListener('DOMContentLoaded', () => {
   everythingDownloadBtn.addEventListener('click', () => {
     window.api.openExternal('https://www.voidtools.com/downloads/');
   });
-  everythingInput.addEventListener('keydown', (e) => {
-    if (e.key === 'Enter') {
-      e.preventDefault();
-      runEverythingSearch();
-    }
-  });
-  everythingGo.addEventListener('click', runEverythingSearch);
 
   // 文件夹预览开关
   folderPreviewToggle.addEventListener('change', handleFolderPreviewToggle);
@@ -4242,8 +4232,13 @@ function syncWidgetElement(node, widget) {
   node.style.top = widget.y + '%';
   if (Number.isFinite(widget.w) && widget.w > 0) {
     node.style.width = widget.w + 'px';
-    node.style.height = widget.h + 'px';
-    node.classList.add('wa-resized');
+    if (widget.type === 'everything') {
+      // Everything 组件：高度固定（36px+内边距），不参与 h/wa-resized
+      node.style.height = '';
+    } else {
+      node.style.height = widget.h + 'px';
+      node.classList.add('wa-resized');
+    }
   }
 }
 
@@ -4340,6 +4335,56 @@ function createWidgetElement(widget) {
       saveWidgets();
       scheduleIconLayout();
     });
+  } else if (widget.type === 'everything') {
+    // Everything 搜索组件：高度固定 36px，仅宽度可调（min 220px），
+    // 由设置面板开关控制增删（非组件按钮菜单创建）
+    node.innerHTML = `
+      <div class="everything-bar">
+        <span class="search-icon" aria-hidden="true">
+          <svg class="ui-icon" viewBox="0 0 24 24">
+            <circle cx="10.5" cy="10.5" r="5.5"></circle>
+            <path d="M15 15l4.5 4.5"></path>
+          </svg>
+        </span>
+        <input type="text" id="everything-input" data-i18n-placeholder="everything.placeholder" placeholder="搜索全盘文件... (回车)" autocomplete="off" spellcheck="false">
+        <button id="everything-go" class="search-clear" data-i18n="everything.searchBtn">搜索</button>
+        <button class="widget-close" title="${t('widget.delete')}">×</button>
+        <div class="widget-resize-handle" title="${t('widget.resize')}"></div>
+      </div>
+    `;
+    const eInput = node.querySelector('#everything-input');
+    eInput.addEventListener('keydown', (e) => {
+      if (e.key === 'Enter') {
+        e.preventDefault();
+        runEverythingSearch();
+      }
+    });
+    node.querySelector('#everything-go').addEventListener('click', runEverythingSearch);
+    // 水平缩放（高度固定）
+    const eHandle = node.querySelector('.widget-resize-handle');
+    eHandle.addEventListener('mousedown', (e) => {
+      e.stopPropagation();
+      e.preventDefault();
+      widgetResize = {
+        widget,
+        node,
+        startX: e.clientX,
+        startY: e.clientY,
+        startW: node.offsetWidth,
+        startH: 0,
+        type: 'everything'
+      };
+      window.addEventListener('mousemove', handleWidgetResizeMove);
+      window.addEventListener('mouseup', handleWidgetResizeEnd);
+    });
+    // 双击手柄：恢复默认宽度
+    eHandle.addEventListener('dblclick', (e) => {
+      e.stopPropagation();
+      widget.w = EVERYTHING_DEFAULT_W;
+      node.style.width = EVERYTHING_DEFAULT_W + 'px';
+      saveWidgets();
+      scheduleIconLayout();
+    });
   }
 
   // 删除
@@ -4364,7 +4409,7 @@ function createWidgetElement(widget) {
   // 拖拽移动
   node.addEventListener('mousedown', (e) => {
     if (e.button !== 0) return;
-    if (e.target.closest('.widget-close') || e.target.closest('.widget-cal-nav') || e.target.closest('.wm-style-btn') || e.target.closest('.wa-item') || e.target.closest('.widget-resize-handle')) return;
+    if (e.target.closest('.widget-close') || e.target.closest('.widget-cal-nav') || e.target.closest('.wm-style-btn') || e.target.closest('.wa-item') || e.target.closest('.widget-resize-handle') || e.target.closest('input') || e.target.closest('#everything-go')) return;
     e.preventDefault();
     widgetDrag = {
       widget,
@@ -4426,11 +4471,17 @@ const AGENT_WIDGET_MAX_H = 1200;
 function handleWidgetResizeMove(e) {
   if (!widgetResize) return;
   const { widget, node, startX, startY, startW, startH } = widgetResize;
-  widget.w = Math.max(AGENT_WIDGET_MIN_W, Math.min(AGENT_WIDGET_MAX_W, startW + (e.clientX - startX)));
-  widget.h = Math.max(AGENT_WIDGET_MIN_H, Math.min(AGENT_WIDGET_MAX_H, startH + (e.clientY - startY)));
-  node.style.width = widget.w + 'px';
-  node.style.height = widget.h + 'px';
-  node.classList.add('wa-resized');
+  if (widget.type === 'everything') {
+    // Everything 组件：高度固定，仅水平缩放（min 220，max 视口宽-40）
+    widget.w = Math.max(EVERYTHING_MIN_W, Math.min(window.innerWidth - 40, startW + (e.clientX - startX)));
+    node.style.width = widget.w + 'px';
+  } else {
+    widget.w = Math.max(AGENT_WIDGET_MIN_W, Math.min(AGENT_WIDGET_MAX_W, startW + (e.clientX - startX)));
+    widget.h = Math.max(AGENT_WIDGET_MIN_H, Math.min(AGENT_WIDGET_MAX_H, startH + (e.clientY - startY)));
+    node.style.width = widget.w + 'px';
+    node.style.height = widget.h + 'px';
+    node.classList.add('wa-resized');
+  }
   node.classList.add('wa-resizing');
   saveWidgets();
   scheduleIconLayout();
@@ -5179,10 +5230,42 @@ async function toggleWidgetsVisibility() {
 }
 
 // ============ Everything 搜索 ============
+// 组件模式：搜索条是 widgets 里的 everything 类型组件（由设置开关控制增删，
+// 创建前已有安装检测保险；运行时未安装则由搜索兜底移除）
+const EVERYTHING_DEFAULT_W = 220; // 组件默认/最小宽度（高度固定 36px）
+const EVERYTHING_MIN_W = 220;
+const EVERYTHING_DEFAULT_POS = { x: 62, y: 10 }; // 默认位置（右上偏下，标题栏下方）
+
+// 同步 everything 组件与开关/安装状态（开关=widgets 增删，老配置自动迁移）
+function syncEverythingWidget() {
+  if (!widgetsLayer) return;
+  const hasWidget = widgets.some((w) => w.type === 'everything');
+  if (everythingEnabled && everythingInstalled && !hasWidget) {
+    widgets.push({
+      id: 'w_' + Date.now() + '_' + Math.random().toString(36).slice(2, 8),
+      type: 'everything',
+      x: EVERYTHING_DEFAULT_POS.x,
+      y: EVERYTHING_DEFAULT_POS.y,
+      w: EVERYTHING_DEFAULT_W
+    });
+    saveWidgets();
+    renderWidgets();
+    focusEverythingInput();
+  } else if ((!everythingEnabled || !everythingInstalled) && hasWidget) {
+    widgets = widgets.filter((w) => w.type !== 'everything');
+    saveWidgets();
+    renderWidgets();
+  }
+}
+
+function focusEverythingInput() {
+  const input = document.getElementById('everything-input');
+  if (input) input.focus();
+}
+
 function updateEverythingUI() {
   if (everythingToggle) everythingToggle.checked = everythingEnabled;
-  // 搜索栏仅在开启且已安装时显示
-  everythingBar.style.display = (everythingEnabled && everythingInstalled) ? 'flex' : 'none';
+  syncEverythingWidget();
   // 状态显示
   if (everythingInstalled) {
     everythingStatus.textContent = t('settings.everythingReady');
@@ -5222,7 +5305,6 @@ async function handleEverythingToggle() {
     everythingEnabled = true;
     await window.api.setEverythingEnabled(true);
     updateEverythingUI();
-    everythingInput.focus();
   } else {
     everythingEnabled = false;
     await window.api.setEverythingEnabled(false);
@@ -5231,9 +5313,11 @@ async function handleEverythingToggle() {
 }
 
 async function runEverythingSearch() {
-  const keyword = everythingInput.value.trim();
+  const input = document.getElementById('everything-input');
+  if (!input) return;
+  const keyword = input.value.trim();
   if (!keyword) {
-    everythingInput.focus();
+    input.focus();
     return;
   }
   const result = await window.api.openEverythingSearch(keyword);

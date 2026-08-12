@@ -1009,7 +1009,7 @@ ipcMain.handle('set-widgets', async (event, widgets) => {
     if (!Array.isArray(widgets)) return false;
     const sanitized = widgets.map(w => ({
       id: String(w.id || ''),
-      type: ['clock', 'calendar', 'weather', 'monitor', 'agent'].includes(w.type) ? w.type : 'clock',
+      type: ['clock', 'calendar', 'weather', 'monitor', 'agent', 'everything'].includes(w.type) ? w.type : 'clock',
       x: Number.isFinite(w.x) ? Math.max(0, Math.min(95, w.x)) : 2,
       y: Number.isFinite(w.y) ? Math.max(0, Math.min(90, w.y)) : 2,
       w: Number.isFinite(w.w) ? Math.max(120, Math.min(1200, Math.round(w.w))) : undefined,
