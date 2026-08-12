@@ -410,6 +410,7 @@ document.addEventListener('DOMContentLoaded', () => {
     resizeTimer = setTimeout(() => {
       scheduleIconLayout();
       updateBgCustomSize();
+      clampEverythingWidth();
     }, 100);
   });
 
@@ -4188,12 +4189,15 @@ function renderWidgets() {
     }, 60 * 1000);
   }
 
-  // 天气组件：立即刷新 + 30 分钟定时刷新
-  if (weatherTimer) {
+  // 天气组件：30 分钟定时刷新；仅在定时器从无到有时立即刷新一次
+  // （天气组件创建时 createWidgetElement 已立即刷新，此处避免其他组件增删
+  //  （如 agent 组件创建/删除）反复触发天气"loading→请求→重建"，导致内容重载闪烁）
+  const hasWeather = widgets.some(w => w.type === 'weather');
+  if (!hasWeather && weatherTimer) {
     clearInterval(weatherTimer);
     weatherTimer = null;
   }
-  if (widgets.some(w => w.type === 'weather')) {
+  if (hasWeather && !weatherTimer) {
     refreshAllWeatherWidgets();
     weatherTimer = setInterval(refreshAllWeatherWidgets, 30 * 60 * 1000);
   }
@@ -4472,8 +4476,8 @@ function handleWidgetResizeMove(e) {
   if (!widgetResize) return;
   const { widget, node, startX, startY, startW, startH } = widgetResize;
   if (widget.type === 'everything') {
-    // Everything 组件：高度固定，仅水平缩放（min 220，max 视口宽-40）
-    widget.w = Math.max(EVERYTHING_MIN_W, Math.min(window.innerWidth - 40, startW + (e.clientX - startX)));
+    // Everything 组件：高度固定，仅水平缩放（min 220，max 视口宽-16 留左右 8px 边距）
+    widget.w = Math.max(EVERYTHING_MIN_W, Math.min(window.innerWidth - 16, startW + (e.clientX - startX)));
     node.style.width = widget.w + 'px';
   } else {
     widget.w = Math.max(AGENT_WIDGET_MIN_W, Math.min(AGENT_WIDGET_MAX_W, startW + (e.clientX - startX)));
@@ -5261,6 +5265,24 @@ function syncEverythingWidget() {
 function focusEverythingInput() {
   const input = document.getElementById('everything-input');
   if (input) input.focus();
+}
+
+// 窗口缩小后收敛 everything 组件宽度到窗口内（min(当前宽, 视口-16)，下限 220），
+// 避免组件超出窗口右边界被截断；窗口比 220 更窄时保持下限（允许被裁，符合最小宽度语义）
+function clampEverythingWidth() {
+  const maxW = window.innerWidth - 16;
+  let changed = false;
+  for (const w of widgets) {
+    if (w.type !== 'everything' || !Number.isFinite(w.w) || w.w <= maxW) continue;
+    w.w = Math.max(EVERYTHING_MIN_W, maxW);
+    changed = true;
+    const node = widgetsLayer.querySelector(`[data-widget-id="${CSS.escape(w.id)}"]`);
+    if (node) node.style.width = w.w + 'px';
+  }
+  if (changed) {
+    saveWidgets();
+    scheduleIconLayout();
+  }
 }
 
 function updateEverythingUI() {
