@@ -1335,26 +1335,6 @@ kbd {
   border-color: var(--switch-active);
 }
 
-/* 数字输入框微调按钮（上下箭头）：替换 Windows 白色原生样式。
-   注意：-webkit-mask 在此伪元素上不生效（会整块变透明），改用
-   background-image 直接贴 SVG 箭头（中性灰，深浅主题均协调），
-   hover 亮度提升作为反馈 */
-.number-input::-webkit-outer-spin-button,
-.number-input::-webkit-inner-spin-button {
-  -webkit-appearance: none;
-  appearance: none;
-  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24'%3E%3Cpath fill='%23909090' d='M7.4 9.6L12 5l4.6 4.6H7.4zm9.2 4.8L12 19l-4.6-4.6h9.2z'/%3E%3C/svg%3E");
-  background-size: 60% 60%;
-  background-position: center;
-  background-repeat: no-repeat;
-  opacity: 0.9;
-}
-
-.number-input::-webkit-inner-spin-button:hover {
-  opacity: 1;
-  filter: brightness(1.5);
-}
-
 .shortcut-input {
   flex: 1;
   min-width: 100px;
