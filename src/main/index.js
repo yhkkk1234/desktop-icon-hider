@@ -739,7 +739,8 @@ function createWindow() {
           weatherFxEnabled: store.get('weatherFxEnabled', true),
           agentReadSessions: store.get('agentReadSessions', []),
           agentDoneRetentionDays: store.get('agentDoneRetentionDays', 7),
-          agentConfigs: store.get('agentConfigs', {})
+          agentConfigs: store.get('agentConfigs', {}),
+          mouseEffects: store.get('mouseEffects', {})
         });
       } catch (error) {
         console.error('发送初始化数据失败:', error);
@@ -783,7 +784,8 @@ function createWindow() {
           weatherFxEnabled: store.get('weatherFxEnabled', true),
           agentReadSessions: store.get('agentReadSessions', []),
           agentDoneRetentionDays: store.get('agentDoneRetentionDays', 7),
-          agentConfigs: store.get('agentConfigs', {})
+          agentConfigs: store.get('agentConfigs', {}),
+          mouseEffects: store.get('mouseEffects', {})
         });
       }
     });

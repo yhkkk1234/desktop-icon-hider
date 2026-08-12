@@ -1335,6 +1335,25 @@ kbd {
   border-color: var(--switch-active);
 }
 
+/* 数字输入框微调按钮（上下箭头）：替换 Windows 白色原生样式，改为主题色
+   （mask 绘制 + background-color 跟随文字色变量，hover 高亮为主题强调色） */
+.number-input::-webkit-outer-spin-button,
+.number-input::-webkit-inner-spin-button {
+  -webkit-appearance: none;
+  appearance: none;
+  background-color: var(--text-tertiary);
+  -webkit-mask-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24'%3E%3Cpath d='M7.4 9.6L12 5l4.6 4.6H7.4zm9.2 4.8L12 19l-4.6-4.6h9.2z'/%3E%3C/svg%3E");
+  -webkit-mask-size: 60% 60%;
+  -webkit-mask-position: center;
+  -webkit-mask-repeat: no-repeat;
+  opacity: 0.75;
+}
+
+.number-input::-webkit-inner-spin-button:hover {
+  background-color: var(--switch-active);
+  opacity: 1;
+}
+
 .shortcut-input {
   flex: 1;
   min-width: 100px;
