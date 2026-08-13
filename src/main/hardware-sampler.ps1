@@ -67,7 +67,7 @@ function Get-LhmSensors {
         } elseif ($sensor.SensorType -eq [LibreHardwareMonitor.Hardware.SensorType]::Temperature) {
           $temps += [pscustomobject]@{ n = $sensor.Name; c = [int][math]::Round($value) }
         } elseif ($sensor.SensorType -eq [LibreHardwareMonitor.Hardware.SensorType]::Data) {
-          # 仅认 GPU 显存数据传感器（此前任何名字含 Memory 的传感器都被误当显存）
+          # Only GPU memory Data sensors (previously any name containing Memory was treated as VRAM)
           if ($sensor.Name -match '^GPU Memory') {
             $valMB = [int][math]::Round($value / 1MB)
             if ($sensor.Name -match 'Total') {
