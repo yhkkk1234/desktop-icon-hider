@@ -92,16 +92,15 @@
 ## 技术栈
 
 ### 核心技术
-- **Electron 27.0.0** - 桌面应用框架
+- **Electron 43** - 桌面应用框架
 - **Node.js** - 后端运行时
 - **JavaScript ES6+** - 编程语言
 
 ### 主要依赖
 - **electron-store** - 配置持久化
-- **electron-auto-launch** - 开机自启动
-- **ffi-napi** - Windows API调用
-- **ref-napi** - 数据类型引用
-- **ref-struct-di** - 结构体定义
+- **better-sqlite3** - agent 会话状态本地数据库
+- **icon_extractor.node（自研 N-API 原生模块）** - 图标提取 / 全屏窗口检测（Windows API）
+- **LibreHardwareMonitorLib** - 硬件传感器读取（性能监控小组件）
 
 ### 开发工具
 - **electron-builder** - 应用打包
