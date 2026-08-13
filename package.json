@@ -6,8 +6,8 @@
   "scripts": {
     "start": "electron .",
     "dev": "electron . --dev --enable-logging",
-    "build": "powershell -ExecutionPolicy Bypass -File build-native.ps1 && electron-builder",
-    "build:win": "powershell -ExecutionPolicy Bypass -File build-native.ps1 && electron-builder --win",
+    "build": "powershell -ExecutionPolicy Bypass -File build-native.ps1 && node scripts/generate-icons.js && electron-builder",
+    "build:win": "powershell -ExecutionPolicy Bypass -File build-native.ps1 && node scripts/generate-icons.js && electron-builder --win",
     "rebuild-native": "node-gyp rebuild",
     "postinstall": "node scripts/apply-patches.js",
     "lint": "eslint src/**/*.js",
