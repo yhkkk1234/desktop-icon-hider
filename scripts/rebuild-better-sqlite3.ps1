@@ -1,4 +1,4 @@
-# rebuild-better-sqlite3.ps1 - 为 Electron 编译 better-sqlite3（只读查询 opencode.db 用）
+﻿# rebuild-better-sqlite3.ps1 - 为 Electron 编译 better-sqlite3（只读查询 opencode.db 用）
 # 为什么不用 electron-rebuild：
 #   本机仅安装 Windows SDK 10.0.16299，而 node-gyp 检测到 VS2026 后会生成
 #   WindowsTargetPlatformVersion=10.0.26100.0 的 vcxproj（注册表残留 SDK 信息），
@@ -43,10 +43,13 @@ try {
 
 # 3.5 批量把全部 vcxproj 的 SDK 版本 26100 覆盖为本机 16299（含 deps\ 下的 sqlite3.vcxproj
 #      / locate_sqlite3.vcxproj，只改主项目会导致 deps 项目 MSB8036 编译失败）
+#      注意：必须显式按 UTF-8 读写——Windows PowerShell 5.1 对无 BOM 文件默认按 ANSI/GBK 解码，
+#      项目路径含中文（桌面图标隐藏）时会变成乱码导致 MSBuild C1083 找不到源文件
 Get-ChildItem (Join-Path $bsDir 'build') -Filter '*.vcxproj' -Recurse | ForEach-Object {
-  $c = Get-Content $_.FullName -Raw
+  $c = [System.IO.File]::ReadAllText($_.FullName, [System.Text.Encoding]::UTF8)
   if ($c -match '10\.0\.26100\.0') {
-    Set-Content $_.FullName ($c.Replace('10.0.26100.0', $sdkVer)) -Encoding utf8 -NoNewline
+    $newContent = $c.Replace('10.0.26100.0', $sdkVer)
+    [System.IO.File]::WriteAllText($_.FullName, $newContent, (New-Object System.Text.UTF8Encoding($true)))
     Write-Host "    patched SDK: $($_.Name)"
   }
 }

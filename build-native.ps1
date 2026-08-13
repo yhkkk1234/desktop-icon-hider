@@ -1,4 +1,4 @@
-# build-native.ps1 - 重新编译原生模块（icon_extractor.node）
+﻿# build-native.ps1 - 重新编译原生模块（icon_extractor.node）
 # 处理两个环境兼容问题：
 #   1. 本机仅安装 Windows SDK 10.0.16299，node-gyp 默认生成 10.0.26100.0 项目
 #   2. node-addon-api 的 nothing.gyp 未指定 SDK 版本
