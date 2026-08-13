@@ -11,6 +11,7 @@ const {
   setAutoHideEnabled, 
   getAutoHideStatus,
   isFullscreenAppForeground,
+  cancelAnimation,
   EDGE_TYPES 
 } = require('./window-manager');
 const { createTray, updateTrayMenu, destroyTray, autoLauncher } = require('./tray');
@@ -109,13 +110,22 @@ function getDesktopPath() {
 
 // 校验路径是否属于本应用的桌面管辖范围（用户桌面/公共桌面/系统虚拟文件夹），
 // 防止渲染进程通过 IPC 操作任意文件
+const SYSTEM_CLSID_PATH_RE = /^::\{[0-9A-Fa-f]{8}-[0-9A-Fa-f]{4}-[0-9A-Fa-f]{4}-[0-9A-Fa-f]{4}-[0-9A-Fa-f]{12}\}$/;
+
 function isAllowedPath(filePath) {
   if (!filePath || typeof filePath !== 'string') return false;
-  if (filePath.startsWith('::')) return true; // 系统虚拟文件夹（此电脑、回收站等），仅只读用途
-  const normalized = filePath.toLowerCase();
-  const userDesktop = getDesktopPath().toLowerCase();
+  // 系统虚拟文件夹（此电脑、回收站等）：仅允许纯 CLSID 形式，
+  // 从根上排除引号/&/空格等 cmd 元字符（open-file 会拼进 start 命令行）
+  if (filePath.startsWith('::')) {
+    return SYSTEM_CLSID_PATH_RE.test(filePath);
+  }
+  // 拒绝含 `..` 段的路径：未规范化时可通过前缀校验穿越到桌面管辖范围之外
+  if (filePath.split(/[\\/]+/).includes('..')) return false;
+  // 先规范化再前缀比较，防止 `Desktop\..\Windows` 之类的穿越写法
+  const normalized = path.resolve(filePath).toLowerCase();
+  const userDesktop = path.resolve(getDesktopPath()).toLowerCase();
   if (userDesktop.endsWith('desktop') && normalized.startsWith(userDesktop + '\\')) return true;
-  const publicDesktop = getPublicDesktopPath().toLowerCase();
+  const publicDesktop = path.resolve(getPublicDesktopPath()).toLowerCase();
   if (publicDesktop.endsWith('desktop') && normalized.startsWith(publicDesktop + '\\')) return true;
   return false;
 }
@@ -616,12 +626,23 @@ public class DesktopHelper {
     public static extern IntPtr FindWindowEx(IntPtr parentHandle, IntPtr childAfter, string className, string windowTitle);
     [DllImport("user32.dll")]
     public static extern bool ShowWindow(IntPtr hWnd, int nCmdShow);
-    public static void Hide() {
+    // 查找 SHELLDLL_DefView：优先 Progman 下；Win11 新桌面模型 / explorer 重启后
+    // 可能挂在 WorkerW 下，遍历兜底。找不到返回 Zero 由调用方抛错（避免静默失效）。
+    public static IntPtr FindShellView() {
         IntPtr progman = FindWindow("Progman", null);
         IntPtr shellView = FindWindowEx(progman, IntPtr.Zero, "SHELLDLL_DefView", null);
-        if (shellView != IntPtr.Zero) {
-            ShowWindow(shellView, 0);
+        if (shellView != IntPtr.Zero) return shellView;
+        IntPtr worker = IntPtr.Zero;
+        while ((worker = FindWindowEx(IntPtr.Zero, worker, "WorkerW", null)) != IntPtr.Zero) {
+            shellView = FindWindowEx(worker, IntPtr.Zero, "SHELLDLL_DefView", null);
+            if (shellView != IntPtr.Zero) return shellView;
         }
+        return IntPtr.Zero;
+    }
+    public static void Hide() {
+        IntPtr shellView = FindShellView();
+        if (shellView == IntPtr.Zero) throw new Exception("SHELLDLL_DefView not found");
+        ShowWindow(shellView, 0);
     }
 }
 "@
@@ -638,6 +659,8 @@ public class DesktopHelper {
     } finally {
       try { fs.unlinkSync(tempFile); } catch (e) { /* 临时文件可能已被清理，忽略 */ }
     }
+    // 隐藏成功才持久化标记：应用崩溃/被强杀后下次启动据此恢复桌面图标
+    store.set('desktopIconsHidden', true);
     return true;
   } catch (error) {
     console.error('隐藏桌面图标失败:', error.message);
@@ -660,11 +683,24 @@ public class DesktopHelper {
     public static extern bool ShowWindow(IntPtr hWnd, int nCmdShow);
     [DllImport("user32.dll")]
     public static extern bool PostMessage(IntPtr hWnd, uint Msg, IntPtr wParam, IntPtr lParam);
-    public static void Show() {
+    // 查找 SHELLDLL_DefView：优先 Progman 下；Win11 / explorer 重启后可能挂在 WorkerW 下
+    public static IntPtr FindShellView() {
         IntPtr progman = FindWindow("Progman", null);
         IntPtr shellView = FindWindowEx(progman, IntPtr.Zero, "SHELLDLL_DefView", null);
-        if (shellView != IntPtr.Zero) {
-            ShowWindow(shellView, 5);
+        if (shellView != IntPtr.Zero) return shellView;
+        IntPtr worker = IntPtr.Zero;
+        while ((worker = FindWindowEx(IntPtr.Zero, worker, "WorkerW", null)) != IntPtr.Zero) {
+            shellView = FindWindowEx(worker, IntPtr.Zero, "SHELLDLL_DefView", null);
+            if (shellView != IntPtr.Zero) return shellView;
+        }
+        return IntPtr.Zero;
+    }
+    public static void Show() {
+        IntPtr progman = FindWindow("Progman", null);
+        IntPtr shellView = FindShellView();
+        if (shellView == IntPtr.Zero) throw new Exception("SHELLDLL_DefView not found");
+        ShowWindow(shellView, 5);
+        if (progman != IntPtr.Zero) {
             PostMessage(progman, 0x0111, new IntPtr(0x7402), IntPtr.Zero);
         }
     }
@@ -683,6 +719,7 @@ public class DesktopHelper {
     } finally {
       try { fs.unlinkSync(tempFile); } catch (e) { /* 临时文件可能已被清理，忽略 */ }
     }
+    store.set('desktopIconsHidden', false);
     return true;
   } catch (error) {
     console.error('显示桌面图标失败:', error.message);
@@ -827,12 +864,18 @@ function createWindow() {
     });
     
     mainWindow.on('moved', () => {
+      // 自动隐藏动画/隐藏态期间的瞬态坐标（含屏幕外最后一帧）不得持久化，
+      // 否则重启后窗口按屏幕外坐标恢复、用户找不到窗口
+      const st = mainWindow && mainWindow.autoHideState;
+      if (st && (st.isHidden || st.isAnimating)) return;
       if (mainWindow && !mainWindow.isCollapsed) {
         store.set('windowBounds', mainWindow.getBounds());
       }
     });
     
     mainWindow.on('resized', () => {
+      const st = mainWindow && mainWindow.autoHideState;
+      if (st && (st.isHidden || st.isAnimating)) return;
       if (mainWindow && !mainWindow.isMinimized() && !mainWindow.isCollapsed) {
         const bounds = mainWindow.getBounds();
         if (bounds.height > 50) {
@@ -870,7 +913,7 @@ ipcMain.handle('toggle-collapse', async (event, collapse) => {
   mainWindow.isCollapsed = !!collapse;
   store.set('isCollapsed', !!collapse);
   
-  // 取消所有自动隐藏定时器
+  // 取消所有自动隐藏定时器与进行中的隐藏/唤出动画（折叠/展开期间不让动画帧继续移动窗口）
   if (mainWindow.autoHideState) {
     if (mainWindow.autoHideState.hideTimer) {
       clearTimeout(mainWindow.autoHideState.hideTimer);
@@ -880,6 +923,7 @@ ipcMain.handle('toggle-collapse', async (event, collapse) => {
       clearTimeout(mainWindow.autoHideState.showTimer);
       mainWindow.autoHideState.showTimer = null;
     }
+    cancelAnimation(mainWindow);
   }
   
   if (collapse) {
@@ -935,10 +979,9 @@ ipcMain.handle('open-file', async (event, filePath) => {
     if (filePath.startsWith('::')) {
       // 系统虚拟文件夹（此电脑/回收站/网络等）：必须用显式空标题的 start。
       // 无 shell 写法会把 `::{CLSID}` 当作窗口标题而静默失败；
-      // explorer.exe 直开实测 exit 1 失败。`::` 路径只含 {}、-、数字，
-      // 无 % & 等 cmd 特殊字符，shell:true 拼接安全。
-      const child = spawn('cmd.exe', ['/c start "" "' + String(filePath) + '"'], {
-        shell: true,
+      // explorer.exe 直开实测 exit 1 失败。isAllowedPath 已保证路径为纯 CLSID
+      // 形式（无引号/&/% 等），与普通路径一致走参数数组，不再 shell:true 拼接。
+      const child = spawn('cmd.exe', ['/c', 'start', '', String(filePath)], {
         windowsHide: true
       });
       child.unref();
@@ -2147,25 +2190,35 @@ function restoreTopmost() {
 
 // 右键菜单活动状态：仅当菜单确实显示过时才执行 cancel，避免每次右键多启动一个进程
 let contextMenuActive = false;
+let contextMenuSeq = 0; // 会话序号：只有最新一次菜单会话结束时才清 active 标志，避免旧会话覆盖新会话状态
+
+// 统一的右键菜单运行入口：处理"取消旧菜单→打开新菜单→旧会话结束后误清新标志"的竞态
+async function runContextMenu(kind, ...args) {
+  const seq = ++contextMenuSeq;
+  if (contextMenuActive) {
+    try { await cancelDesktopContextMenu(); } catch (e) { /* 忽略 */ }
+  }
+  contextMenuActive = true;
+  try {
+    return kind === 'desktop'
+      ? await showDesktopContextMenu(...args)
+      : await showFileContextMenu(...args);
+  } finally {
+    if (seq === contextMenuSeq) {
+      contextMenuActive = false;
+    }
+  }
+}
 
 ipcMain.handle('show-desktop-context-menu', async (event, x, y) => {
   try {
     if (mainWindow && !mainWindow.isDestroyed()) {
       mainWindow.setAlwaysOnTop(false);
     }
-    
-    if (contextMenuActive) {
-      await cancelDesktopContextMenu();
-    }
-    contextMenuActive = true;
-    
-    const result = await showDesktopContextMenu(Math.round(x), Math.round(y));
-    contextMenuActive = false;
-    
+    const result = await runContextMenu('desktop', Math.round(x), Math.round(y));
     // 菜单结束后不恢复置顶：若菜单打开了程序，让位保持；置顶由 focus/show 事件接管
     return result;
   } catch (error) {
-    contextMenuActive = false;
     console.error('显示桌面右键菜单失败:', error);
     return false;
   }
@@ -2182,23 +2235,16 @@ ipcMain.handle('cancel-desktop-context-menu', async () => {
 });
 
 ipcMain.handle('show-file-context-menu', async (event, filePath, x, y) => {
+  // 与其余路径型 handler 一致：先做桌面管辖范围校验，防止对任意系统路径弹出操作菜单
+  if (!isAllowedPath(filePath)) return false;
   try {
     if (mainWindow && !mainWindow.isDestroyed()) {
       mainWindow.setAlwaysOnTop(false);
     }
-    
-    if (contextMenuActive) {
-      await cancelDesktopContextMenu();
-    }
-    contextMenuActive = true;
-    
-    const result = await showFileContextMenu(filePath, Math.round(x), Math.round(y));
-    contextMenuActive = false;
-    
+    const result = await runContextMenu('file', filePath, Math.round(x), Math.round(y));
     // 菜单结束后不恢复置顶：若菜单打开了程序，让位保持；置顶由 focus/show 事件接管
     return result;
   } catch (error) {
-    contextMenuActive = false;
     console.error('显示文件右键菜单失败:', error);
     return false;
   }
@@ -2256,6 +2302,12 @@ app.whenReady().then(async () => {
       }
     } catch (e) {
       console.warn('同步开机启动状态失败:', e.message);
+    }
+    
+    // 崩溃恢复：上次会话在"桌面图标已隐藏"状态下被强杀/崩溃时，先恢复图标再重新隐藏，
+    // 避免应用退出后桌面图标永久消失（恢复→隐藏仅在启动瞬间有轻微闪烁）
+    if (store.get('desktopIconsHidden', false)) {
+      showDesktopIcons();
     }
     
     // 先隐藏桌面图标，再创建窗口

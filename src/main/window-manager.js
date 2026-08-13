@@ -134,17 +134,34 @@ function refreshFullscreenForeground(win, monitorKey) {
     fullscreenChecking = false;
     return;
   }
-  const child = spawn('powershell', ['-NoProfile', '-ExecutionPolicy', 'Bypass', '-File', tempFile], {
-    windowsHide: true,
-    env: { ...process.env, DIH_WIN_HWND: win && !win.isDestroyed() ? (getWindowHwnd(win) || '') : '' }
-  });
+  let child;
+  try {
+    child = spawn('powershell', ['-NoProfile', '-ExecutionPolicy', 'Bypass', '-File', tempFile], {
+      windowsHide: true,
+      env: { ...process.env, DIH_WIN_HWND: win && !win.isDestroyed() ? (getWindowHwnd(win) || '') : '' }
+    });
+  } catch (e) {
+    fullscreenChecking = false;
+    try { fs.unlinkSync(tempFile); } catch (e2) { /* 忽略 */ }
+    return;
+  }
   let output = '';
+  let finished = false;
   const finish = () => {
+    if (finished) return;
+    finished = true;
+    clearTimeout(killTimer);
     fullscreenChecking = false;
     try { fs.unlinkSync(tempFile); } catch (e) { /* 忽略 */ }
     fullscreenForeground = output.trim().toLowerCase() === 'true';
   };
-  child.stdout.on('data', (d) => { output += d.toString('utf8'); });
+  // 挂起保护：powershell 异常挂起时强制结束，避免 fullscreenChecking 永久为 true、
+  // fallback 检测卡死且临时文件泄漏。超时保持旧值（降级安全）。
+  const killTimer = setTimeout(() => {
+    try { child.kill(); } catch (e) { /* 忽略 */ }
+    finish();
+  }, 4000);
+  if (child.stdout) child.stdout.on('data', (d) => { output += d.toString('utf8'); });
   child.on('error', () => finish());
   child.on('close', () => finish());
 }
@@ -166,7 +183,8 @@ let autoHideState = {
   expectedWidth: 0,
   enforceTimer: null,
   lastMoveAt: 0,
-  probeAt: 0
+  probeAt: 0,
+  animToken: 0 // 动画会话 token：取消动画时自增，旧帧链检测到失配即停止
 };
 
 // 获取窗口所在的显示器（多显示器环境下吸附/隐藏/显示都应以窗口所在显示器为基准）
@@ -182,12 +200,37 @@ function getDisplayForWindow(window) {
   return screen.getPrimaryDisplay();
 }
 
+// 校验持久化的窗口位置是否仍落在任一显示器工作区内：
+// 拔掉副屏/分辨率变更/自动隐藏动画误持久化后，旧坐标可能完全在屏幕外，
+// 直接恢复会导致窗口"丢失"（透明无边框窗口无标题栏可抓回）。
+// 不可用时返回 null，由调用方回退到默认位置。
+function sanitizeSavedBounds(saved) {
+  if (!saved || !Number.isFinite(saved.x) || !Number.isFinite(saved.y) ||
+      !Number.isFinite(saved.width) || !Number.isFinite(saved.height)) {
+    return null;
+  }
+  try {
+    const displays = screen.getAllDisplays();
+    for (const d of displays) {
+      const wa = getWorkArea(d);
+      const right = saved.x + saved.width;
+      const bottom = saved.y + saved.height;
+      // 与工作区有足够的可见交集（至少露出 40px）即视为可用
+      if (saved.x < wa.x + wa.width - 40 && right > wa.x + 40 &&
+          saved.y < wa.y + wa.height - 40 && bottom > wa.y + 40) {
+        return saved;
+      }
+    }
+  } catch (e) { /* 忽略，回退默认位置 */ }
+  return null;
+}
+
 function createMainWindow(store, startInactive = false) {
   try {
     const primaryDisplay = screen.getPrimaryDisplay();
     const { width, height } = primaryDisplay.workAreaSize;
     
-    const savedBounds = store.get('windowBounds');
+    const savedBounds = sanitizeSavedBounds(store.get('windowBounds'));
     const savedCollapsed = store.get('isCollapsed', false);
     const savedAutoHide = store.get('autoHideEnabled', false);
     const savedEdge = store.get('autoHideEdge', EDGE_TYPES.NONE);
@@ -439,6 +482,10 @@ function detectEdgeSnap(window, store) {
 function scheduleHide(window) {
   if (!window || !window.autoHideState.enabled) return;
   
+  // 动画进行中不安排新的隐藏（blur/detectEdgeSnap 路径无 isAnimating 保护，在此兜底），
+  // 否则两条动画帧链会交错互殴 setBounds
+  if (window.autoHideState.isAnimating) return;
+  
   // 如果已经设置了隐藏定时器，不要重复设置
   if (window.autoHideState.hideTimer) {
     return;
@@ -475,7 +522,8 @@ function cancelAllTimers(window) {
 }
 
 function hideWindow(window) {
-  if (!window || !window.autoHideState.enabled || window.autoHideState.isHidden) return;
+  if (!window || window.isDestroyed() || !window.autoHideState.enabled ||
+      window.autoHideState.isHidden || window.autoHideState.isAnimating) return;
   
   const bounds = window.getBounds();
   const display = getDisplayForWindow(window);
@@ -550,7 +598,8 @@ function ensureAlwaysOnTop(window) {
 }
 
 function showWindow(window) {
-  if (!window || !window.autoHideState.isHidden) return;
+  if (!window || window.isDestroyed() || !window.autoHideState.isHidden ||
+      window.autoHideState.isAnimating) return;
   
   // 此刻窗口尚在屏幕外，解锁+置顶全程不可见、无闪烁
   ensureAlwaysOnTop(window);
@@ -651,6 +700,9 @@ function animateWindowMove(window, startBounds, endBounds, duration, onComplete,
   
   // 设置动画状态
   window.autoHideState.isAnimating = true;
+  // 会话 token：cancelAnimation 自增 token 后，本帧链检测到失配立即退出，
+  // 避免"禁用自动隐藏时动画继续把窗口送进屏幕外"（旧实现无法中断帧链）
+  const token = (window.autoHideState.animToken = (window.autoHideState.animToken || 0) + 1);
   
   const startTime = Date.now();
   const deltaX = end.x - start.x;
@@ -662,6 +714,10 @@ function animateWindowMove(window, startBounds, endBounds, duration, onComplete,
   function animate() {
     try {
       if (!window || window.isDestroyed()) {
+        return;
+      }
+      // 动画已被取消（cancelAnimation 自增 token）：停止帧链，不再触碰窗口位置
+      if (token !== window.autoHideState.animToken) {
         return;
       }
       
@@ -889,6 +945,49 @@ function checkMousePosition(window) {
   }
 }
 
+// 取消进行中的隐藏/唤出动画：自增 token 使旧帧链在下一帧检测到失配后自行停止
+function cancelAnimation(window) {
+  if (!window || !window.autoHideState) return;
+  window.autoHideState.animToken = (window.autoHideState.animToken || 0) + 1;
+  window.autoHideState.isAnimating = false;
+}
+
+// 将窗口强制复位到"当前边缘的完全可见位置"。
+// 用于禁用自动隐藏 / 动画中途取消时的兜底：防止窗口停留在屏幕外的瞬态坐标上
+// （无边缘时若窗口完全在屏外，兜底移到所在显示器工作区顶部）。
+function restoreVisibleBounds(window) {
+  if (!window || window.isDestroyed()) return;
+  const bounds = window.getBounds();
+  const display = getDisplayForWindow(window);
+  const wa = getWorkArea(display);
+  const newBounds = { ...bounds };
+  let hasEdgeTarget = true;
+  switch (window.autoHideState.currentEdge) {
+  case EDGE_TYPES.TOP:
+    newBounds.y = wa.y;
+    break;
+  case EDGE_TYPES.BOTTOM:
+    newBounds.y = wa.y + wa.height - bounds.height;
+    break;
+  case EDGE_TYPES.LEFT:
+    newBounds.x = wa.x;
+    break;
+  case EDGE_TYPES.RIGHT:
+    newBounds.x = wa.x + wa.width - bounds.width;
+    break;
+  default:
+    hasEdgeTarget = false;
+  }
+  if (!hasEdgeTarget) {
+    const fullyOffscreen = bounds.y + bounds.height <= wa.y || bounds.y >= wa.y + wa.height ||
+                           bounds.x + bounds.width <= wa.x || bounds.x >= wa.x + wa.width;
+    if (!fullyOffscreen) return;
+    newBounds.x = Math.max(wa.x, Math.min(bounds.x, wa.x + wa.width - bounds.width));
+    newBounds.y = wa.y;
+  }
+  setBoundsStable(window, newBounds.x, newBounds.y, bounds.width, bounds.height);
+}
+
 function setAutoHideEnabled(window, enabled, store) {
   if (!window) return false;
   
@@ -911,13 +1010,20 @@ function setAutoHideEnabled(window, enabled, store) {
     } else {
       // 禁用自动隐藏
       stopAutoHide(window);
+      // 先取消可能进行中的隐藏动画：旧实现在动画期间禁用时，
+      // isHidden 仍为 false 会跳过 showWindow，动画跑完后窗口永远停在屏幕外
+      cancelAnimation(window);
       // 如果窗口是隐藏状态，显示它。
       // 注意顺序：必须在清空 currentEdge 之前唤出（showWindow 依赖边缘计算唤出位置，
       // 先清边缘会导致 switch 落到 default 直接 return，窗口永远留在屏幕外、
       // 之后托盘"显示窗口"也调不出来）
       if (window.autoHideState.isHidden) {
         showWindow(window);
+      } else {
+        // 动画中途取消：窗口可能停在屏幕外瞬态位置，按边缘强制复位到可见区域
+        restoreVisibleBounds(window);
       }
+      window.autoHideState.isHidden = false;
       window.autoHideState.currentEdge = EDGE_TYPES.NONE;
       store.set('autoHideEdge', EDGE_TYPES.NONE);
       
@@ -981,6 +1087,7 @@ module.exports = {
   isFullscreenAppForeground,
   enforceWidth,
   setBoundsStable,
+  cancelAnimation,
   WINDOW_CONFIG,
   AUTO_HIDE_CONFIG,
   EDGE_TYPES
