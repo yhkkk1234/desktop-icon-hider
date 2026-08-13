@@ -59,14 +59,19 @@ function saveIconCache() {
   if (iconCacheSaveTimer) clearTimeout(iconCacheSaveTimer);
   iconCacheSaveTimer = setTimeout(() => {
     iconCacheSaveTimer = null;
-    try {
-      if (cacheFile) {
-        fs.writeFileSync(cacheFile, JSON.stringify(Object.fromEntries(iconCache)), 'utf8');
-      }
-    } catch (error) {
-      console.error('Failed to save icon cache:', error.message);
-    }
+    flushIconCache();
   }, 500);
+}
+
+// 立即落盘（应用退出时调用：防抖窗口内的最新缓存变更不能丢）
+function flushIconCache() {
+  try {
+    if (cacheFile) {
+      fs.writeFileSync(cacheFile, JSON.stringify(Object.fromEntries(iconCache)), 'utf8');
+    }
+  } catch (error) {
+    console.error('Failed to save icon cache:', error.message);
+  }
 }
 
 async function extractFileIcon(filePath) {
@@ -249,5 +254,6 @@ module.exports = {
   extractDirectoryIcon,
   clearIconCache,
   cleanupIconCache,
+  flushIconCache,
   getSystemIconEmoji,
 };

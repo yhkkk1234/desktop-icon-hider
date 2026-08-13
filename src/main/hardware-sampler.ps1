@@ -67,7 +67,8 @@ function Get-LhmSensors {
         } elseif ($sensor.SensorType -eq [LibreHardwareMonitor.Hardware.SensorType]::Temperature) {
           $temps += [pscustomobject]@{ n = $sensor.Name; c = [int][math]::Round($value) }
         } elseif ($sensor.SensorType -eq [LibreHardwareMonitor.Hardware.SensorType]::Data) {
-          if ($sensor.Name -match 'Memory') {
+          # 仅认 GPU 显存数据传感器（此前任何名字含 Memory 的传感器都被误当显存）
+          if ($sensor.Name -match '^GPU Memory') {
             $valMB = [int][math]::Round($value / 1MB)
             if ($sensor.Name -match 'Total') {
               $gpuMemTotal = $valMB
@@ -101,18 +102,21 @@ function Get-LhmSensors {
 # ---------- Static info (queried once) ----------
 $gpuNameCache = $null
 function Get-GpuName {
-  if ($null -ne $gpuNameCache) { return $gpuNameCache }
+  if ($null -ne $script:gpuNameCache) { return $script:gpuNameCache }
   try {
     $vc = Get-CimInstance Win32_VideoController -ErrorAction SilentlyContinue | Select-Object -First 1
-    if ($vc -and $vc.Name) { $gpuNameCache = [string]$vc.Name }
+    if ($vc -and $vc.Name) { $script:gpuNameCache = [string]$vc.Name }
   } catch { }
-  if (-not $gpuNameCache) { $gpuNameCache = '' }
-  return $gpuNameCache
+  if (-not $script:gpuNameCache) { $script:gpuNameCache = '' }
+  return $script:gpuNameCache
 }
 
-# ---------- Combined counter sampling (single Get-Counter call) ----------
-# Returns a hashtable with cpu / mem / gpu / vramUsed. One call keeps the
-# per-round latency low (Get-Counter waits its default 1s sample interval).
+# ---------- Combined counter sampling (grouped Get-Counter calls) ----------
+# Returns a hashtable with cpu / mem / gpu / vramUsed. Counters are grouped by
+# availability domain so a missing counter family does not wipe the others:
+#   group A (always present): CPU utility + committed memory
+#   group B (WDDM GPU counters): GPU engine + adapter memory - absent on RDP/VM
+# Each Get-Counter call waits its default 1s sample interval.
 $cpuPrevRaw = $null
 function Get-CpuSmooth {
   param([double]$raw)
@@ -125,54 +129,79 @@ function Get-CpuSmooth {
   return $usage
 }
 
+function Get-OneCounterGroup {
+  param([string[]]$Paths)
+  try {
+    return @(Get-Counter -Counter $Paths -ErrorAction Stop).CounterSamples
+  } catch {
+    return @()
+  }
+}
+
 function Get-CombinedCounters {
   $result = @{ cpu = $null; mem = $null; gpu = $null; vramUsed = $null }
-  try {
-    $samples = @(Get-Counter -Counter @(
-      '\Processor Information(_Total)\% Processor Utility',
-      '\GPU Engine(*)\Utilization Percentage',
-      '\GPU Adapter Memory(*)\Dedicated Usage',
-      '\Memory\% Committed Bytes In Use'
-    ) -ErrorAction Stop).CounterSamples
 
-    $byLuid = @{}
-    $vramList = @()
-    foreach ($s in $samples) {
-      $path = [string]$s.Path
-      $parts = $s.InstanceName -split '_'
-      $luidIdx = [array]::IndexOf($parts, 'luid')
-      $luid = ''
-      if ($luidIdx -ge 0) { $luid = ($parts[$luidIdx..($luidIdx + 1)]) -join '_' }
-      if ($path -match 'Processor Information') {
-        $result.cpu = Get-CpuSmooth -raw $s.CookedValue
-      } elseif ($path -match 'GPU Engine') {
-        if ($s.CookedValue -gt 0 -and $luid) {
-          if (-not $byLuid.ContainsKey($luid)) { $byLuid[$luid] = 0.0 }
-          if ($s.CookedValue -gt $byLuid[$luid]) { $byLuid[$luid] = $s.CookedValue }
-        }
-      } elseif ($path -match 'GPU Adapter Memory') {
-        $val = [int][math]::Round($s.CookedValue / 1MB)
-        if ($val -gt 0) { $vramList += [pscustomobject]@{ luid = $luid; val = $val } }
-      } elseif ($path -match 'Memory') {
-        $result.mem = [math]::Round($s.CookedValue, 1)
+  # Group A: CPU + memory (all environments)
+  foreach ($s in (Get-OneCounterGroup @(
+      '\Processor Information(_Total)\% Processor Utility',
+      '\Memory\% Committed Bytes In Use'
+    ))) {
+    $path = [string]$s.Path
+    if ($path -match 'Processor Information') {
+      $result.cpu = Get-CpuSmooth -raw $s.CookedValue
+    } elseif ($path -match 'Memory') {
+      $result.mem = [math]::Round($s.CookedValue, 1)
+    }
+  }
+
+  # Group B: GPU engine + adapter memory (WDDM only; missing on RDP/VM -> degrade alone)
+  $gpuSamples = @(Get-OneCounterGroup @(
+      '\GPU Engine(*)\Utilization Percentage',
+      '\GPU Adapter Memory(*)\Dedicated Usage'
+    ))
+
+  $byLuid = @{}
+  $vramByLuid = @{}
+  foreach ($s in $gpuSamples) {
+    $path = [string]$s.Path
+    $parts = $s.InstanceName -split '_'
+    $luidIdx = [array]::IndexOf($parts, 'luid')
+    $luid = ''
+    # LUID = luid + HighPart + LowPart (two hex segments). Previously only the
+    # HighPart was kept: dual-GPU machines (both HighPart=0) were merged into one
+    # bucket, mixing the two adapters' data.
+    if ($luidIdx -ge 0 -and ($luidIdx + 2) -lt $parts.Length) {
+      $luid = ($parts[($luidIdx)..($luidIdx + 2)]) -join '_'
+    }
+    if ($path -match 'GPU Engine') {
+      if ($s.CookedValue -gt 0 -and $luid) {
+        if (-not $byLuid.ContainsKey($luid)) { $byLuid[$luid] = 0.0 }
+        if ($s.CookedValue -gt $byLuid[$luid]) { $byLuid[$luid] = $s.CookedValue }
+      }
+    } elseif ($path -match 'GPU Adapter Memory') {
+      $val = [int][math]::Round($s.CookedValue / 1MB)
+      if ($val -gt 0 -and $luid) {
+        if (-not $vramByLuid.ContainsKey($luid)) { $vramByLuid[$luid] = 0 }
+        if ($val -gt $vramByLuid[$luid]) { $vramByLuid[$luid] = $val }
       }
     }
-    if ($byLuid.Count -gt 0) {
-      $result.gpu = [int][math]::Round(($byLuid.Values | Measure-Object -Maximum).Maximum)
-      # Prefer the VRAM counter of the busiest GPU; otherwise take the max.
-      # foreach avoids hashtable/array pipeline unwrapping issues on PS 5.1.
-      $match = $null
-      foreach ($item in $vramList) {
-        if ($item.luid -and $byLuid.ContainsKey($item.luid)) { $match = $item; break }
-      }
-      if ($match) { $result.vramUsed = $match.val }
+  }
+  if ($byLuid.Count -gt 0) {
+    # Busiest GPU load; VRAM also taken from that adapter (matched by max-load
+    # LUID, not the first adapter in enumeration order).
+    $busiestLuid = ''
+    $busiestVal = -1.0
+    foreach ($k in $byLuid.Keys) {
+      if ($byLuid[$k] -gt $busiestVal) { $busiestVal = $byLuid[$k]; $busiestLuid = $k }
     }
-    if ($null -eq $result.vramUsed -and $vramList.Count -gt 0) {
-      $maxVal = 0
-      foreach ($item in $vramList) { if ($item.val -gt $maxVal) { $maxVal = $item.val } }
-      $result.vramUsed = $maxVal
-    }
-  } catch { }
+    $result.gpu = [int][math]::Round($busiestVal)
+    if ($vramByLuid.ContainsKey($busiestLuid)) { $result.vramUsed = $vramByLuid[$busiestLuid] }
+  }
+  if ($null -eq $result.vramUsed -and $vramByLuid.Count -gt 0) {
+    $maxVal = 0
+    foreach ($item in $vramByLuid.Values) { if ($item -gt $maxVal) { $maxVal = $item } }
+    $result.vramUsed = $maxVal
+  }
   return $result
 }
 

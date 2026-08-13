@@ -127,6 +127,7 @@ struct CMINVOKECOMMANDINFOEX
 class ContextMenuWindow
 {
     private IContextMenu3 _ctxMenu3;
+    private IContextMenu2 _ctxMenu2;
     private IntPtr _hwnd;
     private WndProcDelegate _wndProcDelegate;
 
@@ -153,7 +154,10 @@ class ContextMenuWindow
 
     private IntPtr WndProc(IntPtr hwnd, uint msg, IntPtr wParam, IntPtr lParam)
     {
-        if (_ctxMenu3 != null)
+        // 按 IContextMenu3 → IContextMenu2 降级转发菜单消息：
+        // 仅实现 IContextMenu/2 的第三方 Shell 扩展在强转 IContextMenu3 时会得到 null，
+        // 原实现直接整体失败；降级后老扩展的图标/子菜单绘制仍可用
+        if (_ctxMenu3 != null || _ctxMenu2 != null)
         {
             switch (msg)
             {
@@ -162,11 +166,22 @@ class ContextMenuWindow
                 case 0x002B: // WM_MEASUREITEM
                     try
                     {
-                        IntPtr lResult;
-                        int hr = _ctxMenu3.HandleMenuMsg2(msg, wParam, lParam, out lResult);
-                        if (hr >= 0)
+                        if (_ctxMenu3 != null)
                         {
-                            return lResult;
+                            IntPtr lResult;
+                            int hr = _ctxMenu3.HandleMenuMsg2(msg, wParam, lParam, out lResult);
+                            if (hr >= 0)
+                            {
+                                return lResult;
+                            }
+                        }
+                        else
+                        {
+                            int hr = _ctxMenu2.HandleMenuMsg(msg, wParam, lParam);
+                            if (hr >= 0)
+                            {
+                                return IntPtr.Zero;
+                            }
                         }
                     }
                     catch { }
@@ -350,14 +365,20 @@ class ContextMenuWindow
             hr = parentFolder.GetUIObjectOf(this.Handle, 1, ref relativePidl, ref iidCtx, IntPtr.Zero, out ppvCtx);
             if (hr != 0 || ppvCtx == IntPtr.Zero) return -1;
 
-            _ctxMenu3 = Marshal.GetObjectForIUnknown(ppvCtx) as IContextMenu3;
-            if (_ctxMenu3 == null) return -1;
+            // 按 IContextMenu3 → IContextMenu2 → IContextMenu 降级：
+            // 部分第三方扩展只实现 IContextMenu/2，强转 IContextMenu3 为 null 时
+            // 原实现直接失败（return -1）。基础操作（Query/Invoke）用 IContextMenu，
+            // 菜单消息转发由 WndProc 按最高可用接口降级。
+            IContextMenu ctxBase = Marshal.GetObjectForIUnknown(ppvCtx) as IContextMenu;
+            if (ctxBase == null) return -1;
+            _ctxMenu3 = ctxBase as IContextMenu3;
+            _ctxMenu2 = _ctxMenu3 == null ? ctxBase as IContextMenu2 : null;
 
             hMenu = CreatePopupMenu();
             if (hMenu == IntPtr.Zero) return -1;
 
             uint flags = 0x00000004 | 0x00000100 | 0x00000400;
-            int result = _ctxMenu3.QueryContextMenu(hMenu, 0, 1, 0x7FFF, flags);
+            int result = ctxBase.QueryContextMenu(hMenu, 0, 1, 0x7FFF, flags);
             if (result <= 0) return -1;
 
             uint tpmFlags = 0x0100;
@@ -369,7 +390,7 @@ class ContextMenuWindow
 
             if (cmd > 0)
             {
-                InvokeCommand(_ctxMenu3, cmd - 1);
+                InvokeCommand(ctxBase, cmd - 1);
                 WaitForDialogToClose();
             }
             return 0;
@@ -385,6 +406,7 @@ class ContextMenuWindow
             if (relativePidl != IntPtr.Zero) ILFree(relativePidl);
             if (ppvCtx != IntPtr.Zero) Marshal.Release(ppvCtx);
             _ctxMenu3 = null;
+            _ctxMenu2 = null;
         }
     }
 

@@ -1,11 +1,13 @@
 @echo off
+chcp 65001 >nul
+setlocal
 echo ========================================
 echo   Desktop Icon Hider - 启动脚本
 echo ========================================
 echo.
 
 REM 检查 node_modules 是否存在
-if not exist "node_modules" (
+if not exist "node_modules\" (
     echo [错误] 未检测到 node_modules 目录
     echo.
     echo 请先安装依赖，执行以下步骤之一：
@@ -19,7 +21,7 @@ if not exist "node_modules" (
 )
 
 REM 检查 electron 是否安装
-if not exist "node_modules\electron" (
+if not exist "node_modules\electron\" (
     echo [警告] Electron 未正确安装
     echo.
     echo 尝试启动，如果失败请查看 INSTALL_GUIDE.md
@@ -36,14 +38,12 @@ if errorlevel 1 (
     echo [错误] 启动失败
     echo.
     echo 可能的原因：
-    echo 1. 依赖未正确安装
-    echo 2. 缺少必要的配置
-    echo 3. 端口被占用
+    echo 1. 依赖未正确安装（重新运行 install.bat）
+    echo 2. 原生模块未编译（运行 npm run rebuild-native）
     echo.
     echo 解决方案：
-    echo 1. 运行 npm install 重新安装
+    echo 1. 运行 install.bat 重新安装
     echo 2. 查看 INSTALL_GUIDE.md 获取帮助
-    echo 3. 查看日志文件: logs\app.log
     echo.
 )
 

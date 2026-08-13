@@ -32,8 +32,12 @@ const autoLauncher = {
   },
   async isEnabled() {
     try {
-      execFileSync('reg', ['query', AUTO_LAUNCH_KEY, '/v', AUTO_LAUNCH_NAME]);
-      return true;
+      const out = execFileSync('reg', ['query', AUTO_LAUNCH_KEY, '/v', AUTO_LAUNCH_NAME], { encoding: 'utf8' });
+      // 校验键值指向当前可执行文件：换安装目录后键存在但残留旧路径，
+      // 仅按"键存在"判定会误报"已启用"而实际开机不生效
+      const m = out.match(/REG_SZ\s+(.+)$/m);
+      const value = m ? m[1].trim() : null;
+      return value !== null && value.toLowerCase() === getLaunchCommand().toLowerCase();
     } catch (e) {
       return false;
     }

@@ -255,7 +255,8 @@ function createMainWindow(store, startInactive = false) {
         contextIsolation: true,
         nodeIntegration: false,
         enableRemoteModule: false,
-        webSecurity: true
+        webSecurity: true,
+        sandbox: true // 渲染进程沙箱（preload 仅用 contextBridge/ipcRenderer，与 sandbox 兼容）
       },
       show: false,
       backgroundColor: '#00000000'

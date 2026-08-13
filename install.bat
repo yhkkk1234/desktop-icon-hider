@@ -1,24 +1,17 @@
 @echo off
+chcp 65001 >nul
+setlocal
 echo ========================================
 echo   Desktop Icon Hider - 安装脚本
 echo ========================================
 echo.
 
-echo [步骤 1/3] 设置淘宝镜像以加速下载...
-npm config set registry https://registry.npmmirror.com
-if errorlevel 1 (
-    echo [警告] 设置镜像失败，将使用默认源
-) else (
-    echo [成功] 镜像设置成功
-)
+echo [步骤 1/2] 使用淘宝镜像加速下载...
+echo 提示: 仅本次安装生效，不会修改你的全局 npm 配置
 echo.
 
-echo [步骤 2/3] 正在安装依赖...
-echo 这可能需要几分钟，请耐心等待...
-echo 提示: 如果下载很慢，请查看 INSTALL_GUIDE.md
-echo.
-
-call npm install --no-audit --no-fund
+REM 使用 --registry 参数一次性生效，不再永久改写全局 npm registry（避免影响用户其他项目）
+call npm install --no-audit --no-fund --registry=https://registry.npmmirror.com
 
 if errorlevel 1 (
     echo.
@@ -41,7 +34,7 @@ if errorlevel 1 (
 )
 
 echo.
-echo [步骤 3/3] 验证安装...
+echo [步骤 2/2] 验证安装...
 call npm list --depth=0 >nul 2>&1
 
 if errorlevel 1 (

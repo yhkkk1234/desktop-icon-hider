@@ -123,6 +123,7 @@ let fontFamilySelect, fontPreview;
 // 刷新防抖
 let refreshTimeout = null;
 let isRefreshing = false;
+let refreshPending = false; // 刷新进行中到达的新刷新请求：本轮结束后自动补刷一次
 
 // 文件映射
 let filesMap = new Map();
@@ -432,6 +433,7 @@ document.addEventListener('DOMContentLoaded', () => {
   // 双击内容空白隐藏/恢复全部图标
   contentEl.addEventListener('dblclick', (e) => {
     if (e.target.closest('.file-item') || e.target.closest('.group-tab') ||
+        e.target.closest('.group-folder') || e.target.closest('.group-return-bar') ||
         e.target.closest('.search-bar') || e.target.closest('#groups-bar') ||
         e.target.closest('.settings-panel')) return;
     toggleIconsVisible();
@@ -626,7 +628,8 @@ document.addEventListener('DOMContentLoaded', () => {
 
   window.api.onEdgeChanged((data) => {
     autoHideEdge = data.edge;
-    edgeSelect.value = autoHideEdge;
+    // 与 onAutoHideStatus 保持一致：同步整个自动隐藏 UI（状态文本等），此前只改下拉框
+    updateAutoHideUI();
   });
 
   // 监听托盘"自动隐藏"开关
@@ -684,6 +687,10 @@ document.addEventListener('DOMContentLoaded', () => {
     renderFiles();
     renderRules();
     updateAutoHideUI();
+    // applyI18n 会覆盖带 data-i18n 的动态状态元素（如 #everything-status），
+    // 需要重刷动态状态与语言下拉框，否则状态显示回退为静态文案
+    updateEverythingUI();
+    if (languageSelect) languageSelect.value = data.language;
   });
 
   // GPU 进程崩溃：主进程已自动写回关闭设置，这里同步 UI 并提示
@@ -752,7 +759,9 @@ function areFilesEqual(filesA, filesB) {
 // 防抖刷新函数
 async function debouncedHandleRefresh(delay = 500) {
   if (isRefreshing) {
-    // 如果已经在刷新中，忽略新的刷新请求
+    // 刷新进行中：记录待处理标记（此前直接丢弃，桌面变化事件会被静默吞掉），
+    // 本轮结束后自动补刷一次
+    refreshPending = true;
     return;
   }
 
@@ -762,7 +771,10 @@ async function debouncedHandleRefresh(delay = 500) {
     refreshTimeout = setTimeout(async () => {
       isRefreshing = true;
       try {
-        await handleRefresh();
+        do {
+          refreshPending = false;
+          await handleRefresh();
+        } while (refreshPending);
       } finally {
         isRefreshing = false;
       }
@@ -779,12 +791,13 @@ async function handleRefresh() {
     // 检查文件是否实际发生变化
     const filesChanged = !areFilesEqual(files, newFiles);
 
+    files = newFiles;
+    // IPC 每次返回新对象引用：无论集合是否变化都重建 filesMap，
+    // 否则 filesMap 持有陈旧对象（名称/类型变化而路径未变时显示旧数据）
+    rebuildFilesMap();
     if (filesChanged) {
-      files = newFiles;
       sortFiles();
       renderFiles();
-    } else {
-      files = newFiles;
     }
   } catch (error) {
     console.error('刷新失败:', error);
@@ -1262,6 +1275,15 @@ let lastClickTime = 0;
 let lastClickX = 0;
 let lastClickY = 0;
 let dblClickHandled = false;
+let dblClickHandledTimer = null;
+
+function markDblClickHandled() {
+  dblClickHandled = true;
+  // 若原生 dblclick 因 DOM 重建未被派发，标志会长期滞留吞掉下一次真实双击；
+  // 600ms 后自动清零（真实双击第二击必然在此之前到达）
+  clearTimeout(dblClickHandledTimer);
+  dblClickHandledTimer = setTimeout(() => { dblClickHandled = false; }, 600);
+}
 
 // 最近一次 mousedown 是否落在图标上：点击兜底仅在此为 true 时启用，
 // 排除"点击按钮/其他控件后自身被渲染移除"的冒泡点击（如分组返回条），避免误选中
@@ -1290,7 +1312,7 @@ function handleFilesListClick(e) {
     if (path && path === lastClickPath && now - lastClickTime < 500) {
       lastClickPath = null;
       lastClickTime = 0;
-      dblClickHandled = true;
+      markDblClickHandled();
       if (path) {
         // 双击打开的同时补上选中态：首次单击若被 DOM 重建吞掉，这里兜底显示选中
         selectSingle(path);
@@ -1298,13 +1320,15 @@ function handleFilesListClick(e) {
       }
       return;
     }
-    // 双击后鼠标快速移出图标：第二次点击偏出落到空白处，按位置补偿视为双击
+    // 双击后鼠标快速移出图标：第二次点击偏出落到空白处，按位置补偿视为双击。
+    // 阈值收紧到 6px（真实双击第二击与第一击的落点偏差），此前 30px 过宽，
+    // 会把"单击图标后点附近空白取消选择"误判为双击而意外打开文件
     if (!item && lastClickPath && now - lastClickTime < 500 &&
-        Math.abs(e.clientX - lastClickX) < 30 && Math.abs(e.clientY - lastClickY) < 30) {
+        Math.abs(e.clientX - lastClickX) < 6 && Math.abs(e.clientY - lastClickY) < 6) {
       const p = lastClickPath;
       lastClickPath = null;
       lastClickTime = 0;
-      dblClickHandled = true;
+      markDblClickHandled();
       if (p) {
         selectSingle(p);
         window.api.openFile(p);
@@ -1416,6 +1440,9 @@ function getSelectedFiles() {
 function clearSelection() {
   selectedPaths.clear();
   updateSelectionUI();
+  // 同步图标高亮：此前部分调用点（复制/剪切）漏调，导致高亮残留、
+  // 视觉上仍选中但 Delete 无对象
+  updateItemSelectedClass();
 }
 
 // 单选一个图标（清空其他选择并同步选中样式）
@@ -1447,6 +1474,7 @@ function updateSelectionUI() {
 function handleBoxSelectStart(e) {
   if (e.button !== 0) return;
   if (e.target.closest('.file-item')) return;
+  if (e.target.closest('.group-folder') || e.target.closest('.group-return-bar')) return;
   if (e.target.closest('.search-bar') || e.target.closest('#groups-bar') ||
       e.target.closest('.selection-toolbar')) return;
   // 空白区域按下：记录起点
@@ -1558,6 +1586,7 @@ function pasteFiles() {
     if (result && result.success) {
       const okCount = (result.results || []).filter(r => r.ok).length;
       showToast(t('clipboard.pasted', { n: okCount }));
+      clipboard = null; // 粘贴成功后清空剪贴板（与资源管理器行为一致，避免重复粘贴/剪贴失败）
       debouncedHandleRefresh(500);
     } else {
       showToast(t('clipboard.failed'));
@@ -1574,8 +1603,13 @@ async function deleteSelected(permanent) {
   if (!(await confirmDialog(message, { danger: true }))) return;
   let failed = false;
   for (const f of selected) {
-    const result = await window.api.deleteFile(f.path, permanent);
-    if (!result.success) failed = true;
+    try {
+      const result = await window.api.deleteFile(f.path, permanent);
+      if (!result || !result.success) failed = true;
+    } catch (e) {
+      // 单个文件删除失败不中止批次，也不产生未处理的 Promise 拒绝
+      failed = true;
+    }
   }
   if (failed) showToast(t('files.deleteFail'));
   clearSelection();
@@ -2318,6 +2352,7 @@ function renderFilesFolderMode() {
       // 打开后 400ms 内的点击视为误触直接忽略
       if (Date.now() - groupViewOpenedAt < 400) return;
       openGroupId = null;
+      currentGroupId = null; // 复位当前分组：否则搜索计数/标签激活态仍停留在上次打开的组
       renderFiles();
     });
     if (group) {
@@ -2355,6 +2390,8 @@ function renderFilesFolderMode() {
 
   if (visible.length === 0 && searchQuery) {
     filesList.innerHTML = `<div class="empty">${t('files.noMatch')}</div>`;
+    // 组视图内搜索无结果时也要保留返回条，否则用户被困在分组视图
+    if (groupView && returnBar) filesList.prepend(returnBar);
     return;
   }
   if (visible.length === 0 && groupView) {
@@ -3330,7 +3367,8 @@ async function handleBgToggle() {
 
 async function handleSelectBg() {
   const result = await window.api.selectBackgroundImage();
-  if (result && result.success) {
+  if (!result || typeof result !== 'object') return; // IPC 契约破坏时静默降级，不抛未处理异常
+  if (result.success && result.config) {
     bgConfig = {
       enabled: !!result.config.enabled,
       blur: Number.isFinite(result.config.blur) ? result.config.blur : 24,
@@ -3569,7 +3607,8 @@ async function handleProfileShapeChange() {
 
 async function handleSelectAvatar() {
   const result = await window.api.selectAvatarImage();
-  if (result && result.success) {
+  if (!result || typeof result !== 'object') return; // IPC 契约破坏时静默降级，不抛未处理异常
+  if (result.success && result.profile) {
     userProfile = {
       name: userProfile.name || '',
       path: result.profile.path || null,
@@ -3719,7 +3758,12 @@ function bindAvatarEditorDrag() {
     avatarEditorState.offsetX = 0;
     avatarEditorState.offsetY = 0;
     stage.classList.add('dragging');
-    stage.setPointerCapture(e.pointerId);
+    try {
+      stage.setPointerCapture(e.pointerId);
+    } catch (err) {
+      // 合成事件/快速连点下 setPointerCapture 可能抛 NotFoundError，
+      // 不中断拖拽流程（window 级监听仍可工作）
+    }
   });
   stage.addEventListener('pointermove', (e) => {
     if (!avatarEditorState.dragging) return;
@@ -4125,11 +4169,35 @@ function saveWidgets() {
   }, 300);
 }
 
+// 清理全部组件定时器（隐藏/折叠组件时调用，避免隐藏状态下空转轮询）
+function clearWidgetTimers() {
+  if (clockTimer) {
+    clearInterval(clockTimer);
+    clockTimer = null;
+  }
+  if (calendarTimer) {
+    clearInterval(calendarTimer);
+    calendarTimer = null;
+  }
+  if (weatherTimer) {
+    clearInterval(weatherTimer);
+    weatherTimer = null;
+  }
+  if (monitorTimer) {
+    clearInterval(monitorTimer);
+    monitorTimer = null;
+  }
+}
+
 function renderWidgets() {
   if (!widgetsLayer) return;
   const visible = showWidgets && !isCollapsed;
   widgetsLayer.style.display = visible ? 'block' : 'none';
-  if (!visible) return;
+  if (!visible) {
+    // 隐藏/折叠时清掉所有组件定时器：此前监控组件仍每 2s 跨 IPC 轮询、时钟每秒更新隐藏 DOM
+    clearWidgetTimers();
+    return;
+  }
 
   const existing = new Map();
   for (const child of widgetsLayer.children) {
@@ -4881,7 +4949,8 @@ function renderAgentWidget(node) {
   const body = node.querySelector('.wa-body');
   if (!body) return;
   const visible = getVisibleAgentSessions();
-  // opencode 未运行且列表非空：灰化条目（点击已在 handleAgentItemClick 锁定），
+  // opencode 未运行且列表非空：灰化条目（点击仅拦截 active 会话；已完成/中断会话的
+  // 已读标记是本地状态，离线时仍允许点击删除，与 handleAgentItemClick 行为一致），
   // harness 名后追加"（未开启）"浅色标记（未来多 harness 时各自独立显示）
   node.classList.toggle('wa-offline', !agentRuntimeRunning && visible.length > 0);
   if (visible.length === 0) {
@@ -4963,7 +5032,8 @@ function updateCalendarNode(node) {
   const offset = parseInt(node.dataset.monthOffset) || 0;
   const year = now.getFullYear();
   const month = now.getMonth() + offset;
-  const y = month < 0 ? year - 1 : (month > 11 ? year + 1 : year);
+  // 跨多年翻页：年份按整 12 个月折算（此前仅 ±1 年，翻页超过 11 个月后年份错误）
+  const y = year + Math.floor(month / 12);
   const m = ((month % 12) + 12) % 12;
   const today = (offset === 0) ? now.getDate() : -1;
 
@@ -5042,17 +5112,18 @@ async function updateWeatherNode(node) {
       : '';
     // 晴天且动态背景开启：太阳 emoji 缓慢旋转，其余天气仍用 emoji，
     // 避免背景层重复出现第二个太阳
+    // 外部 API 相关字段统一转义后再进 innerHTML（纵深防御：CSP 挡脚本，转义挡样式注入）
     const emojiHtml = (Number(result.code) === 0 && weatherFxEnabled)
-      ? `<span class="weather-emoji weather-emoji-sun">${result.emoji}</span>`
-      : `<span class="weather-emoji">${result.emoji}</span>`;
+      ? `<span class="weather-emoji weather-emoji-sun">${escapeHtml(result.emoji)}</span>`
+      : `<span class="weather-emoji">${escapeHtml(result.emoji)}</span>`;
     body.innerHTML = `
       <div class="weather-main">
         ${emojiHtml}
-        <span class="weather-temp">${result.temp}°C</span>
+        <span class="weather-temp">${escapeHtml(result.temp)}°C</span>
       </div>
       ${todayLine}
-      <div class="weather-detail">${result.text} · ${result.city}</div>
-      <div class="weather-sub">${t('widget.weatherHumidity')} ${result.humidity}% · ${t('widget.weatherWind')} ${result.wind} km/h</div>
+      <div class="weather-detail">${escapeHtml(result.text)} · ${escapeHtml(result.city)}</div>
+      <div class="weather-sub">${t('widget.weatherHumidity')} ${escapeHtml(result.humidity)}% · ${t('widget.weatherWind')} ${escapeHtml(result.wind)} km/h</div>
     `;
   } else if (result && result.needCity) {
     body.innerHTML = `<button class="weather-config-btn">${t('widget.weatherConfig')}</button>`;
@@ -5379,6 +5450,8 @@ async function handleImportLayout() {
 }
 
 // ============ 快捷键录制 ============
+let shortcutRecordingBlur = false; // 录制完成主动 blur：跳过 blur 里对旧值的回写（避免输入框立即回退显示旧快捷键）
+
 function bindShortcutRecorder(input, key) {
   input.addEventListener('focus', () => {
     input.classList.add('recording');
@@ -5386,6 +5459,10 @@ function bindShortcutRecorder(input, key) {
   });
   input.addEventListener('blur', () => {
     input.classList.remove('recording');
+    if (shortcutRecordingBlur) {
+      shortcutRecordingBlur = false;
+      return;
+    }
     updateShortcutInputs();
   });
   input.addEventListener('keydown', (e) => {
@@ -5407,7 +5484,10 @@ function bindShortcutRecorder(input, key) {
       } else {
         showToast(t('shortcut.invalid'));
       }
+      // 保存结果回来后按最新 shortcuts 回写输入框（blur 时机早于 IPC 返回，当时拿不到新值）
+      updateShortcutInputs();
     });
+    shortcutRecordingBlur = true;
     input.blur();
   });
 }

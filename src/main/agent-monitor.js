@@ -163,15 +163,25 @@ function hasProcessAsync(name, spawnFn = spawn, opts = {}) {
       return;
     }
     let out = '';
-    child.stdout.on('data', (d) => { out += d.toString('utf8'); });
-    child.on('error', () => {
-      processDetectCaches.set(name, { at: Date.now(), found: false });
-      resolve(false);
-    });
-    child.on('close', () => {
-      const found = new RegExp(name.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'), 'i').test(out);
+    let settled = false;
+    const finish = (found) => {
+      if (settled) return;
+      settled = true;
+      clearTimeout(killTimer);
       processDetectCaches.set(name, { at: Date.now(), found });
       resolve(found);
+    };
+    // 挂起保护：tasklist 异常挂起时强制结束，避免 Promise 永不 settle、
+    // 周期轮询持续叠加新进程（进程泄漏）
+    const killTimer = setTimeout(() => {
+      try { child.kill(); } catch (e) { /* 忽略 */ }
+      finish(false);
+    }, 3000);
+    if (child.stdout) child.stdout.on('data', (d) => { out += d.toString('utf8'); });
+    child.on('error', () => finish(false));
+    child.on('close', () => {
+      const found = new RegExp(name.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'), 'i').test(out);
+      finish(found);
     });
   });
 }
@@ -366,13 +376,7 @@ function createOpencodeServerStatusProvider(options = {}) {
       const reader = res.body && res.body.getReader ? res.body.getReader() : null;
       if (!reader) return;
       const decoder = new TextDecoder();
-      let buffer = '';
-      while (!disposed) {
-        const { done, value } = await reader.read();
-        if (done) break;
-        buffer += decoder.decode(value, { stream: true });
-        const events = parseSSEChunk(buffer);
-        buffer = '';
+      const applyEvents = (events) => {
         for (const ev of events) {
           if (ev.type === 'session.status' && ev.properties && ev.properties.sessionID && ev.properties.status) {
             statusMap.set(ev.properties.sessionID, { status: ev.properties.status.type, at: Date.now() });
@@ -380,6 +384,32 @@ function createOpencodeServerStatusProvider(options = {}) {
             statusMap.set(ev.properties.sessionID, { status: 'idle', at: Date.now() });
           }
         }
+      };
+      let buffer = '';
+      while (!disposed) {
+        const { done, value } = await reader.read();
+        if (done) break;
+        buffer += decoder.decode(value, { stream: true });
+        // SSE 事件可能被 TCP 拆包：保留最后一个空行之后的不完整块，与下一个 chunk
+        // 拼接后再解析（直接清空会把半个 data:{...} 永久丢弃，状态校准偶发失效）
+        let cut = -1;
+        const idxLF = buffer.lastIndexOf('\n\n');
+        const idxCRLF = buffer.lastIndexOf('\r\n\r\n');
+        if (idxLF >= 0) cut = idxLF + 2;
+        if (idxCRLF >= 0 && idxCRLF + 4 > cut) cut = idxCRLF + 4;
+        let parseable = buffer;
+        let tail = '';
+        if (cut > 0) {
+          parseable = buffer.slice(0, cut);
+          tail = buffer.slice(cut);
+        }
+        applyEvents(parseSSEChunk(parseable));
+        buffer = tail;
+      }
+      // 流结束：解析缓冲区残留的最后一个（可能无空行结尾的）事件块
+      if (!disposed && buffer.trim()) {
+        applyEvents(parseSSEChunk(buffer));
+        buffer = '';
       }
     } catch (e) { /* 连接中断，走重连 */ } finally {
       sseControllers.delete(base);

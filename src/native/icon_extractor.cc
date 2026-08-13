@@ -84,7 +84,13 @@ std::string b64enc(const unsigned char* in, size_t len) {
 
 static ULONG_PTR gdiToken = 0;
 static bool gdiInit = false;
-void ensureGDI() { if (!gdiInit) { GdiplusStartupInput si; GdiplusStartup(&gdiToken, &si, NULL); gdiInit = true; } }
+void ensureGDI() {
+    if (!gdiInit) {
+        GdiplusStartupInput si;
+        // 初始化失败不再置 gdiInit（原实现失败也置 true，后续永远不再尝试且调用方拿到无效状态）
+        gdiInit = (GdiplusStartup(&gdiToken, &si, NULL) == Ok);
+    }
+}
 
 std::string iconToPng(HICON hIcon) {
     if (!hIcon) return "";
@@ -102,7 +108,8 @@ std::string iconToPng(HICON hIcon) {
         BITMAP bm;
         if (GetObject(ii.hbmColor, sizeof(BITMAP), &bm)) {
             w = bm.bmWidth;
-            h = ii.hbmMask ? bm.bmHeight / 2 : bm.bmHeight;
+            // 彩色位图高度就是图标真实高度；只有 mask 位图才是 2 倍高（AND+XOR）
+            h = bm.bmHeight;
         }
     }
     if (w == 0 && ii.hbmMask) {
@@ -188,27 +195,32 @@ HICON GetIconForPath(LPCWSTR path, bool isClsid) {
     UINT flags = SHGFI_ICON | SHGFI_JUMBOICON;
     
     if (isClsid) {
+        // SHParseDisplayName 要求调用线程已初始化 COM；显式初始化，
+        // 避免线程未初始化 COM 时静默失败回退通用文件夹图标（CLSID 专图标失效）
+        bool coInitByUs = (CoInitializeEx(nullptr, COINIT_APARTMENTTHREADED) == S_OK);
         // System virtual folder: resolve to PIDL via SHParseDisplayName first.
         // Passing `::{CLSID}` string directly makes SHGetFileInfo fall back to generic folder icon
         LPITEMIDLIST pidl = nullptr;
         SFGAOF attrs = 0;
         if (SUCCEEDED(SHParseDisplayName(path, nullptr, &pidl, 0, &attrs)) && pidl) {
             ZeroMemory(&shfi, sizeof(shfi));
-            if (SHGetFileInfoW((LPCWSTR)pidl, 0, &shfi, sizeof(shfi), flags | SHGFI_PIDL)) {
-                return shfi.hIcon;
+            if (SHGetFileInfoW((LPCWSTR)pidl, 0, &shfi, sizeof(shfi), flags | SHGFI_PIDL) == 0) {
+                ZeroMemory(&shfi, sizeof(shfi));
+                SHGetFileInfoW((LPCWSTR)pidl, 0, &shfi, sizeof(shfi), SHGFI_ICON | SHGFI_PIDL);
             }
-            ZeroMemory(&shfi, sizeof(shfi));
-            if (SHGetFileInfoW((LPCWSTR)pidl, 0, &shfi, sizeof(shfi), SHGFI_ICON | SHGFI_PIDL)) {
+            // SHParseDisplayName 分配的 PIDL 必须释放（ILFree），否则每次提取系统文件夹图标泄漏一块内存
+            ILFree(pidl);
+            if (shfi.hIcon) {
+                if (coInitByUs) CoUninitialize();
                 return shfi.hIcon;
             }
         }
         // Fallback: extract directly from the string
         ZeroMemory(&shfi, sizeof(shfi));
         if (SHGetFileInfoW(path, 0, &shfi, sizeof(shfi), flags) == 0) {
-            if (SHGetFileInfoW(path, FILE_ATTRIBUTE_DIRECTORY, &shfi, sizeof(shfi), flags | SHGFI_USEFILEATTRIBUTES) == 0) {
-                return nullptr;
-            }
+            SHGetFileInfoW(path, FILE_ATTRIBUTE_DIRECTORY, &shfi, sizeof(shfi), flags | SHGFI_USEFILEATTRIBUTES);
         }
+        if (coInitByUs) CoUninitialize();
         return shfi.hIcon;
     } else {
         if (SHGetFileInfoW(path, 0, &shfi, sizeof(shfi), flags) == 0) {

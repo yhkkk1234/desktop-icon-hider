@@ -77,18 +77,21 @@ function startSampler() {
   }
 
   // 逐行解析 stdout：`DATA: {json}`
-  const rl = readline.createInterface({ input: child.stdout });
-  rl.on('line', (line) => {
-    if (!line || !line.startsWith(SAMPLE_DATA_PREFIX)) return;
-    try {
-      const parsed = JSON.parse(line.slice(SAMPLE_DATA_PREFIX.length));
-      if (parsed && typeof parsed === 'object') {
-        latestStats = parsed;
+  // spawn 异步失败时 stdout 可能为 null，直接 createInterface 会抛 TypeError
+  if (child.stdout) {
+    const rl = readline.createInterface({ input: child.stdout });
+    rl.on('line', (line) => {
+      if (!line || !line.startsWith(SAMPLE_DATA_PREFIX)) return;
+      try {
+        const parsed = JSON.parse(line.slice(SAMPLE_DATA_PREFIX.length));
+        if (parsed && typeof parsed === 'object') {
+          latestStats = parsed;
+        }
+      } catch (e) {
+        // 单行解析失败不影响后续
       }
-    } catch (e) {
-      // 单行解析失败不影响后续
-    }
-  });
+    });
+  }
 
   child.stderr.on('data', (buf) => {
     const msg = String(buf).trim();
@@ -141,7 +144,12 @@ function stopSampler() {
     }
     child = null;
   }
+  // 停止后不再返回陈旧采样数据
+  latestStats = null;
+  lastError = null;
 }
+
+let lastStartAttemptAt = 0;
 
 /**
  * 获取最新性能数据。
@@ -149,8 +157,11 @@ function stopSampler() {
  */
 function getSystemStats() {
   if (!latestStats) {
-    // 首次调用时尝试启动采样进程
-    if (!child) {
+    // 首次调用时尝试启动采样进程；启动失败限频（脚本缺失等持久失败场景
+    // 避免每次 IPC 都重复重试启动）
+    const now = Date.now();
+    if (!child && now - lastStartAttemptAt >= 10000) {
+      lastStartAttemptAt = now;
       startSampler();
     }
     return { ok: false, stats: null, error: lastError };

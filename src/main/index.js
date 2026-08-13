@@ -4,7 +4,7 @@ const fs = require('fs');
 const os = require('os');
 const { execSync, spawn } = require('child_process');
 const Store = require('electron-store');
-const { getFileIcon, getFileIcons, initializeDesktopAPI, getSystemIconEmoji, cleanupIconCache } = require('./desktop-api');
+const { getFileIcon, getFileIcons, initializeDesktopAPI, getSystemIconEmoji, cleanupIconCache, flushIconCache } = require('./desktop-api');
 const { showDesktopContextMenu, showFileContextMenu, cancelDesktopContextMenu, compileExe } = require('./shell-context-menu');
 const { 
   createMainWindow, 
@@ -204,10 +204,18 @@ function execPowerShellAsync(psScript, extraEnv = {}, timeoutMs = 8000) {
     }
     let output = '';
     let settled = false;
-    const child = spawn('powershell', ['-NoProfile', '-ExecutionPolicy', 'Bypass', '-File', tempFile], {
-      windowsHide: true,
-      env: { ...process.env, ...extraEnv }
-    });
+    let child;
+    try {
+      child = spawn('powershell', ['-NoProfile', '-ExecutionPolicy', 'Bypass', '-File', tempFile], {
+        windowsHide: true,
+        env: { ...process.env, ...extraEnv }
+      });
+    } catch (e) {
+      // spawn 同步抛错（罕见）：与"优雅降级"约定一致 resolve(null)，并清理临时文件
+      try { fs.unlinkSync(tempFile); } catch (e2) { /* 忽略 */ }
+      resolve(null);
+      return;
+    }
     const finish = (result) => {
       if (settled) return;
       settled = true;
@@ -216,11 +224,15 @@ function execPowerShellAsync(psScript, extraEnv = {}, timeoutMs = 8000) {
       resolve(result);
     };
     const timeout = setTimeout(() => {
+      // 杀进程树：PS 脚本派生的孙进程不随 powershell 退出而结束
       try { child.kill(); } catch (e) { /* 忽略 */ }
+      try {
+        spawn('taskkill', ['/PID', String(child.pid), '/T', '/F'], { windowsHide: true });
+      } catch (e) { /* 忽略 */ }
       finish(null);
     }, timeoutMs);
-    child.stdout.on('data', (d) => { output += d.toString('utf8'); });
-    child.stderr.on('data', () => { /* 忽略 */ });
+    if (child.stdout) child.stdout.on('data', (d) => { output += d.toString('utf8'); });
+    if (child.stderr) child.stderr.on('data', () => { /* 忽略 */ });
     child.on('error', () => finish(null));
     child.on('close', () => finish(output));
   });
@@ -244,8 +256,19 @@ function setPreviewCache(key, data) {
   previewCacheMap.set(key, { time: Date.now(), data });
   if (previewCacheMap.size > 300) {
     const now = Date.now();
+    // 先删过期项；若仍超限（短时间内全部新鲜），按最旧优先淘汰到阈值，
+    // 防止 60s TTL 内 Map 无限增长
     for (const [k, v] of previewCacheMap) {
       if (now - v.time >= PREVIEW_CACHE_TTL) previewCacheMap.delete(k);
+    }
+    while (previewCacheMap.size > 300) {
+      let oldestKey = null;
+      let oldestTime = Infinity;
+      for (const [k, v] of previewCacheMap) {
+        if (v.time < oldestTime) { oldestTime = v.time; oldestKey = k; }
+      }
+      if (oldestKey === null) break;
+      previewCacheMap.delete(oldestKey);
     }
   }
 }
@@ -389,6 +412,11 @@ async function pasteClipboard({ mode, paths, targetDir }) {
   const results = [];
   let anySuccess = false;
   for (const src of paths) {
+    if (typeof src !== 'string') {
+      // 非字符串条目逐项降级为失败，而不是在 try 外抛错使整个批次 reject
+      results.push({ name: '', ok: false, error: '无效路径' });
+      continue;
+    }
     const name = path.basename(src);
     let dest = path.join(targetDir, name);
     // Windows 大小写不敏感：目标与源为同一文件（targetDir 与源目录大小写可能不同）时视为原地粘贴
@@ -733,9 +761,16 @@ function createWindow() {
   mainWindow = createMainWindow(store, process.argv.includes('--hidden'));
   
   if (mainWindow) {
+    // 只允许本地页面：拦截任何导航与弹窗（无远程内容，防渲染端被注入后跳转/开窗）
+    mainWindow.webContents.on('will-navigate', (e) => e.preventDefault());
+    mainWindow.webContents.setWindowOpenHandler(() => ({ action: 'deny' }));
+
     mainWindow.once('ready-to-show', async () => {
       try {
         const files = await getDesktopFiles();
+        // Everything 路径只探测一次（reg query + 全盘符扫描 + 可能一次 PowerShell），
+        // 此前一行内重复调用 3 次阻塞初始化数秒
+        const everythingPath = findEverythingPath();
         mainWindow.webContents.send('init-data', {
           files,
           isCollapsed: store.get('isCollapsed', false),
@@ -757,8 +792,8 @@ function createWindow() {
           gpuAcceleration: store.get('gpuAcceleration', true),
           language: store.get('language', 'zh-CN'),
           everythingEnabled: store.get('everythingEnabled', false),
-          everythingInstalled: !!findEverythingPath(),
-          everythingRunAsAdmin: !!findEverythingPath() && isEverythingRunAsAdmin(findEverythingPath()),
+          everythingInstalled: !!everythingPath,
+          everythingRunAsAdmin: !!everythingPath && isEverythingRunAsAdmin(everythingPath),
           folderPreviewEnabled: store.get('folderPreviewEnabled', true),
           backgroundImage: store.get('backgroundImage', {}),
           backgroundData: await getBackgroundData(),
@@ -884,13 +919,15 @@ function createWindow() {
       }
     });
     
-    // F12 / Ctrl+Shift+I 打开开发者工具
-    mainWindow.webContents.on('before-input-event', (event, input) => {
-      if (input.key === 'F12' || (input.control && input.shift && input.key.toLowerCase() === 'i')) {
-        mainWindow.webContents.toggleDevTools();
-        event.preventDefault();
-      }
-    });
+    // F12 / Ctrl+Shift+I 打开开发者工具（仅开发模式，打包版不开放调试后门）
+    if (!app.isPackaged) {
+      mainWindow.webContents.on('before-input-event', (event, input) => {
+        if (input.key === 'F12' || (input.control && input.shift && input.key.toLowerCase() === 'i')) {
+          mainWindow.webContents.toggleDevTools();
+          event.preventDefault();
+        }
+      });
+    }
   }
   
   return mainWindow;
@@ -1345,6 +1382,7 @@ ipcMain.handle('set-gpu-acceleration', async (event, enabled) => {
 
 // 鼠标特效配置
 ipcMain.handle('set-mouse-effects', async (event, effects) => {
+  if (!effects || typeof effects !== 'object') effects = {}; // 无参数调用不再抛 TypeError
   const current = store.get('mouseEffects', {});
   const next = {
     enabled: typeof effects.enabled === 'boolean' ? effects.enabled : !!current.enabled,
@@ -1883,7 +1921,11 @@ ipcMain.handle('rename-file', async (event, oldPath, newName) => {
     // Windows 文件名非法字符（含路径分隔符，防止穿越到桌面范围外）
     const invalidChars = /[<>:"/\\|?*]/;
     const hasControlChar = [...trimmed].some(ch => ch.charCodeAt(0) < 32);
-    if (!trimmed || trimmed === '.' || trimmed === '..' || invalidChars.test(trimmed) || hasControlChar) {
+    // Windows 保留设备名（CON/PRN/AUX/NUL/COM1-9/LPT1-9，任意扩展名）
+    const reservedNames = /^(con|prn|aux|nul|com[1-9]|lpt[1-9])(\..*)?$/i;
+    if (!trimmed || trimmed === '.' || trimmed === '..' || invalidChars.test(trimmed) ||
+        hasControlChar || trimmed.endsWith('.') || trimmed.endsWith(' ') ||
+        reservedNames.test(trimmed)) {
       return { success: false, error: '文件名包含非法字符' };
     }
     const dir = path.dirname(oldPath);
@@ -1905,7 +1947,8 @@ ipcMain.handle('rename-file', async (event, oldPath, newName) => {
 ipcMain.handle('delete-file', async (event, filePath, permanent) => {
   try {
     if (!isAllowedPath(filePath)) return { success: false, error: '路径不允许' };
-    if (permanent) {
+    // 显式布尔判断：任意真值（"yes"/1）此前也会触发永久删除而非回收站
+    if (permanent === true) {
       const stats = await fs.promises.stat(filePath);
       if (stats.isDirectory()) {
         await fs.promises.rm(filePath, { recursive: true, force: true });
@@ -2065,6 +2108,8 @@ ipcMain.handle('set-auto-hide-edge', async (event, edge) => {
   if (!mainWindow) return false;
   
   try {
+    // 白名单校验：非法值会破坏边缘吸附/隐藏的状态机（switch 落 default 静默失效）
+    if (!Object.values(EDGE_TYPES).includes(edge)) return false;
     store.set('autoHideEdge', edge);
     mainWindow.autoHideState.currentEdge = edge;
     mainWindow.webContents.send('edge-changed', { edge });
@@ -2409,6 +2454,11 @@ app.on('before-quit', () => {
   } catch (error) {
     console.error('退出时显示桌面图标失败:', error);
   }
+
+  // 图标缓存防抖写盘立即落盘，避免退出前 500ms 内的提取结果丢失
+  try {
+    flushIconCache();
+  } catch (e) { /* 忽略 */ }
 
   // 停止文件监听
   stopDesktopWatchers();

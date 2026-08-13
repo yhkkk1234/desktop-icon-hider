@@ -650,7 +650,9 @@ function t(key, vars) {
   }
   if (vars) {
     for (const [k, v] of Object.entries(vars)) {
-      text = text.replace(new RegExp('\\{' + k + '\\}', 'g'), v);
+      // 用函数替换而非字符串替换：字符串替换会把 $&、$1、$' 等解释为匹配模式，
+      // 组名/规则名等用户输入含 $ 时确认对话框文字损坏
+      text = text.replace(new RegExp('\\{' + k + '\\}', 'g'), () => v);
     }
   }
   return text;
