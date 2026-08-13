@@ -162,7 +162,11 @@ let autoHideState = {
   showCancelled: false,
   hideTimer: null,
   showTimer: null,
-  mouseMonitorInterval: null
+  mouseMonitorInterval: null,
+  expectedWidth: 0,
+  enforceTimer: null,
+  lastMoveAt: 0,
+  probeAt: 0
 };
 
 // 获取窗口所在的显示器（多显示器环境下吸附/隐藏/显示都应以窗口所在显示器为基准）
@@ -222,6 +226,9 @@ function createMainWindow(store, startInactive = false) {
     mainWindow.autoHideState = { ...autoHideState };
     mainWindow.autoHideState.enabled = savedAutoHide;
     mainWindow.autoHideState.currentEdge = savedEdge;
+    // 期望宽度：移动窗口时 Windows 透明无边框窗口会累积宽度漂移（实测 0~1px/次），
+    // moved 事件后按此值校正，防止拖拽越拖越宽
+    mainWindow.autoHideState.expectedWidth = windowConfig.width;
     
     mainWindow.loadFile(path.join(__dirname, '../renderer/index.html'));
     
@@ -235,12 +242,7 @@ function createMainWindow(store, startInactive = false) {
       }
       
       if (savedCollapsed) {
-        mainWindow.setBounds({
-          x: windowConfig.x,
-          y: windowConfig.y,
-          width: windowConfig.width,
-          height: WINDOW_CONFIG.HEADER_HEIGHT
-        });
+        setBoundsStable(mainWindow, windowConfig.x, windowConfig.y, windowConfig.width, WINDOW_CONFIG.HEADER_HEIGHT);
       }
       
       // 如果启用了自动隐藏，启动鼠标监听
@@ -263,22 +265,50 @@ function createMainWindow(store, startInactive = false) {
         isCollapsed: mainWindow.isCollapsed
       });
       
-      // 窗口大小变化时，取消隐藏定时器
-      if (mainWindow.autoHideState && mainWindow.autoHideState.enabled) {
-        cancelAllTimers(mainWindow);
+      // 期望宽度只在用户主动调整窗口大小时更新（移动校正以此为基准）。
+      // 窗口移动（系统拖拽）会伴随漂移 resize（滞后报告累积漂移宽度），
+      // 若据此更新期望值，校正基准会跟着漂移导致修复失效；
+      // 因此移动结束后 500ms 内、以及程序化定位/宽度探测后 300ms 内的
+      // resize 一律视为校正副作用：既不更新期望宽度，也不取消自动隐藏定时器
+      // （否则吸附后的宽度校正会清掉 hideTimer，导致窗口滑不出来）
+      if (mainWindow.autoHideState) {
+        const st = mainWindow.autoHideState;
+        const now = Date.now();
+        const isUserResize = now - st.lastMoveAt > 500 && now - st.probeAt > 300;
+        if (isUserResize) {
+          st.expectedWidth = bounds.width;
+          // 只有用户主动调整窗口大小时才取消隐藏定时器
+          if (mainWindow.autoHideState.enabled) {
+            cancelAllTimers(mainWindow);
+          }
+        }
       }
     });
-    
+
     mainWindow.on('moved', () => {
       const bounds = mainWindow.getBounds();
       mainWindow.webContents.send('window-moved', {
         x: bounds.x,
         y: bounds.y
       });
-      
+
       // 检测边缘吸附
       if (mainWindow.autoHideState.enabled) {
         detectEdgeSnap(mainWindow, store);
+      }
+
+      // 透明无边框窗口在屏内移动会累积宽度漂移（实测移动一次约 +1px，越拖越宽）。
+      // 记录移动时间戳供 resize 判断（移动伴随的漂移 resize 不更新期望宽度），
+      // 拖拽结束后防抖校正回期望宽度（拖拽过程中不干预，避免打断系统拖拽）
+      if (mainWindow.autoHideState) {
+        const st = mainWindow.autoHideState;
+        st.lastMoveAt = Date.now();
+        if (st.enforceTimer) clearTimeout(st.enforceTimer);
+        mainWindow.autoHideState.enforceTimer = setTimeout(() => {
+          if (!mainWindow || mainWindow.isDestroyed()) return;
+          mainWindow.autoHideState.enforceTimer = null;
+          enforceWidth(mainWindow);
+        }, 300);
       }
     });
     
@@ -326,16 +356,16 @@ function snapToEdge(window, edge) {
   
   switch (edge) {
   case EDGE_TYPES.TOP:
-    window.setBounds(bounds.x, wa.y, bounds.width, bounds.height);
+    setBoundsStable(window, bounds.x, wa.y, bounds.width, bounds.height);
     break;
   case EDGE_TYPES.BOTTOM:
-    window.setBounds(bounds.x, wa.y + wa.height - bounds.height, bounds.width, bounds.height);
+    setBoundsStable(window, bounds.x, wa.y + wa.height - bounds.height, bounds.width, bounds.height);
     break;
   case EDGE_TYPES.LEFT:
-    window.setBounds(wa.x, bounds.y, bounds.width, bounds.height);
+    setBoundsStable(window, wa.x, bounds.y, bounds.width, bounds.height);
     break;
   case EDGE_TYPES.RIGHT:
-    window.setBounds(wa.x + wa.width - bounds.width, bounds.y, bounds.width, bounds.height);
+    setBoundsStable(window, wa.x + wa.width - bounds.width, bounds.y, bounds.width, bounds.height);
     break;
   }
   
@@ -366,20 +396,20 @@ function detectEdgeSnap(window, store) {
   const bounds = window.getBounds();
   const wa = getWorkArea(getDisplayForWindow(window));
   
-  // 窗口在边缘：吸附到该边缘
+  // 窗口在边缘：吸附到该边缘（setBoundsStable 保证吸附瞬间宽度不漂移扩张）
   if (detectedEdge !== EDGE_TYPES.NONE) {
     switch (detectedEdge) {
     case EDGE_TYPES.TOP:
-      window.setBounds(bounds.x, wa.y, bounds.width, bounds.height);
+      setBoundsStable(window, bounds.x, wa.y, bounds.width, bounds.height);
       break;
     case EDGE_TYPES.BOTTOM:
-      window.setBounds(bounds.x, wa.y + wa.height - bounds.height, bounds.width, bounds.height);
+      setBoundsStable(window, bounds.x, wa.y + wa.height - bounds.height, bounds.width, bounds.height);
       break;
     case EDGE_TYPES.LEFT:
-      window.setBounds(wa.x, bounds.y, bounds.width, bounds.height);
+      setBoundsStable(window, wa.x, bounds.y, bounds.width, bounds.height);
       break;
     case EDGE_TYPES.RIGHT:
-      window.setBounds(wa.x + wa.width - bounds.width, bounds.y, bounds.width, bounds.height);
+      setBoundsStable(window, wa.x + wa.width - bounds.width, bounds.y, bounds.width, bounds.height);
       break;
     }
   }
@@ -455,6 +485,9 @@ function hideWindow(window) {
   // （恒定 1px，仅屏内存在；出屏时精确）。探测后立即恢复原宽（设 w-1 得 w），
   // 动画期间 width 传 w-1 即可保持实际宽度 w，显示完成无需再校正、无视觉跳变。
   let dpiOffset = 0;
+  if (window.autoHideState) {
+    window.autoHideState.probeAt = Date.now(); // 探测的 setBounds 不得污染期望宽度
+  }
   try {
     window.setBounds({ x: bounds.x, y: bounds.y, width: bounds.width, height: bounds.height });
     const probed = window.getBounds().width;
@@ -594,6 +627,13 @@ function animateWindowMove(window, startBounds, endBounds, duration, onComplete,
     height: Number(endBounds.height) || 100
   };
   
+  // 动画完成：先校正宽度漂移（程序化 setBounds 不触发 moved，enforce 只能在此兜底），
+  // 再通知完成回调
+  const done = () => {
+    enforceWidth(window);
+    if (onComplete) onComplete();
+  };
+
   // 如果没有变化，直接设置最终位置
   if (start.x === end.x && start.y === end.y && 
       start.width === end.width && start.height === end.height) {
@@ -603,7 +643,7 @@ function animateWindowMove(window, startBounds, endBounds, duration, onComplete,
       width: Math.max(end.width - wFix, 1),
       height: end.height
     });
-    if (onComplete) onComplete();
+    done();
     return;
   }
   
@@ -645,7 +685,7 @@ function animateWindowMove(window, startBounds, endBounds, duration, onComplete,
           height: end.height
         });
         window.autoHideState.isAnimating = false;
-        if (onComplete) onComplete();
+        done();
         return;
       }
       
@@ -661,7 +701,7 @@ function animateWindowMove(window, startBounds, endBounds, duration, onComplete,
       } else {
         // 动画结束
         window.autoHideState.isAnimating = false;
-        if (onComplete) onComplete();
+        done();
       }
     } catch (error) {
       if (window && !window.isDestroyed()) {
@@ -678,7 +718,7 @@ function animateWindowMove(window, startBounds, endBounds, duration, onComplete,
           // 忽略
         }
       }
-      if (onComplete) onComplete();
+      done();
     }
   }
   
@@ -901,11 +941,46 @@ function getAutoHideStatus(window) {
   };
 }
 
+// 透明无边框窗口在屏内 setBounds/setPosition 存在宽度漂移（实测移动一次 +1px，
+// 且漂移会累积，表现为拖拽窗口越拖越宽）。此处按期望宽度校正：
+// 先设期望值，若实际仍偏差（如 +1），反向补偿一次，实测两次内收敛。
+function enforceWidth(window) {
+  if (!window || window.isDestroyed()) return;
+  const expected = window.autoHideState && window.autoHideState.expectedWidth;
+  if (!Number.isFinite(expected) || expected <= 0) return;
+  try {
+    const b = window.getBounds();
+    if (b.width === expected) return;
+    setBoundsStable(window, b.x, b.y, expected, b.height);
+  } catch (e) { /* 忽略 */ }
+}
+
+// 设置窗口边界并确保宽度精确：Windows 透明无边框窗口的 setBounds 可能产生
+// 宽度漂移（屏内实测 +1px），设置后立即校验，若仍有偏差则反向补偿一次。
+// 程序化定位会伴随 resize 事件，标记 probeAt 防止该 resize 被误判为用户调整
+// （否则会取消自动隐藏定时器导致窗口滑不出来）
+function setBoundsStable(window, x, y, w, h) {
+  if (!window || window.isDestroyed()) return;
+  if (window.autoHideState) {
+    window.autoHideState.probeAt = Date.now();
+  }
+  try {
+    window.setBounds({ x, y, width: w, height: h });
+    const a = window.getBounds();
+    const residual = a.width - w;
+    if (residual !== 0 && Math.abs(residual) <= 2) {
+      window.setBounds({ x: a.x, y: a.y, width: Math.max(w - residual, 1), height: a.height });
+    }
+  } catch (e) { /* 忽略 */ }
+}
+
 module.exports = {
   createMainWindow,
   setAutoHideEnabled,
   getAutoHideStatus,
   isFullscreenAppForeground,
+  enforceWidth,
+  setBoundsStable,
   WINDOW_CONFIG,
   AUTO_HIDE_CONFIG,
   EDGE_TYPES

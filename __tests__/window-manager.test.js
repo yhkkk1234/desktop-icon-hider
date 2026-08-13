@@ -117,4 +117,83 @@ describe('WindowManager', () => {
       isHidden: false
     });
   });
+
+  test('enforceWidth should correct accumulated width drift', () => {
+    // 模拟 Windows 透明窗口：setBounds(w) 实际得到 w+1（漂移累积）
+    let width = 802;
+    const window = {
+      autoHideState: { expectedWidth: 800 },
+      isDestroyed: () => false,
+      getBounds: () => ({ x: 100, y: 0, width, height: 600 }),
+      setBounds: jest.fn((b) => { width = b.width + 1; })
+    };
+
+    WindowManager.enforceWidth(window);
+    expect(width).toBe(800);
+    expect(window.setBounds).toHaveBeenCalledTimes(2);
+  });
+
+  test('enforceWidth should correct drift in one pass when setBounds is exact', () => {
+    // 无漂移环境：setBounds 精确生效，一次校正即可
+    let width = 802;
+    const window = {
+      autoHideState: { expectedWidth: 800 },
+      isDestroyed: () => false,
+      getBounds: () => ({ x: 100, y: 0, width, height: 600 }),
+      setBounds: jest.fn((b) => { width = b.width; })
+    };
+
+    WindowManager.enforceWidth(window);
+    expect(width).toBe(800);
+    expect(window.setBounds).toHaveBeenCalledTimes(1);
+  });
+
+  test('enforceWidth should not touch window when width already matches', () => {
+    const window = {
+      autoHideState: { expectedWidth: 800 },
+      isDestroyed: () => false,
+      getBounds: () => ({ x: 100, y: 0, width: 800, height: 600 }),
+      setBounds: jest.fn()
+    };
+
+    WindowManager.enforceWidth(window);
+    expect(window.setBounds).not.toHaveBeenCalled();
+  });
+
+  test('enforceWidth should ignore null window', () => {
+    expect(() => WindowManager.enforceWidth(null)).not.toThrow();
+  });
+
+  test('setBoundsStable should correct width drift after setBounds', () => {
+    // 模拟漂移环境：setBounds(w) 实际得到 w+1
+    let width = 0;
+    const window = {
+      autoHideState: { expectedWidth: 800 },
+      isDestroyed: () => false,
+      getBounds: () => ({ x: 100, y: 0, width, height: 600 }),
+      setBounds: jest.fn((b) => { width = b.width + 1; })
+    };
+
+    WindowManager.setBoundsStable(window, 100, 0, 800, 600);
+    expect(width).toBe(800);
+    expect(window.setBounds).toHaveBeenCalledTimes(2);
+  });
+
+  test('setBoundsStable should be single pass when setBounds is exact', () => {
+    let width = 0;
+    const window = {
+      autoHideState: { expectedWidth: 800 },
+      isDestroyed: () => false,
+      getBounds: () => ({ x: 100, y: 0, width, height: 600 }),
+      setBounds: jest.fn((b) => { width = b.width; })
+    };
+
+    WindowManager.setBoundsStable(window, 100, 0, 800, 600);
+    expect(width).toBe(800);
+    expect(window.setBounds).toHaveBeenCalledTimes(1);
+  });
+
+  test('setBoundsStable should ignore null window', () => {
+    expect(() => WindowManager.setBoundsStable(null, 0, 0, 800, 600)).not.toThrow();
+  });
 });
