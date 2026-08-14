@@ -4848,8 +4848,9 @@ function monitorLinePoints(arr) {
 
 function formatVram(used) {
   const mb = typeof used === 'number' ? used : 0;
-  if (mb >= 1024) return (mb / 1024).toFixed(1) + ' GB';
-  return mb + ' MB';
+  // 数字与单位之间用不换行空格，避免"534"与"MB"在宽度不足时被折成上下两行
+  if (mb >= 1024) return (mb / 1024).toFixed(1) + '\u00A0GB';
+  return mb + '\u00A0MB';
 }
 
 function fillMonitorBody(body, style, hist) {
@@ -5434,7 +5435,10 @@ async function updateWeatherNode(node) {
     return;
   }
 
-  body.innerHTML = `<div class="weather-loading">${t('widget.weatherLoading')}</div>`;
+  // 首次加载才显示"加载中"；后续刷新保留旧内容直到新数据回来，避免每次刷新都闪一下 loading
+  if (!body.querySelector('.weather-main')) {
+    body.innerHTML = `<div class="weather-loading">${t('widget.weatherLoading')}</div>`;
+  }
   const result = await window.api.getWeather();
   if (!node.isConnected) return; // 组件已被删除
   if (result && result.success) {

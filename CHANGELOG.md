@@ -88,6 +88,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
     config)` so future agents (Codex, Claude Code, ...) each get their own
     config group without touching the settings plumbing
 
+### Fixed
+
+- Monitor widget VRAM value (e.g. "534 MB") no longer wraps the number and
+  unit onto two lines: the number and unit are joined with a non-breaking
+  space, the value elements use `white-space: nowrap`, and the chart/bar
+  value columns use `min-width` instead of a fixed width
+- Weather widget no longer flashes the "loading" placeholder on refresh:
+  the loading state now shows only on first load, keeping the previous
+  weather content visible until new data arrives
+
 ## [1.9.0] - 2026-08-10
 
 ### Added
