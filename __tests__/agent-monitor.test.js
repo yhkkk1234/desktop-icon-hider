@@ -3,14 +3,20 @@ const {
   AgentMonitor,
   applyServerStatus,
   classifySession,
+  classifyDshSession,
+  createDshAdapter,
   createOpencodeAdapter,
   createOpencodeServerStatusProvider,
+  detectDshRunning,
   filterVisibleSessions,
+  getDshHomePath,
   getOpencodeDbPath,
   isValidSessionId,
+  parseDshProjection,
   parseLastPartType,
   parseSSEChunk,
-  DEFAULT_ACTIVE_WINDOW_MS
+  DEFAULT_ACTIVE_WINDOW_MS,
+  DEFAULT_DSH_WEB_PORT
 } = require('../src/main/agent-monitor');
 
 const NOW = 1786342368000;
@@ -587,6 +593,295 @@ describe('AgentMonitor', () => {
 
   it('默认活跃窗口为 120 秒', () => {
     expect(DEFAULT_ACTIVE_WINDOW_MS).toBe(120000);
+  });
+});
+
+// ============ dsh（DeepSeek Harness）适配器 ============
+
+describe('getDshHomePath', () => {
+  const OLD_HOME = process.env.DSH_HOME;
+
+  afterEach(() => {
+    if (OLD_HOME === undefined) delete process.env.DSH_HOME;
+    else process.env.DSH_HOME = OLD_HOME;
+  });
+
+  it('DSH_HOME 优先', () => {
+    process.env.DSH_HOME = 'D:/custom-dsh';
+    expect(getDshHomePath()).toBe('D:/custom-dsh');
+  });
+
+  it('未设置时回落 ~/.dsh', () => {
+    delete process.env.DSH_HOME;
+    expect(getDshHomePath()).toContain('.dsh');
+  });
+});
+
+describe('parseDshProjection', () => {
+  const PROJ = JSON.stringify({
+    unit: { name: 'session_projcache', version: 3 },
+    global: null,
+    tables: {
+      sessions: {
+        's1': {
+          identity: { createdAt: 1000, cwd: 'F:\\Proj' },
+          rows: {
+            sessionStats: { ver: 1, seq: 10, val: { openStep: { turn: 1, step: 2 }, pendingCalls: {} } },
+            title: { ver: 1, seq: 10, val: '任务A' },
+            goal: { ver: 4, seq: 10, val: { goal: { phase: 'active', id: 'g1' } } },
+            sessionListMetadata: { ver: 1, seq: 10, val: { blank: false, lastPromptAt: 5000 } }
+          }
+        },
+        's2': {
+          identity: { createdAt: 2000, cwd: 'F:\\Proj2' },
+          rows: {
+            sessionStats: { ver: 1, seq: 5, val: { openStep: null, pendingCalls: {} } },
+            goal: { ver: 4, seq: 5, val: { goal: { phase: 'complete' } } }
+          }
+        },
+        's3': {
+          identity: { createdAt: 3000, cwd: 'F:\\Proj3' },
+          rows: { goal: { ver: 4, seq: 1, val: { goal: { phase: 'blocked' } } } }
+        }
+      }
+    }
+  });
+
+  it('解析投影缓存为规范化会话行', () => {
+    const rows = parseDshProjection(PROJ);
+    expect(rows).toHaveLength(3);
+    const s1 = rows.find(r => r.id === 's1');
+    expect(s1.title).toBe('任务A');
+    expect(s1.directory).toBe('F:\\Proj');
+    expect(s1.timeCreated).toBe(1000);
+    expect(s1.openStep).toEqual({ turn: 1, step: 2 });
+    expect(s1.goalPhase).toBe('active');
+    expect(s1.lastPromptAt).toBe(5000);
+    expect(rows.find(r => r.id === 's2').goalPhase).toBe('complete');
+    expect(rows.find(r => r.id === 's3').goalPhase).toBe('blocked');
+  });
+
+  it('无 goal / 无 stats 的会话容错（字段缺省）', () => {
+    const rows = parseDshProjection(JSON.stringify({
+      tables: { sessions: { s9: { identity: { cwd: 'C:\\x' }, rows: {} } } }
+    }));
+    expect(rows).toHaveLength(1);
+    expect(rows[0].goalPhase).toBeNull();
+    expect(rows[0].openStep).toBeNull();
+    expect(rows[0].title).toBe('');
+  });
+
+  it('非法输入 → 空数组', () => {
+    expect(parseDshProjection(null)).toEqual([]);
+    expect(parseDshProjection('not json')).toEqual([]);
+    expect(parseDshProjection(JSON.stringify({ tables: {} }))).toEqual([]);
+  });
+});
+
+describe('classifyDshSession', () => {
+  const NOW = 10000000;
+  const ACTIVE_MS = 120 * 1000;
+
+  it('openStep 非空 → active（即使 goal 已 complete，如目标完成后继续工作）', () => {
+    const s = { openStep: { turn: 1, step: 1 }, pendingCalls: {}, goalPhase: 'complete', timeUpdated: NOW - 600000 };
+    expect(classifyDshSession(s, NOW, ACTIVE_MS)).toBe('active');
+  });
+
+  it('pendingCalls 非空 → active', () => {
+    const s = { openStep: null, pendingCalls: { x: 1 }, goalPhase: 'active', timeUpdated: NOW - 600000 };
+    expect(classifyDshSession(s, NOW, ACTIVE_MS)).toBe('active');
+  });
+
+  it('goal complete → completed（无需等待活跃窗口）', () => {
+    const s = { openStep: null, pendingCalls: {}, goalPhase: 'complete', timeUpdated: NOW - 5000 };
+    expect(classifyDshSession(s, NOW, ACTIVE_MS)).toBe('completed');
+  });
+
+  it('goal blocked/paused → interrupted', () => {
+    for (const phase of ['blocked', 'paused']) {
+      const s = { openStep: null, pendingCalls: {}, goalPhase: phase, timeUpdated: NOW - 5000 };
+      expect(classifyDshSession(s, NOW, ACTIVE_MS)).toBe('interrupted');
+    }
+  });
+
+  it('活跃窗口内（转录文件在写）→ active（无 goal 会话/回合间隙兜底）', () => {
+    const s = { openStep: null, pendingCalls: {}, goalPhase: null, timeUpdated: NOW - 3000 };
+    expect(classifyDshSession(s, NOW, ACTIVE_MS)).toBe('active');
+  });
+
+  it('goal 为 active 但已停止（杀进程/手动中断）→ interrupted', () => {
+    const s = { openStep: null, pendingCalls: {}, goalPhase: 'active', timeUpdated: NOW - 600000 };
+    expect(classifyDshSession(s, NOW, ACTIVE_MS)).toBe('interrupted');
+  });
+
+  it('无 goal 且已静止 → completed', () => {
+    const s = { openStep: null, pendingCalls: {}, goalPhase: null, timeUpdated: NOW - 600000 };
+    expect(classifyDshSession(s, NOW, ACTIVE_MS)).toBe('completed');
+  });
+});
+
+describe('createDshAdapter', () => {
+  const path = require('path');
+  const home = 'C:/fake-dsh';
+
+  /** 构造注入式假文件系统：dirs = Map<目录路径, 子项名数组>；mtimes = [[路径, mtimeMs]]；
+   *  projRaw = 注册在 home 的投影缓存；projRaws = 任意路径 → 内容（覆盖 projRaw） */
+  function makeFs({ dirs, projRaw, projRaws, mtimes }) {
+    const files = new Map();
+    if (projRaw !== undefined) {
+      files.set(path.join(home, 'storages', 'session_projcache.json'), projRaw);
+    }
+    if (projRaws) {
+      for (const [p, raw] of Object.entries(projRaws)) files.set(p, raw);
+    }
+    const statTimes = new Map(mtimes || []);
+    return {
+      readFileSync(p) {
+        if (!files.has(p)) { const e = new Error('ENOENT: ' + p); e.code = 'ENOENT'; throw e; }
+        return files.get(p);
+      },
+      statSync(p) {
+        if (!statTimes.has(p)) { const e = new Error('ENOENT: ' + p); e.code = 'ENOENT'; throw e; }
+        return { mtimeMs: statTimes.get(p) };
+      },
+      readdirSync(p) {
+        if (!dirs.has(p)) { const e = new Error('ENOENT: ' + p); e.code = 'ENOENT'; throw e; }
+        return dirs.get(p).map(name => ({ name, isDirectory: () => true }));
+      }
+    };
+  }
+
+  const PROJ = JSON.stringify({
+    tables: {
+      sessions: {
+        's1': {
+          identity: { createdAt: 1000, cwd: 'F:\\Proj' },
+          rows: {
+            sessionStats: { ver: 1, val: { openStep: null, pendingCalls: {} } },
+            title: { ver: 1, val: '任务A' },
+            goal: { ver: 4, val: { goal: { phase: 'complete' } } }
+          }
+        },
+        's2': {
+          identity: { createdAt: 2000, cwd: 'F:\\Proj2' },
+          rows: {
+            sessionStats: { ver: 1, val: { openStep: { turn: 1, step: 9 }, pendingCalls: {} } },
+            title: { ver: 1, val: '任务B' }
+          }
+        }
+      }
+    }
+  });
+
+  it('listSessions 返回规范化行并带状态（mtime 新鲜度 + 状态判定）', () => {
+    const fsx = makeFs({
+      dirs: new Map([
+        [path.join(home, 'sessions'), ['proj1', 'proj2']],
+        [path.join(home, 'sessions', 'proj1'), ['s1']],
+        [path.join(home, 'sessions', 'proj2'), ['s2']]
+      ]),
+      projRaw: PROJ,
+      mtimes: [
+        [path.join(home, 'sessions', 'proj1', 's1', 'session.jsonl.zstd'), NOW - 600000],
+        [path.join(home, 'sessions', 'proj2', 's2', 'session.jsonl.zstd'), NOW - 3000]
+      ]
+    });
+    const adapter = createDshAdapter({ home, activeWindowMs: ACTIVE_MS, now: () => NOW, ...fsx });
+    const rows = adapter.listSessions();
+    expect(rows).toHaveLength(2);
+    // 最后活动倒序：s2（活跃）居顶
+    expect(rows[0].id).toBe('s2');
+    expect(rows[0].status).toBe('active');
+    expect(rows[0].timeUpdated).toBe(NOW - 3000);
+    expect(rows[1].id).toBe('s1');
+    expect(rows[1].status).toBe('completed');
+    expect(rows[1].timeUpdated).toBe(NOW - 600000);
+  });
+
+  it('投影缓存缺失/非法 → 空列表（降级，不抛错）', () => {
+    // 文件存在但内容非法
+    const bad = makeFs({ dirs: new Map(), projRaw: 'not json' });
+    const adapterBad = createDshAdapter({ home, activeWindowMs: ACTIVE_MS, now: () => NOW, ...bad });
+    expect(adapterBad.listSessions()).toEqual([]);
+    // 文件缺失（读失败记录 lastError，下次轮询重试）
+    const missing = makeFs({ dirs: new Map() });
+    const adapterMissing = createDshAdapter({ home, activeWindowMs: ACTIVE_MS, now: () => NOW, ...missing });
+    expect(adapterMissing.listSessions()).toEqual([]);
+    expect(typeof adapterMissing.lastError).toBe('string');
+  });
+
+  it('无转录文件时用 createdAt 兜底 timeUpdated', () => {
+    const fsx = makeFs({ dirs: new Map([[path.join(home, 'sessions'), []]]), projRaw: PROJ });
+    const adapter = createDshAdapter({ home, activeWindowMs: ACTIVE_MS, now: () => NOW, ...fsx });
+    const rows = adapter.listSessions();
+    expect(rows).toHaveLength(2);
+    // s1/s2 都无转录文件：timeUpdated 回落 createdAt（1000/2000）
+    expect(rows.find(r => r.id === 's1').timeUpdated).toBe(1000);
+    expect(rows.find(r => r.id === 's2').timeUpdated).toBe(2000);
+    // s1 goal complete → completed；s2 openStep 非空 → active（不受时间兜底影响）
+    expect(rows.find(r => r.id === 's1').status).toBe('completed');
+    expect(rows.find(r => r.id === 's2').status).toBe('active');
+  });
+
+  it('setHome 可运行时切换数据目录', () => {
+    const home2 = 'C:/fake-dsh2';
+    const fsx = makeFs({
+      dirs: new Map([
+        [path.join(home, 'sessions'), []],
+        [path.join(home2, 'sessions'), ['p']],
+        [path.join(home2, 'sessions', 'p'), ['sA']]
+      ]),
+      projRaws: {
+        [path.join(home, 'storages', 'session_projcache.json')]:
+          JSON.stringify({ tables: { sessions: {} } }),
+        [path.join(home2, 'storages', 'session_projcache.json')]:
+          JSON.stringify({ tables: { sessions: { sA: { identity: { cwd: 'C:\\a' }, rows: {} } } } })
+      },
+      mtimes: [[path.join(home2, 'sessions', 'p', 'sA', 'session.jsonl.zstd'), NOW - 1000]]
+    });
+    const adapter = createDshAdapter({ home, activeWindowMs: ACTIVE_MS, now: () => NOW, ...fsx });
+    expect(adapter.listSessions()).toEqual([]); // 原目录无数据
+    adapter.setHome(home2);
+    expect(adapter.listSessions()).toHaveLength(1);
+  });
+
+  it('轮询器优先使用适配器自带 status，缺省回落 classifySession', async () => {
+    const adapter = {
+      id: 'dsh',
+      displayName: 'DeepSeek Harness',
+      listSessions: () => [
+        { id: 'd1', title: '', directory: '', agent: 'dsh', timeUpdated: NOW - 3000, status: 'active' },
+        { id: 'd2', title: '', directory: '', agent: 'dsh', timeUpdated: NOW - 600000, status: 'interrupted' }
+      ]
+    };
+    const monitor = new AgentMonitor({ adapters: [adapter], activeWindowMs: ACTIVE_MS, now: () => NOW });
+    await monitor.poll();
+    const snap = monitor.getSnapshot();
+    expect(snap[0].status).toBe('active');
+    expect(snap[1].status).toBe('interrupted');
+    expect(snap[0].harness).toBe('dsh');
+    expect(snap[0].harnessName).toBe('DeepSeek Harness');
+  });
+});
+
+describe('detectDshRunning', () => {
+  it('端口可达 → true（无需文件）', async () => {
+    const ok = await detectDshRunning(DEFAULT_DSH_WEB_PORT, async () => true, null);
+    expect(ok).toBe(true);
+  });
+
+  it('端口不可达但投影缓存近期在写入 → true（headless 模式）', async () => {
+    const statFn = () => ({ mtimeMs: Date.now() - 5000 });
+    const ok = await detectDshRunning(DEFAULT_DSH_WEB_PORT, async () => false, statFn);
+    expect(ok).toBe(true);
+  });
+
+  it('端口不可达且投影缓存陈旧/缺失 → false', async () => {
+    const statFn = () => { throw new Error('ENOENT'); };
+    const ok = await detectDshRunning(DEFAULT_DSH_WEB_PORT, async () => false, statFn);
+    expect(ok).toBe(false);
+    const stale = await detectDshRunning(DEFAULT_DSH_WEB_PORT, async () => false, () => ({ mtimeMs: Date.now() - 600000 }));
+    expect(stale).toBe(false);
   });
 });
 

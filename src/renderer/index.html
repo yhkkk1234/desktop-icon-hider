@@ -342,6 +342,21 @@
         </div>
       </div>
       
+      <!-- 窗口高度 -->
+      <div class="settings-section">
+        <h3 data-i18n="settings.windowHeight">窗口高度</h3>
+        <div class="setting-item">
+          <label class="switch">
+            <input type="checkbox" id="remember-window-height-toggle">
+            <span class="slider"></span>
+          </label>
+          <span class="setting-label" data-i18n="settings.rememberWindowHeight">记住手动调整的窗口高度</span>
+        </div>
+        <div class="setting-description" data-i18n="settings.rememberWindowHeightDesc">
+          开启后，展开状态保留上次手动调整的窗口高度；关闭时始终占满屏幕工作区高度（任务栏上方）。
+        </div>
+      </div>
+      
       <!-- 文件夹预览 -->
       <div class="settings-section">
         <h3 data-i18n="settings.folderPreview">文件夹预览</h3>
@@ -491,6 +506,55 @@
         </div>
         <div class="setting-description" data-i18n="settings.agentServerDesc">
           自跑 opencode serve（自定义端口/密码）时在此填入，让会话完成状态零延迟推送；留空则使用默认端口（4096）且不携带认证。
+        </div>
+        <div class="setting-item">
+          <label for="agent-dsh-port-input" data-i18n="settings.dshPort">DeepSeek Harness 端口:</label>
+          <input type="number" id="agent-dsh-port-input" min="0" max="65535" value="3080" class="number-input">
+        </div>
+        <div class="setting-item">
+          <label for="agent-dsh-home-input" data-i18n="settings.dshHome">DeepSeek Harness 数据目录:</label>
+          <input type="text" id="agent-dsh-home-input" class="number-input" placeholder="">
+        </div>
+        <div class="setting-description" data-i18n="settings.dshDesc">
+          监控 DeepSeek Harness 本地会话：端口用于检测 Harness 是否在运行（默认 3080，即网页界面端口）；数据目录留空使用默认（~/.dsh 或 DSH_HOME）。会话状态由 Harness 的投影缓存实时反映，零依赖、无需额外配置。
+        </div>
+      </div>
+      
+      <!-- 组件透明度（各组件类型独立） -->
+      <div class="settings-section widget-opacity-settings">
+        <h3 data-i18n="settings.widgetOpacity">组件透明度</h3>
+        <div class="setting-item opacity-control">
+          <label for="widget-opacity-clock"><span data-i18n="widget.clock">时钟</span>:</label>
+          <input type="range" id="widget-opacity-clock" min="30" max="100" step="5" value="100">
+          <span id="widget-opacity-clock-value">100%</span>
+        </div>
+        <div class="setting-item opacity-control">
+          <label for="widget-opacity-calendar"><span data-i18n="widget.calendar">日历</span>:</label>
+          <input type="range" id="widget-opacity-calendar" min="30" max="100" step="5" value="100">
+          <span id="widget-opacity-calendar-value">100%</span>
+        </div>
+        <div class="setting-item opacity-control">
+          <label for="widget-opacity-weather"><span data-i18n="widget.weather">天气</span>:</label>
+          <input type="range" id="widget-opacity-weather" min="30" max="100" step="5" value="100">
+          <span id="widget-opacity-weather-value">100%</span>
+        </div>
+        <div class="setting-item opacity-control">
+          <label for="widget-opacity-monitor"><span data-i18n="widget.monitor">性能监控</span>:</label>
+          <input type="range" id="widget-opacity-monitor" min="30" max="100" step="5" value="100">
+          <span id="widget-opacity-monitor-value">100%</span>
+        </div>
+        <div class="setting-item opacity-control">
+          <label for="widget-opacity-agent"><span data-i18n="widget.agent">Agent 会话</span>:</label>
+          <input type="range" id="widget-opacity-agent" min="30" max="100" step="5" value="100">
+          <span id="widget-opacity-agent-value">100%</span>
+        </div>
+        <div class="setting-item opacity-control">
+          <label for="widget-opacity-everything"><span data-i18n="widget.everything">Everything 搜索</span>:</label>
+          <input type="range" id="widget-opacity-everything" min="30" max="100" step="5" value="100">
+          <span id="widget-opacity-everything-value">100%</span>
+        </div>
+        <div class="setting-description" data-i18n="settings.widgetOpacityDesc">
+          在主题自带透明度基础上叠加的组件透明度倍率（各组件独立）；100% 即完全保持主题默认效果，玻璃等材质主题的自有透明度保持不变。
         </div>
       </div>
       

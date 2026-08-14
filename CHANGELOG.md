@@ -7,7 +7,67 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- Widget opacity: each widget type (clock / calendar / weather / monitor /
+  agent / everything) now has its own opacity multiplier (30-100%, default
+  100%) in Settings → Widget Opacity. It composes with the theme's own
+  transparency instead of replacing it (implemented with `color-mix`, so
+  material themes like glass keep their own surface formulas): effective
+  alpha = theme base alpha × widget multiplier. Settings are persisted via
+  the new `widget-opacity` store key and applied live to all widget nodes.
+- DeepSeek Harness (dsh) support in the Agent Sessions widget via a new
+  harness adapter (`createDshAdapter`):
+  - Reads `~/.dsh/storages/session_projcache.json` (live projection cache)
+    plus per-session transcript file mtimes; zero native dependencies
+  - Status rules: `openStep`/`pendingCalls` → running; goal `phase`
+    complete → done, blocked/paused → interrupted; otherwise transcript
+    freshness fallback
+  - Sessions appear in their own "DeepSeek Harness" group; the harness runs
+    are detected independently (web port probe on 3080 by default, or
+    headless detection via projection cache write activity), so each group
+    shows its own "(off)" tag when that harness is not running
+  - New settings: DeepSeek Harness port + data directory
+    (`agentConfigs.dsh.{port,home}`), applied live without restart
+- Agent Sessions widget: each harness group header now has a small collapse
+  triangle; clicking it collapses/expands that harness's notification list
+  (e.g. opencode or DeepSeek Harness independently). Collapsed state is
+  persisted per harness (`agentCollapsedHarnesses`) and survives restarts;
+  the count badge keeps updating while collapsed
+- New "Window Height" setting (`rememberWindowHeight`): when enabled, the
+  expanded window restores the height you manually set last time (clamped to
+  the current work area); when disabled it keeps the original design -
+  expanded always fills the work area height above the taskbar. Startup
+  restore and the collapse/expand toggle share the same helper, so both
+  behave consistently
+- Clock widget now offers four switchable styles via a style button on the
+  widget (persisted per widget in the `widgets` array):
+  - digital (default): the original large digits + date
+  - minimal: thin large HH:MM with a muted small date
+  - flip: flip-clock cards with a 3D roll animation (opaque rolling halves
+    with brightness fold shading, gated by prefers-reduced-motion; colon
+    blinks each second)
+  - seven: red glowing 7-segment display with blinking colons
+- Clock style fixes:
+  - Flip half pages now use absolute positioning with complementary
+    clipping so the bottom half always shows the lower part of the digit
+    (previously both halves rendered the same top half)
+  - Flip roll animation made more visible: rolling halves get an opaque
+    background + hidden backface so the fold truly occludes the static half,
+    stronger perspective, a longer 360ms asymmetric ease (top falls in, bottom
+    lands out), and a brightness fold shading
+  - Switching to flip/seven clears and hides the top text area (previously a
+    stale digital time remained above the styled face)
+  - 7-segment digit rebuilt with thinner 4px segments (16×30 digit, smaller
+    colon dots)
+
 ### Changed
+
+- Agent widget menu label renamed from "OpenCode Sessions" to "Agent
+  Sessions"; runtime detection is now per-harness (opencode + dsh) and the
+  renderer marks groups offline individually
+- `AgentMonitor.poll` prefers an adapter-provided `status` (dsh) and falls
+  back to the shared `classifySession` (opencode semantics)
 
 - Agent Sessions widget is now a pure status notifier (no jump/open):
   - Running sessions are live status indicators and are not clickable

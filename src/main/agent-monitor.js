@@ -6,6 +6,7 @@
 // （step-finish = 正常完成一轮，其余 = 被中断），把"完成"与"中断"区分开。
 const path = require('path');
 const os = require('os');
+const fs = require('fs');
 const net = require('net');
 const { spawn } = require('child_process');
 
@@ -638,6 +639,233 @@ function createOpencodeAdapter(options = {}) {
   };
 }
 
+// ============ DeepSeek Harness (dsh) 适配器 ============
+// 数据源（纯 JSON + 文件 stat，零原生依赖；未安装/未运行时降级为空列表）：
+// - <home>/storages/session_projcache.json：会话投影缓存，由运行中的 harness 实时写入
+//   （实测毫秒级更新）。含 identity.cwd/createdAt、title、goal.phase、
+//   sessionStats.openStep/pendingCalls、sessionListMetadata.lastPromptAt。
+// - <home>/sessions/<项目目录编码>/<会话id>/session.jsonl.zstd：会话转录文件，
+//   mtime 即该会话最后活动时间（等价于 opencode 的 time_updated）。
+// 状态判定优先级：openStep/pendingCalls（正在执行）→ goal.phase
+// （complete/blocked/paused）→ 转录 mtime 新鲜度兜底 → completed。
+const DEFAULT_DSH_WEB_PORT = 3080;
+// 投影缓存 mtime 在 harness 运行期间持续刷新；超过该时长未写入视为 harness 已停止
+const DSH_PROJCACHE_ACTIVE_MS = 60 * 1000;
+
+/**
+ * dsh 数据目录：DSH_HOME 环境变量优先，否则 ~/.dsh
+ * @returns {string}
+ */
+function getDshHomePath() {
+  return (process.env.DSH_HOME && String(process.env.DSH_HOME).trim())
+    ? String(process.env.DSH_HOME).trim()
+    : path.join(os.homedir(), '.dsh');
+}
+
+/**
+ * 解析 dsh 投影缓存 JSON 内容 → 规范化会话行（纯函数，可单测）。
+ * 只取组件需要的最小字段；timeUpdated 由 createDshAdapter 按转录文件补齐。
+ * @param {string} raw session_projcache.json 内容
+ * @returns {Array<{id: string, title: string, directory: string, timeCreated: number,
+ *   openStep: ?Object, pendingCalls: Object, goalPhase: ?string, lastPromptAt: number}>}
+ */
+function parseDshProjection(raw) {
+  if (!raw || typeof raw !== 'string') return [];
+  let data;
+  try {
+    data = JSON.parse(raw);
+  } catch (e) {
+    return [];
+  }
+  const table = data && data.tables && data.tables.sessions;
+  if (!table || typeof table !== 'object') return [];
+  const rows = [];
+  for (const [id, entry] of Object.entries(table)) {
+    if (!entry || typeof entry !== 'object' || !entry.identity) continue;
+    const r = entry.rows || {};
+    const stats = r.sessionStats && r.sessionStats.val ? r.sessionStats.val : null;
+    const goal = r.goal && r.goal.val ? r.goal.val : null;
+    const listMeta = r.sessionListMetadata && r.sessionListMetadata.val
+      ? r.sessionListMetadata.val : null;
+    rows.push({
+      id,
+      title: r.title && r.title.val ? String(r.title.val) : '',
+      directory: typeof entry.identity.cwd === 'string' ? entry.identity.cwd : '',
+      timeCreated: Number.isFinite(entry.identity.createdAt) ? entry.identity.createdAt : 0,
+      openStep: stats ? stats.openStep : null,
+      pendingCalls: stats && stats.pendingCalls && typeof stats.pendingCalls === 'object'
+        ? stats.pendingCalls : {},
+      goalPhase: goal && goal.goal ? goal.goal.phase : null,
+      lastPromptAt: listMeta && Number.isFinite(listMeta.lastPromptAt) ? listMeta.lastPromptAt : 0
+    });
+  }
+  return rows;
+}
+
+/**
+ * 判定 dsh 会话状态：active（运行中）/ completed（已完成）/ interrupted（被中断/停滞）
+ * 优先级：
+ * - openStep 非空或 pendingCalls 非空 → active（harness 正在执行 LLM/工具步骤）
+ * - goal.phase complete → completed；blocked/paused → interrupted
+ * - 转录 mtime 在活跃窗口内 → active（无 goal 会话/回合间隙的兜底）
+ * - goal 为 active 但已停止 → interrupted（未完成即停，如杀进程/手动中断）
+ * - 其余 → completed
+ * @param {{openStep: ?Object, pendingCalls: Object, goalPhase: ?string, timeUpdated: number}} session
+ * @param {number} now 当前时间戳（ms）
+ * @param {number} activeWindowMs 活跃判定窗口（ms）
+ * @returns {'active'|'completed'|'interrupted'}
+ */
+function classifyDshSession(session, now, activeWindowMs) {
+  if (session.openStep ||
+      (session.pendingCalls && Object.keys(session.pendingCalls).length > 0)) {
+    return 'active';
+  }
+  if (session.goalPhase === 'complete') return 'completed';
+  if (session.goalPhase === 'blocked' || session.goalPhase === 'paused') return 'interrupted';
+  if (typeof session.timeUpdated === 'number' && now - session.timeUpdated < activeWindowMs) {
+    return 'active';
+  }
+  if (session.goalPhase === 'active') return 'interrupted';
+  return 'completed';
+}
+
+/**
+ * 判定 dsh 是否在运行：web 端口可达，或投影缓存仍在持续写入
+ * （headless/纯 CLI 模式无 web 服务，但 harness 运行期间投影缓存照样刷新）。
+ * @param {number} port web 端口（默认 3080）
+ * @param {?Function} connectFn 端口连接函数（测试注入）
+ * @param {?Function} statFn 文件 stat 函数（测试注入）
+ * @param {?string} home 自定义数据目录（空 = DSH_HOME/~/.dsh）
+ * @returns {Promise<boolean>}
+ */
+async function detectDshRunning(port = DEFAULT_DSH_WEB_PORT, connectFn = defaultConnect, statFn = fs.statSync, home) {
+  if (connectFn) {
+    try {
+      if (await connectFn(port, 300)) return true;
+    } catch (e) { /* 继续文件检测 */ }
+  }
+  try {
+    const h = typeof home === 'string' && home.trim() ? home.trim() : getDshHomePath();
+    const st = statFn(path.join(h, 'storages', 'session_projcache.json'));
+    return st && Date.now() - st.mtimeMs < DSH_PROJCACHE_ACTIVE_MS;
+  } catch (e) {
+    return false;
+  }
+}
+
+/**
+ * 创建 dsh harness 适配器（依赖注入便于测试）
+ * @param {{ home?: string, activeWindowMs?: number, now?: Function,
+ *   readFileSync?: Function, statSync?: Function, readdirSync?: Function }} options
+ *   home：dsh 数据目录，空 = DSH_HOME/~/.dsh；fs 三件套仅测试注入
+ * @returns {{ id: string, displayName: string, lastError: string,
+ *   listSessions: Function, getServerStatuses: Function, setHome: Function }}
+ */
+function createDshAdapter(options = {}) {
+  const readFileSync = options.readFileSync || ((p) => fs.readFileSync(p, 'utf8'));
+  const statSync = options.statSync || fs.statSync;
+  const readdirSync = options.readdirSync || fs.readdirSync;
+  const nowFn = options.now || (() => Date.now());
+  let home = typeof options.home === 'string' && options.home.trim() ? options.home.trim() : '';
+  const activeWindowMs = options.activeWindowMs || DEFAULT_ACTIVE_WINDOW_MS;
+  let lastError = null;
+
+  function homePath() {
+    return home || getDshHomePath();
+  }
+
+  /**
+   * 扫描 sessions 根目录，建立 会话id → session.jsonl.zstd 绝对路径 映射。
+   * 目录名是项目路径的编码形式，不依赖编码规则，按"id 目录下找转录文件"反查即可。
+   * @param {string} sessionsRoot
+   * @returns {Map<string, string>}
+   */
+  function scanSessionTranscripts(sessionsRoot) {
+    const map = new Map();
+    let projects;
+    try {
+      projects = readdirSync(sessionsRoot, { withFileTypes: true });
+    } catch (e) {
+      return map;
+    }
+    for (const proj of projects) {
+      if (!proj.isDirectory()) continue;
+      let sessionDirs;
+      try {
+        sessionDirs = readdirSync(path.join(sessionsRoot, proj.name), { withFileTypes: true });
+      } catch (e) {
+        continue;
+      }
+      for (const sd of sessionDirs) {
+        if (!sd.isDirectory()) continue;
+        map.set(sd.name, path.join(sessionsRoot, proj.name, sd.name, 'session.jsonl.zstd'));
+      }
+    }
+    return map;
+  }
+
+  return {
+    id: 'dsh',
+    displayName: 'DeepSeek Harness',
+    get lastError() {
+      return lastError;
+    },
+
+    /**
+     * 只读查询 dsh 会话（投影缓存 + 转录文件 mtime）。
+     * 会话量小（个位数到几十），全量重扫成本可忽略（readdir/stat 微秒级）。
+     * @returns {Array<Object>} 规范化会话行（含 status，供轮询器直接使用）
+     */
+    listSessions() {
+      lastError = null;
+      const h = homePath();
+      let raw;
+      try {
+        raw = readFileSync(path.join(h, 'storages', 'session_projcache.json'));
+      } catch (e) {
+        lastError = e.message;
+        return [];
+      }
+      const rows = parseDshProjection(raw);
+      if (rows.length === 0) return rows;
+      const transcripts = scanSessionTranscripts(path.join(h, 'sessions'));
+      const now = nowFn();
+      for (const r of rows) {
+        const tp = transcripts.get(r.id);
+        if (tp) {
+          try {
+            r.timeUpdated = statSync(tp).mtimeMs;
+          } catch (e) {
+            r.timeUpdated = r.lastPromptAt || r.timeCreated;
+          }
+        } else {
+          r.timeUpdated = r.lastPromptAt || r.timeCreated;
+        }
+        r.status = classifyDshSession(r, now, activeWindowMs);
+      }
+      // 与 opencode 适配器一致：最后活动时间倒序（活跃会话居顶）
+      rows.sort((a, b) => b.timeUpdated - a.timeUpdated);
+      return rows;
+    },
+
+    /**
+     * dsh 无 server 校准通道（状态由投影缓存实时反映），返回空 Map
+     * @returns {Promise<Map>}
+     */
+    async getServerStatuses() {
+      return new Map();
+    },
+
+    /**
+     * 运行时替换数据目录（设置中修改后生效，无需重启）
+     * @param {string} newHome 空 = 默认（DSH_HOME/~/.dsh）
+     */
+    setHome(newHome) {
+      home = typeof newHome === 'string' && newHome.trim() ? newHome.trim() : '';
+    }
+  };
+}
+
 // ============ 轮询器 ============
 
 /**
@@ -699,7 +927,9 @@ class AgentMonitor {
               timeUpdated: s.timeUpdated,
               timeCreated: s.timeCreated,
               lastPartType: s.lastPartType,
-              status: classifySession(s, now, this.activeWindowMs)
+              // 适配器可自带状态判定（如 dsh 的 goal.phase/openStep 规则），
+              // 缺省回落到统一的 classifySession（opencode 语义）
+              status: s.status || classifySession(s, now, this.activeWindowMs)
             });
           }
           if (typeof adapter.getServerStatuses === 'function') {
@@ -748,22 +978,29 @@ module.exports = {
   AgentMonitor,
   applyServerStatus,
   classifySession,
+  classifyDshSession,
+  createDshAdapter,
   createOpencodeAdapter,
   createOpencodeServerStatusProvider,
+  detectDshRunning,
   detectOpencodeRunning,
   detectOpencodeRunningNow,
   filterVisibleSessions,
+  getDshHomePath,
   getOpencodeDbPath,
   hasProcessAsync,
   isValidSessionId,
   normalizeOpencodeRow,
+  parseDshProjection,
   parseLastPartType,
   parseSSEChunk,
   probeAnyPort,
   resetRuntimeSignal,
   DEFAULT_ACTIVE_WINDOW_MS,
+  DEFAULT_DSH_WEB_PORT,
   DEFAULT_POLL_INTERVAL_MS,
   DEFAULT_SERVER_PORTS,
+  DSH_PROJCACHE_ACTIVE_MS,
   IDLE_OVERRIDE_WINDOW_MS,
   RUNTIME_CONFIRM_MS,
   STEP_FINISH_CONFIRM_MS

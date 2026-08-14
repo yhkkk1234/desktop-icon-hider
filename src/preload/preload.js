@@ -19,6 +19,9 @@ contextBridge.exposeInMainWorld('api', {
   // 透明度功能API
   setOpacity: (opacity) => ipcRenderer.invoke('set-opacity', opacity),
   getOpacity: () => ipcRenderer.invoke('get-opacity'),
+
+  // 窗口高度功能API（展开状态是否记住手动调整的高度）
+  setRememberWindowHeight: (enabled) => ipcRenderer.invoke('set-remember-window-height', enabled),
   
   // 图标大小功能API
   setIconSize: (size) => ipcRenderer.invoke('set-icon-size', size),
@@ -44,6 +47,7 @@ contextBridge.exposeInMainWorld('api', {
   setWidgets: (widgets) => ipcRenderer.invoke('set-widgets', widgets),
   setShowWidgets: (enabled) => ipcRenderer.invoke('set-show-widgets', enabled),
   setWidgetsAvoidIcons: (enabled) => ipcRenderer.invoke('set-widgets-avoid', enabled),
+  setWidgetOpacity: (map) => ipcRenderer.invoke('set-widget-opacity', map),
   getSystemStats: () => ipcRenderer.invoke('get-system-stats'),
 
   // agent 会话监控组件
@@ -52,6 +56,7 @@ contextBridge.exposeInMainWorld('api', {
   unmarkAgentRead: (sessionIds) => ipcRenderer.invoke('unmark-agent-read', sessionIds),
   setAgentRetentionDays: (days) => ipcRenderer.invoke('set-agent-retention-days', days),
   setAgentConfig: (harness, config) => ipcRenderer.invoke('set-agent-config', { harness, config }),
+  setAgentCollapsed: (harness, collapsed) => ipcRenderer.invoke('set-agent-collapsed', { harness, collapsed }),
   onAgentStatusChanged: (callback) => ipcRenderer.on('agent-status-changed', (event, sessions) => callback(sessions)),
   onAgentRuntimeChanged: (callback) => ipcRenderer.on('agent-runtime-changed', (event, data) => callback(data)),
   

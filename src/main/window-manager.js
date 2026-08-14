@@ -225,6 +225,23 @@ function sanitizeSavedBounds(saved) {
   return null;
 }
 
+// 展开状态的窗口高度：
+// - 开启"记住窗口高度"（rememberWindowHeight）且保存的高度有效（≥200px，折叠高 40px 不参与）
+//   时，用保存值并限幅到工作区高度内（跨分辨率/拔屏后不至于超出屏幕）；
+// - 否则按设计固定为工作区满高（任务栏上方全部高度）。
+// 启动恢复与运行中"折叠→展开"共用此函数，保证两处行为一致。
+function getExpandedHeight(store, workAreaHeight) {
+  let savedHeight = 0;
+  if (store.get('rememberWindowHeight', false)) {
+    const savedBounds = store.get('windowBounds');
+    if (savedBounds && Number.isFinite(savedBounds.height)) savedHeight = savedBounds.height;
+  }
+  if (savedHeight >= 200) {
+    return Math.min(savedHeight, workAreaHeight);
+  }
+  return workAreaHeight;
+}
+
 function createMainWindow(store, startInactive = false) {
   try {
     const primaryDisplay = screen.getPrimaryDisplay();
@@ -237,7 +254,7 @@ function createMainWindow(store, startInactive = false) {
     
     const windowConfig = {
       width: savedBounds ? savedBounds.width : WINDOW_CONFIG.DEFAULT_WIDTH,
-      height: savedCollapsed ? WINDOW_CONFIG.HEADER_HEIGHT : height,
+      height: savedCollapsed ? WINDOW_CONFIG.HEADER_HEIGHT : getExpandedHeight(store, height),
       x: savedBounds ? savedBounds.x : (width - WINDOW_CONFIG.DEFAULT_WIDTH) / 2,
       y: savedBounds ? savedBounds.y : 0,
       transparent: true,
@@ -1083,6 +1100,7 @@ function setBoundsStable(window, x, y, w, h) {
 
 module.exports = {
   createMainWindow,
+  getExpandedHeight,
   setAutoHideEnabled,
   getAutoHideStatus,
   isFullscreenAppForeground,

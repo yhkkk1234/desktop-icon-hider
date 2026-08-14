@@ -60,6 +60,7 @@ let iconTextEffect = 'windows'; // 图标文字效果: windows | auto | soft | s
 let fontFamily = ''; // 用户字体（空=主题默认）
 let widgets = []; // 小组件: [{ id, type: 'clock'|'calendar'|'weather', x, y }] 坐标为百分比
 let showWidgets = true; // 小组件显示开关
+let rememberWindowHeight = false; // 展开状态是否记住手动调整的窗口高度（false = 满工作区高）
 let widgetsAvoidIcons = false; // 图标自动绕开小组件区域
 let widgetDrag = null; // 组件拖拽状态
 let widgetResize = null; // 组件拉伸状态
@@ -75,7 +76,11 @@ let agentPrevStatus = new Map(); // agent 组件：上一轮状态，用于检�
 let agentDoneRetentionDays = 7; // agent 组件：已完成会话保留天数（0 = 不限制）
 let agentServerPort = 0; // agent 组件：opencode server 端口（0 = 默认 4096，来自 agentConfigs.opencode）
 let agentServerPassword = ''; // agent 组件：opencode server 密码（空 = 无认证，来自 agentConfigs.opencode）
-let agentRuntimeRunning = true; // agent 组件：opencode 是否在运行（关闭时显示"未开启"标记）
+let agentDshPort = 3080; // agent 组件：DeepSeek Harness web 端口（0 = 默认 3080，来自 agentConfigs.dsh）
+let agentDshHome = ''; // agent 组件：DeepSeek Harness 数据目录（空 = DSH_HOME/~/.dsh，来自 agentConfigs.dsh）
+let agentRuntimeStatus = {}; // agent 组件：各 harness 是否在运行 { opencode: bool, dsh: bool }
+let agentCollapsedHarnesses = new Set(); // agent 组件：已折叠（收起通知列表）的 harness 名
+let widgetOpacity = {}; // 组件透明度倍率：type → 30..100（100 = 主题默认透明度）
 let weatherFxEnabled = true; // 天气组件动态背景开关
 let weatherCity = null; // 天气城市配置 { name, lat, lon }
 
@@ -101,11 +106,13 @@ let selectionToolbar, selectionCount, selOpenBtn, selCopyBtn, selCutBtn, selPast
 let folderPreview, boxSelectEl;
 let iconsLockToggle, rulesList, addRuleBtn, applyRulesBtn;
 let startupDelayInput, languageSelect, agentRetentionInput, agentServerPortInput, agentServerPasswordInput;
+let agentDshPortInput, agentDshHomeInput;
 let gpuAccelerationToggle;
 let shortcutToggleInput, shortcutRefreshInput, shortcutWidgetsInput;
 let exportLayoutBtn, importLayoutBtn, quitAppBtn;
 let groupModeSelect, groupsBar, thumbStyleSelect;
 let widgetsLayer, addWidgetBtn, widgetMenu, showWidgetsToggle, widgetsAvoidToggle, weatherFxToggle, toggleWidgetsBtn;
+let rememberWindowHeightToggle;
 let everythingToggle, everythingStatus, everythingDownloadBtn, everythingAdminWarn;
 let folderPreviewToggle;
 let bgLayer, bgImage, bgToggle, selectBgBtn, clearBgBtn, bgBlurSlider, bgBlurValue, bgDimSlider, bgDimValue;
@@ -148,6 +155,7 @@ document.addEventListener('DOMContentLoaded', () => {
   iconSizeSlider = document.getElementById('icon-size-slider');
   iconSizeValue = document.getElementById('icon-size-value');
   autoLaunchToggle = document.getElementById('auto-launch-toggle');
+  rememberWindowHeightToggle = document.getElementById('remember-window-height-toggle');
   searchBar = document.getElementById('search-bar');
   searchInput = document.getElementById('search-input');
   searchClear = document.getElementById('search-clear');
@@ -173,6 +181,8 @@ document.addEventListener('DOMContentLoaded', () => {
   agentRetentionInput = document.getElementById('agent-retention-input');
   agentServerPortInput = document.getElementById('agent-server-port-input');
   agentServerPasswordInput = document.getElementById('agent-server-password-input');
+  agentDshPortInput = document.getElementById('agent-dsh-port-input');
+  agentDshHomeInput = document.getElementById('agent-dsh-home-input');
   gpuAccelerationToggle = document.getElementById('gpu-acceleration-toggle');
   mouseFxToggle = document.getElementById('mouse-fx-toggle');
   mouseFxTypeSelect = document.getElementById('mouse-fx-type-select');
@@ -273,6 +283,7 @@ document.addEventListener('DOMContentLoaded', () => {
   });
   opacitySlider.addEventListener('input', handleOpacityChange);
   iconSizeSlider.addEventListener('input', handleIconSizeChange);
+  if (rememberWindowHeightToggle) rememberWindowHeightToggle.addEventListener('change', handleRememberWindowHeightChange);
   autoLaunchToggle.addEventListener('change', handleAutoLaunchToggle);
   iconsLockToggle.addEventListener('change', handleIconsLockToggle);
   addRuleBtn.addEventListener('click', () => promptRuleEditor(null));
@@ -281,6 +292,13 @@ document.addEventListener('DOMContentLoaded', () => {
   if (agentRetentionInput) agentRetentionInput.addEventListener('change', handleAgentRetentionChange);
   if (agentServerPortInput) agentServerPortInput.addEventListener('change', handleAgentServerConfigChange);
   if (agentServerPasswordInput) agentServerPasswordInput.addEventListener('change', handleAgentServerConfigChange);
+  if (agentDshPortInput) agentDshPortInput.addEventListener('change', handleDshConfigChange);
+  if (agentDshHomeInput) agentDshHomeInput.addEventListener('change', handleDshConfigChange);
+  // 组件透明度滑块（各组件类型一个）
+  for (const type of WIDGET_OPACITY_TYPES) {
+    const el = document.getElementById('widget-opacity-' + type);
+    if (el) el.addEventListener('input', () => handleWidgetOpacityChange(type));
+  }
   gpuAccelerationToggle.addEventListener('change', handleGpuAccelerationChange);
   mouseFxToggle.addEventListener('change', handleMouseFxChange);
   mouseFxTypeSelect.addEventListener('change', handleMouseFxChange);
@@ -394,9 +412,15 @@ document.addEventListener('DOMContentLoaded', () => {
     updateAgentWidgets();
   });
 
-  // agent 组件：opencode 运行状态变化（关闭时锁定条目点击 + 显示提示）
+  // agent 组件：opencode/dsh 运行状态变化（按 harness 分别标记"未开启"）
   window.api.onAgentRuntimeChanged((data) => {
-    agentRuntimeRunning = !data || data.running !== false;
+    if (data && data.running && typeof data.running === 'object') {
+      agentRuntimeStatus = data.running;
+    } else {
+      // 兼容旧格式（单布尔值）：两个 harness 同状态
+      const r = !data || data.running !== false;
+      agentRuntimeStatus = { opencode: r, dsh: r };
+    }
     updateAgentWidgets();
   });
 
@@ -489,6 +513,7 @@ document.addEventListener('DOMContentLoaded', () => {
     opacity = data.opacity || 92;
     iconSize = data.iconSize || 40;
     autoLaunchEnabled = data.autoLaunch || false;
+    rememberWindowHeight = !!data.rememberWindowHeight;
     manualOrder = Array.isArray(data.manualOrder) ? data.manualOrder : [];
     groups = Array.isArray(data.groups) ? data.groups : [];
     groupDisplayMode = data.groupDisplayMode === 'tab' ? 'tab' : 'folder';
@@ -574,6 +599,20 @@ document.addEventListener('DOMContentLoaded', () => {
     const opencodeCfg = (data.agentConfigs && data.agentConfigs.opencode) || {};
     agentServerPort = Number.isFinite(opencodeCfg.port) ? opencodeCfg.port : 0;
     agentServerPassword = typeof opencodeCfg.password === 'string' ? opencodeCfg.password : '';
+    // dsh（DeepSeek Harness）组：web 端口 + 数据目录
+    const dshCfg = (data.agentConfigs && data.agentConfigs.dsh) || {};
+    agentDshPort = Number.isFinite(dshCfg.port) ? dshCfg.port : 3080;
+    agentDshHome = typeof dshCfg.home === 'string' ? dshCfg.home : '';
+    // 组件透明度倍率（30..100；100 = 主题默认）
+    if (data.widgetOpacity && typeof data.widgetOpacity === 'object') {
+      widgetOpacity = {};
+      for (const [type, v] of Object.entries(data.widgetOpacity)) {
+        if (Number.isFinite(v)) widgetOpacity[type] = Math.max(30, Math.min(100, Math.round(v)));
+      }
+    }
+    // 已折叠的 harness 分组（收起通知列表）
+    agentCollapsedHarnesses = new Set(Array.isArray(data.agentCollapsedHarnesses)
+      ? data.agentCollapsedHarnesses : []);
     loadAgentSessions();
 
     setLanguage(data.language || 'zh-CN');
@@ -583,6 +622,7 @@ document.addEventListener('DOMContentLoaded', () => {
     updateCollapseState();
     updateAutoHideUI();
     updateAutoLaunchUI();
+    updateRememberWindowHeightUI();
     updateSortUI();
     updateGroupModeUI();
     updateWidgetsUI();
@@ -593,6 +633,8 @@ document.addEventListener('DOMContentLoaded', () => {
     updateStartupDelayUI();
     updateAgentRetentionUI();
     updateAgentServerConfigUI();
+    updateDshConfigUI();
+    updateWidgetOpacityUI();
     updateGpuAccelerationUI();
     updateMouseFxUI();
     updateShortcutInputs();
@@ -612,6 +654,7 @@ document.addEventListener('DOMContentLoaded', () => {
     updateFontUI();
     applyOpacity(opacity);
     applyIconSize(iconSize);
+    applyWidgetOpacity();
     if (languageSelect) languageSelect.value = data.language || 'zh-CN';
   });
 
@@ -908,6 +951,54 @@ function applyOpacity(value) {
   }
 }
 
+// ============ 组件透明度（各组件类型独立，30%~100%，100 = 主题默认透明度） ============
+// 倍率乘在主题自带透明度之上（CSS 侧 color-mix 实现），不改变主题材质与文字对比度
+const WIDGET_OPACITY_TYPES = ['clock', 'calendar', 'weather', 'monitor', 'agent', 'everything'];
+
+/** 取某组件类型的透明度倍率（0.3~1） */
+function getWidgetOpacityValue(type) {
+  const v = Number.isFinite(widgetOpacity[type]) ? widgetOpacity[type] : 100;
+  return Math.max(30, Math.min(100, v)) / 100;
+}
+
+/** 把透明度倍率应用到所有组件节点（--widget-opacity 内联变量） */
+function applyWidgetOpacity() {
+  if (!widgetsLayer) return;
+  const nodes = widgetsLayer.querySelectorAll('.widget-item');
+  for (const node of nodes) {
+    const type = node.dataset.widgetType || 'clock';
+    node.style.setProperty('--widget-opacity', String(getWidgetOpacityValue(type)));
+  }
+}
+
+// 组件透明度滑块变化处理
+async function handleWidgetOpacityChange(type) {
+  const slider = document.getElementById('widget-opacity-' + type);
+  if (!slider) return;
+  const value = Math.max(30, Math.min(100, parseInt(slider.value) || 100));
+  widgetOpacity[type] = value;
+  const valEl = document.getElementById('widget-opacity-' + type + '-value');
+  if (valEl) valEl.textContent = value + '%';
+  applyWidgetOpacity();
+  try {
+    await window.api.setWidgetOpacity(widgetOpacity);
+  } catch (error) {
+    console.error('设置组件透明度失败:', error);
+  }
+}
+
+// 同步组件透明度滑块显示
+function updateWidgetOpacityUI() {
+  for (const type of WIDGET_OPACITY_TYPES) {
+    const slider = document.getElementById('widget-opacity-' + type);
+    if (!slider) continue;
+    const v = Number.isFinite(widgetOpacity[type]) ? Math.max(30, Math.min(100, widgetOpacity[type])) : 100;
+    slider.value = String(v);
+    const valEl = document.getElementById('widget-opacity-' + type + '-value');
+    if (valEl) valEl.textContent = v + '%';
+  }
+}
+
 // 图标大小变化处理
 async function handleIconSizeChange() {
   try {
@@ -983,6 +1074,22 @@ function updateAutoLaunchUI() {
   }
 }
 
+// 记住窗口高度开关：开启后展开状态保留手动调整的高度，否则始终满工作区高度
+async function handleRememberWindowHeightChange() {
+  rememberWindowHeight = !!rememberWindowHeightToggle.checked;
+  try {
+    await window.api.setRememberWindowHeight(rememberWindowHeight);
+  } catch (error) {
+    console.error('保存窗口高度设置失败:', error);
+  }
+}
+
+function updateRememberWindowHeightUI() {
+  if (rememberWindowHeightToggle) {
+    rememberWindowHeightToggle.checked = rememberWindowHeight;
+  }
+}
+
 // 图标锁定
 async function handleIconsLockToggle() {
   iconsLocked = iconsLockToggle.checked;
@@ -1034,6 +1141,26 @@ async function handleAgentServerConfigChange() {
 function updateAgentServerConfigUI() {
   if (agentServerPortInput) agentServerPortInput.value = String(agentServerPort);
   if (agentServerPasswordInput) agentServerPasswordInput.value = agentServerPassword;
+}
+
+// DeepSeek Harness 配置变化（web 端口 + 数据目录）
+async function handleDshConfigChange() {
+  const port = parseInt(agentDshPortInput.value) || 0;
+  const home = (agentDshHomeInput.value || '').trim();
+  agentDshPort = Math.max(0, Math.min(65535, port));
+  agentDshHome = home;
+  agentDshPortInput.value = String(agentDshPort);
+  agentDshHomeInput.value = agentDshHome;
+  try {
+    await window.api.setAgentConfig('dsh', { port: agentDshPort, home: agentDshHome });
+  } catch (e) {
+    console.error('设置 DeepSeek Harness 配置失败:', e);
+  }
+}
+
+function updateDshConfigUI() {
+  if (agentDshPortInput) agentDshPortInput.value = String(agentDshPort);
+  if (agentDshHomeInput) agentDshHomeInput.value = agentDshHome;
 }
 
 // GPU 加速（重启后生效）
@@ -4318,13 +4445,50 @@ function createWidgetElement(widget) {
   const node = document.createElement('div');
   node.className = 'widget-item widget-' + widget.type;
   node.dataset.widgetId = widget.id;
+  node.dataset.widgetType = widget.type;
+  // 组件透明度倍率（30%~100%，100 = 主题默认透明度）
+  node.style.setProperty('--widget-opacity', String(getWidgetOpacityValue(widget.type)));
 
   if (widget.type === 'clock') {
+    node.dataset.clockStyle = getClockStyle(widget);
     node.innerHTML = `
       <div class="widget-time"></div>
       <div class="widget-date"></div>
+      <div class="clock-face"></div>
       <button class="widget-close" title="${t('widget.delete')}">×</button>
+      <button class="clock-style-btn" title="${t('widget.clockStyleBtn')}">◔</button>
+      <div class="clock-style-menu" hidden>
+        ${CLOCK_STYLES.map(s => {
+    const labelKey = 'widget.clockStyle' + s[0].toUpperCase() + s.slice(1);
+    return `<button type="button" class="clock-style-opt" data-style="${s}">${t(labelKey)}</button>`;
+  }).join('')}
+      </div>
     `;
+    // 样式按钮：打开/关闭样式菜单
+    const styleBtn = node.querySelector('.clock-style-btn');
+    const styleMenu = node.querySelector('.clock-style-menu');
+    styleBtn.addEventListener('click', (e) => {
+      e.stopPropagation();
+      styleMenu.hidden = !styleMenu.hidden;
+      syncClockStyleMenu(node);
+    });
+    // 选择样式：持久化并重建表盘
+    styleMenu.addEventListener('click', (e) => {
+      const opt = e.target.closest('.clock-style-opt');
+      if (!opt) return;
+      e.stopPropagation();
+      widget.style = opt.dataset.style;
+      node.dataset.clockStyle = widget.style;
+      saveWidgets();
+      rebuildClockFace(node, widget);
+      styleMenu.hidden = true;
+    });
+    // 点击组件其他区域关闭样式菜单
+    node.addEventListener('click', (e) => {
+      if (e.target.closest('.clock-style-btn') || e.target.closest('.clock-style-menu')) return;
+      if (styleMenu) styleMenu.hidden = true;
+    });
+    rebuildClockFace(node, widget);
     updateClockNode(node);
   } else if (widget.type === 'calendar') {
     node.innerHTML = `
@@ -4897,6 +5061,30 @@ async function handleAgentItemClick(item, harness, sessionId) {
   } catch (e) { /* 忽略 */ }
 }
 
+/** 切换 harness 分组的收起/展开状态（持久化，下次启动保持） */
+async function toggleAgentHarnessCollapsed(harness) {
+  if (!harness) return;
+  const collapsed = !agentCollapsedHarnesses.has(harness);
+  if (collapsed) {
+    agentCollapsedHarnesses.add(harness);
+  } else {
+    agentCollapsedHarnesses.delete(harness);
+  }
+  // 立即更新所有 agent 组件中该分组的折叠外观
+  if (widgetsLayer) {
+    const nodes = widgetsLayer.querySelectorAll('.widget-item.widget-agent');
+    for (const node of nodes) {
+      const group = node.querySelector(`.wa-group[data-harness="${CSS.escape(harness)}"]`);
+      if (group) group.classList.toggle('collapsed', collapsed);
+    }
+  }
+  try {
+    await window.api.setAgentCollapsed(harness, collapsed);
+  } catch (e) {
+    console.error('保存 agent 分组折叠状态失败:', e);
+  }
+}
+
 /** 同步单个条目列表（按 id 做 diff，避免动画/焦点被打断），末尾校正 DOM 顺序 */
 function syncAgentList(list, sessions) {
   const existing = new Map(Array.from(list.children).map(el => [el.dataset.sessionId, el]));
@@ -4949,10 +5137,8 @@ function renderAgentWidget(node) {
   const body = node.querySelector('.wa-body');
   if (!body) return;
   const visible = getVisibleAgentSessions();
-  // opencode 未运行且列表非空：灰化条目（点击仅拦截 active 会话；已完成/中断会话的
-  // 已读标记是本地状态，离线时仍允许点击删除，与 handleAgentItemClick 行为一致），
-  // harness 名后追加"（未开启）"浅色标记（未来多 harness 时各自独立显示）
-  node.classList.toggle('wa-offline', !agentRuntimeRunning && visible.length > 0);
+  // harness 未运行时：该分组条目灰化（点击已在 JS 层锁定，逐 harness 独立标记；
+  // 已读标记是本地状态，离线时仍允许点击删除，与 handleAgentItemClick 行为一致）
   if (visible.length === 0) {
     if (body.dataset.empty === '1') return;
     body.dataset.empty = '1';
@@ -4976,12 +5162,18 @@ function renderAgentWidget(node) {
       group.className = 'wa-group';
       group.dataset.harness = h;
       group.innerHTML = `
-        <div class="wa-header">
+        <div class="wa-header" title="${t('widget.agentToggle')}">
+          <span class="wa-toggle"></span>
           <span class="wa-name"></span>
           <span class="wa-count"></span>
         </div>
         <div class="wa-list"></div>`;
       body.appendChild(group);
+      // 点击分组头：收起/展开该 harness 的通知列表
+      group.querySelector('.wa-header').addEventListener('click', (e) => {
+        e.stopPropagation();
+        toggleAgentHarnessCollapsed(h);
+      });
       // 滚动期间禁用 backdrop-filter（滚动 + 每帧模糊重算会导致卡顿），
       // 停止滚动 120ms 后恢复；与拖拽时的处理策略一致
       group.querySelector('.wa-list').addEventListener('scroll', (e) => {
@@ -4991,11 +5183,15 @@ function renderAgentWidget(node) {
         listEl._waScrollTimer = setTimeout(() => node.classList.remove('wa-scrolling'), 120);
       });
     }
+    // 折叠状态由持久化配置决定（组对象 diff 复用时 class 保持一致）
+    group.classList.toggle('collapsed', agentCollapsedHarnesses.has(h));
     const nameEl = group.querySelector('.wa-name');
     const countEl = group.querySelector('.wa-count');
+    const harnessOffline = agentRuntimeStatus[h] === false;
+    group.classList.toggle('wa-offline', harnessOffline);
     if (nameEl) {
       nameEl.textContent = sessions[0].harnessName || h;
-      if (!agentRuntimeRunning) {
+      if (harnessOffline) {
         const tag = document.createElement('span');
         tag.className = 'wa-offline-tag';
         tag.textContent = t('widget.agentOffline');
@@ -5010,19 +5206,171 @@ function renderAgentWidget(node) {
   }
 }
 
+// ============ 时钟组件（多样式） ============
+// 样式：digital（默认数字）/ minimal（极简）/ flip（翻页时钟）/ seven（七段数码管）
+const CLOCK_STYLES = ['digital', 'minimal', 'flip', 'seven'];
+// 七段数码管段表：a 顶横 b 右上 c 右下 d 底横 e 左下 f 左上 g 中横（0-9）
+const SEVEN_SEGMENTS = [
+  'abcdef', 'bc', 'abged', 'abgcd', 'fgbc', 'afgcd', 'afgedc', 'abc', 'abcdefg', 'abcfgd'
+];
+
+function getClockStyle(widget) {
+  return widget && CLOCK_STYLES.includes(widget.style) ? widget.style : 'digital';
+}
+
+/** 高亮样式菜单中的当前项 */
+function syncClockStyleMenu(node) {
+  const menu = node.querySelector('.clock-style-menu');
+  if (!menu) return;
+  const current = node.dataset.clockStyle || 'digital';
+  menu.querySelectorAll('.clock-style-opt').forEach(opt => {
+    opt.classList.toggle('active', opt.dataset.style === current);
+  });
+}
+
+/** 按样式重建时钟表盘（flip/seven 用；digital/minimal 用顶部文本区） */
+function rebuildClockFace(node, widget) {
+  const face = node.querySelector('.clock-face');
+  if (!face) return;
+  const style = getClockStyle(widget);
+  if (style === 'flip') {
+    const cardHtml = `
+      <div class="flip-card" data-d="-">
+        <div class="flip-top"><span>-</span></div>
+        <div class="flip-bottom"><span>-</span></div>
+        <div class="flip-roll-top"><span>-</span></div>
+        <div class="flip-roll-bottom"><span>-</span></div>
+      </div>`;
+    const parts = [];
+    for (let i = 0; i < 6; i++) {
+      if (i === 2 || i === 4) parts.push('<span class="flip-colon">:</span>');
+      parts.push(cardHtml);
+    }
+    face.innerHTML = parts.join('');
+  } else if (style === 'seven') {
+    const digitHtml = `
+      <div class="seven-digit">
+        <span class="seg" data-seg="a"></span><span class="seg" data-seg="b"></span>
+        <span class="seg" data-seg="c"></span><span class="seg" data-seg="d"></span>
+        <span class="seg" data-seg="e"></span><span class="seg" data-seg="f"></span>
+        <span class="seg" data-seg="g"></span>
+      </div>`;
+    const parts = [];
+    for (let i = 0; i < 6; i++) {
+      if (i === 2 || i === 4) parts.push('<span class="seven-colon"></span>');
+      parts.push(digitHtml);
+    }
+    face.innerHTML = parts.join('');
+  } else {
+    face.innerHTML = '';
+  }
+}
+
+/** 翻页时钟：数字变化时播放卡片翻转（上半旧值翻出 + 下半新值翻入） */
+function updateFlipClock(node, hh, mm, ss) {
+  const digits = (hh + mm + ss).split('');
+  const cards = node.querySelectorAll('.flip-card');
+  const reducedMotion = typeof window.matchMedia === 'function'
+    && window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+  cards.forEach((card, i) => {
+    const digit = digits[i];
+    if (!digit) return;
+    if (card.dataset.d === digit) return;
+    const top = card.querySelector('.flip-top span');
+    const bottom = card.querySelector('.flip-bottom span');
+    const rollTop = card.querySelector('.flip-roll-top span');
+    const rollBottom = card.querySelector('.flip-roll-bottom span');
+    const oldVal = card.dataset.d !== '-' ? card.dataset.d : (top ? top.textContent : '');
+
+    // 首次渲染不播放短暂的占位符翻页动画。
+    if (oldVal === '-') {
+      if (top) top.textContent = digit;
+      if (bottom) bottom.textContent = digit;
+      if (rollTop) rollTop.textContent = digit;
+      if (rollBottom) rollBottom.textContent = digit;
+      card.dataset.d = digit;
+      return;
+    }
+
+    // 静态层先保留旧值，避免翻转层被新值覆盖，导致上下半页同时显示新数字。
+    if (top) top.textContent = oldVal;
+    if (bottom) bottom.textContent = oldVal;
+    if (rollTop) rollTop.textContent = oldVal; // 上半翻出：旧值
+    if (rollBottom) rollBottom.textContent = digit; // 下半翻入：新值
+    card.dataset.d = digit;
+
+    const finishTop = () => {
+      if (card.dataset.d !== digit) return;
+      if (top) top.textContent = digit;
+    };
+    const finishBottom = () => {
+      if (card.dataset.d !== digit) return;
+      finishTop();
+      if (bottom) bottom.textContent = digit;
+      card.classList.remove('flipping');
+    };
+
+    // 减少动态效果时不会播放翻页动画，直接落到最终状态。
+    if (reducedMotion || !rollTop || !rollBottom) {
+      finishBottom();
+      return;
+    }
+
+    // 重新触发翻转动画（先移除再强制 reflow 重放）
+    card.classList.remove('flipping');
+    void card.offsetWidth;
+    card.classList.add('flipping');
+
+    // Electron 在窗口未激活或动画走合成层时可能不派发 animationend，
+    // 用定时器确保静态层最终同步；状态校验避免旧动画覆盖后续数字。
+    setTimeout(finishTop, 380);
+    setTimeout(finishBottom, 540);
+  });
+}
+
+/** 七段数码管：按数字点亮对应段（内联样式点亮，规避主题/规则覆盖），冒号每秒闪烁 */
+function updateSevenClock(node, hh, mm, ss) {
+  const digits = (hh + mm + ss).split('').map(Number);
+  const faces = node.querySelectorAll('.seven-digit');
+  faces.forEach((face, i) => {
+    const on = new Set(SEVEN_SEGMENTS[digits[i]].split(''));
+    face.querySelectorAll('.seg').forEach(seg => {
+      const lit = on.has(seg.dataset.seg);
+      seg.classList.toggle('on', lit);
+      seg.style.background = lit ? '#ff5c33' : 'rgba(255, 92, 51, 0.14)';
+      seg.style.boxShadow = lit ? '0 0 7px rgba(255, 92, 51, 0.75)' : 'none';
+    });
+  });
+  const colonOn = parseInt(ss, 10) % 2 === 0;
+  node.querySelectorAll('.seven-colon').forEach(c => c.classList.toggle('on', colonOn));
+}
+
 // 时钟内容更新
 function updateClockNode(node) {
   const now = new Date();
   const hh = String(now.getHours()).padStart(2, '0');
   const mm = String(now.getMinutes()).padStart(2, '0');
   const ss = String(now.getSeconds()).padStart(2, '0');
+  const style = node.dataset.clockStyle || 'digital';
   const timeEl = node.querySelector('.widget-time');
   const dateEl = node.querySelector('.widget-date');
-  if (timeEl) timeEl.textContent = `${hh}:${mm}:${ss}`;
-  if (dateEl) {
-    const weekdays = [t('widget.sun'), t('widget.mon'), t('widget.tue'), t('widget.wed'), t('widget.thu'), t('widget.fri'), t('widget.sat')];
-    const dateStr = t('widget.dateFormat', { y: now.getFullYear(), m: now.getMonth() + 1, d: now.getDate() });
-    dateEl.textContent = `${dateStr} ${weekdays[now.getDay()]}`;
+  if (style === 'flip') {
+    // 清空顶部文本区：从 digital/minimal 切到 flip 时,残留的普通时间必须清除
+    if (timeEl) timeEl.textContent = '';
+    if (dateEl) dateEl.textContent = '';
+    updateFlipClock(node, hh, mm, ss);
+  } else if (style === 'seven') {
+    if (timeEl) timeEl.textContent = '';
+    if (dateEl) dateEl.textContent = '';
+    updateSevenClock(node, hh, mm, ss);
+  } else {
+    // digital：HH:MM:SS；minimal：只显示 HH:MM
+    if (timeEl) timeEl.textContent = style === 'minimal' ? `${hh}:${mm}` : `${hh}:${mm}:${ss}`;
+    if (dateEl) {
+      const weekdays = [t('widget.sun'), t('widget.mon'), t('widget.tue'), t('widget.wed'), t('widget.thu'), t('widget.fri'), t('widget.sat')];
+      const dateStr = t('widget.dateFormat', { y: now.getFullYear(), m: now.getMonth() + 1, d: now.getDate() });
+      dateEl.textContent = `${dateStr} ${weekdays[now.getDay()]}`;
+    }
   }
 }
 

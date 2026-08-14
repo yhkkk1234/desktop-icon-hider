@@ -369,6 +369,15 @@ select option {
   min-width: 70px;
 }
 
+/* 组件透明度设置区：label 固定等宽（容纳最长的 "Everything 搜索:"），
+   避免长名称挤压滑块导致各行滑块宽度不一致；超长（如其他语言）省略号截断 */
+.widget-opacity-settings .opacity-control label {
+  min-width: 118px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
 .opacity-control input[type="range"] {
   flex: 1;
   min-width: 100px;
@@ -1478,6 +1487,8 @@ body.icons-locked .file-item.draggable:active {
   height: 36px;
   min-height: 36px;
   padding-right: 26px; /* 为右上角删除按钮留位 */
+  /* 搜索栏自身底色也受组件透明度倍率影响（非组件模式无 --widget-opacity，默认 1 不变） */
+  background: color-mix(in srgb, var(--bg-input) calc(var(--widget-opacity, 1) * 100%), transparent);
 }
 
 /* ============ 动态纹理主题：等高线 / 海洋 ============ */
@@ -1986,7 +1997,10 @@ body.icons-locked .file-item.draggable:active {
 .widget-item {
   position: absolute;
   pointer-events: auto;
-  background: var(--bg-tertiary);
+  /* 组件透明度：--widget-opacity（0.3~1，默认 1）是乘在主题自带透明度之上的倍率，
+     通过 color-mix 把倍率作用到背景色上（不透明的内容层不受影响）。
+     主题自定义的组件背景（玻璃材质等）在各自主题段用同款写法叠加 */
+  background: color-mix(in srgb, var(--bg-tertiary) calc(var(--widget-opacity, 1) * 100%), transparent);
   border: 1px solid var(--border-primary);
   border-radius: 12px;
   box-shadow: var(--skin-shadow);
@@ -2050,6 +2064,312 @@ body.icons-locked .file-item.draggable:active {
   font-size: 12px;
   color: var(--text-secondary);
   margin-top: 4px;
+}
+
+/* ============ 时钟多样式 ============ */
+/* 样式切换按钮（悬停显示，仿性能监控样式按钮） */
+.clock-style-btn {
+  position: absolute;
+  top: 4px;
+  right: 26px;
+  width: 20px;
+  height: 20px;
+  border: none;
+  background: transparent;
+  color: var(--text-muted);
+  border-radius: 50%;
+  cursor: pointer;
+  font-size: 12px;
+  line-height: 1;
+  display: none;
+  align-items: center;
+  justify-content: center;
+  z-index: 3;
+}
+
+.widget-item:hover .clock-style-btn {
+  display: flex;
+}
+
+.clock-style-btn:hover {
+  background: var(--bg-button-hover);
+  color: var(--text-primary);
+}
+
+/* 样式选择菜单 */
+.clock-style-menu {
+  position: absolute;
+  top: 26px;
+  right: 4px;
+  z-index: 5;
+  display: flex;
+  flex-direction: column;
+  background: var(--select-option-bg);
+  border: 1px solid var(--border-input);
+  border-radius: 8px;
+  padding: 3px;
+  box-shadow: 0 6px 18px rgba(0, 0, 0, 0.3);
+  min-width: 88px;
+}
+
+.clock-style-menu[hidden] {
+  display: none;
+}
+
+.clock-style-opt {
+  border: none;
+  background: transparent;
+  color: var(--text-secondary);
+  font-size: 12px;
+  padding: 5px 14px;
+  border-radius: 6px;
+  cursor: pointer;
+  text-align: left;
+  white-space: nowrap;
+}
+
+.clock-style-opt:hover {
+  background: var(--bg-button-hover);
+  color: var(--text-primary);
+}
+
+.clock-style-opt.active {
+  background: var(--bg-context);
+  color: var(--text-primary);
+}
+
+/* 极简样式：细体大号时间 + 淡色小日期 */
+.widget-clock[data-clock-style="minimal"] .widget-time {
+  font-size: 36px;
+  font-weight: 200;
+  letter-spacing: 3px;
+}
+
+.widget-clock[data-clock-style="minimal"] .widget-date {
+  font-size: 11px;
+  color: var(--text-muted);
+  margin-top: 2px;
+}
+
+/* 翻页/数码管样式不使用顶部文本区：从 digital/minimal 切换过来时旧内容必须隐藏 */
+.widget-clock[data-clock-style="flip"] .widget-time,
+.widget-clock[data-clock-style="seven"] .widget-time,
+.widget-clock[data-clock-style="flip"] .widget-date,
+.widget-clock[data-clock-style="seven"] .widget-date {
+  display: none;
+}
+
+/* ---- 翻页时钟 ---- */
+.widget-clock[data-clock-style="flip"] .clock-face {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 3px;
+  background: #101114;
+  border-radius: 8px;
+  padding: 8px 10px;
+  margin-top: 4px;
+}
+
+.flip-card {
+  position: relative;
+  width: 28px;
+  height: 42px;
+  background: #17181c;
+  border-radius: 5px;
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.06), 0 1px 2px rgba(0, 0, 0, 0.45);
+  perspective: 120px;
+  font-size: 24px;
+  font-weight: 600;
+  color: #e8e8ea;
+  font-variant-numeric: tabular-nums;
+}
+
+.flip-top,
+.flip-bottom,
+.flip-roll-top,
+.flip-roll-bottom {
+  position: absolute;
+  left: 0;
+  right: 0;
+  overflow: hidden;
+  text-align: center;
+}
+
+.flip-top,
+.flip-roll-top {
+  top: 0;
+  height: 50%;
+  border-bottom: 1px solid rgba(0, 0, 0, 0.6);
+}
+
+.flip-bottom,
+.flip-roll-bottom {
+  bottom: 0;
+  height: 50%;
+}
+
+/* 数字定位：上下半页各用一条 42px 行盒显示完整数字，再由 overflow:hidden 裁出互补的两半。
+   上半页 span 顶对齐（行盒 0-42，裁出 0-21）；下半页 span 底对齐（行盒 0-42，裁出 21-42）。
+   此前下半页误用 top:0，span 顶被钉在容器顶(卡片 y=21)，行盒变成 21-63，
+   裁出的 21-42 仍是数字上半部分，导致上下两半显示相同内容。 */
+.flip-top span,
+.flip-roll-top span {
+  position: absolute;
+  left: 0;
+  right: 0;
+  top: 0;
+  font-size: 24px;
+  font-weight: 600;
+  line-height: 42px;
+}
+
+.flip-bottom span,
+.flip-roll-bottom span {
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  font-size: 24px;
+  font-weight: 600;
+  line-height: 42px;
+}
+
+/* 翻转层：默认不渲染，播放时由 .flipping 显示并播放动画。
+   不透明背景 + 隐藏背面：翻动层真正盖住静态半页，翻转动作才可见 */
+.flip-roll-top,
+.flip-roll-bottom {
+  display: none;
+  background: #17181c;
+  backface-visibility: hidden;
+  will-change: transform, filter;
+}
+
+.flip-roll-top {
+  transform-origin: top;
+  border-radius: 5px 5px 0 0;
+}
+
+.flip-roll-bottom {
+  transform-origin: bottom;
+  border-radius: 0 0 5px 5px;
+}
+
+@keyframes fc-flip-top {
+  0% { transform: rotateX(0deg); filter: brightness(1); }
+  100% { transform: rotateX(-90deg); filter: brightness(0.5); }
+}
+
+@keyframes fc-flip-bottom {
+  0% { transform: rotateX(90deg); filter: brightness(0.5); }
+  100% { transform: rotateX(0deg); filter: brightness(1); }
+}
+
+.flip-card.flipping .flip-roll-top {
+  display: block;
+  animation: fc-flip-top 360ms cubic-bezier(0.55, 0.055, 0.675, 0.19) forwards;
+}
+
+.flip-card.flipping .flip-roll-bottom {
+  display: block;
+  animation: fc-flip-bottom 360ms cubic-bezier(0.215, 0.61, 0.355, 1) 160ms forwards;
+}
+
+.flip-colon {
+  color: #e8e8ea;
+  font-size: 24px;
+  font-weight: 600;
+  line-height: 1;
+  margin: 0 1px;
+  animation: fc-colon-blink 1s steps(2, start) infinite;
+}
+
+@keyframes fc-colon-blink {
+  50% { opacity: 0.25; }
+}
+
+/* ---- 七段数码管 ---- */
+.widget-clock[data-clock-style="seven"] .clock-face {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 3px;
+  background: #0d0d10;
+  border-radius: 8px;
+  padding: 9px 11px;
+  margin-top: 4px;
+}
+
+.seven-digit {
+  position: relative;
+  width: 16px;
+  height: 30px;
+}
+
+.seg {
+  position: absolute;
+  background: rgba(255, 92, 51, 0.14);
+  border-radius: 1.5px;
+  transition: background 0.12s ease, box-shadow 0.12s ease;
+}
+
+.seg.on {
+  background: #ff5c33;
+  box-shadow: 0 0 7px rgba(255, 92, 51, 0.75);
+}
+
+/* 段厚 4px（细一号）：位置按 data-seg 属性匹配 */
+.seg[data-seg="a"] { left: 3.5px; right: 3.5px; top: 1px; height: 4px; }
+.seg[data-seg="g"] { left: 3.5px; right: 3.5px; top: 12.5px; height: 4px; }
+.seg[data-seg="d"] { left: 3.5px; right: 3.5px; bottom: 1px; height: 4px; }
+.seg[data-seg="f"] { left: 1px; top: 3.5px; width: 3.5px; height: 10.5px; }
+.seg[data-seg="b"] { right: 1px; top: 3.5px; width: 3.5px; height: 10.5px; }
+.seg[data-seg="e"] { left: 1px; bottom: 3.5px; width: 3.5px; height: 10.5px; }
+.seg[data-seg="c"] { right: 1px; bottom: 3.5px; width: 3.5px; height: 10.5px; }
+
+.seven-colon {
+  position: relative;
+  width: 4px;
+  height: 30px;
+  flex: 0 0 auto;
+}
+
+.seven-colon::before,
+.seven-colon::after {
+  content: '';
+  position: absolute;
+  left: 0;
+  width: 4px;
+  height: 4px;
+  border-radius: 50%;
+  background: rgba(255, 92, 51, 0.35);
+  transition: background 0.12s ease, box-shadow 0.12s ease;
+}
+
+.seven-colon::before {
+  top: 5px;
+}
+
+.seven-colon::after {
+  bottom: 5px;
+}
+
+.seven-colon.on::before,
+.seven-colon.on::after {
+  background: #ff5c33;
+  box-shadow: 0 0 6px rgba(255, 92, 51, 0.8);
+}
+
+/* 系统开启"减少动态效果"：翻页时钟不播放翻转动画（数字直接切换），冒号停止闪烁 */
+@media (prefers-reduced-motion: reduce) {
+  .flip-card.flipping .flip-roll-top,
+  .flip-card.flipping .flip-roll-bottom {
+    display: none;
+  }
+
+  .flip-colon {
+    animation: none;
+  }
 }
 
 /* 日历 */
@@ -2837,8 +3157,8 @@ body.icons-locked .file-item.draggable:active {
   opacity: 0.65;
 }
 
-/* opencode 未运行时：条目灰化禁用（点击已在 JS 层锁定） */
-.widget-agent.wa-offline .wa-item {
+/* harness 未运行时：该分组的条目灰化禁用（点击已在 JS 层锁定，逐 harness 独立标记） */
+.wa-group.wa-offline .wa-item {
   opacity: 0.45;
   cursor: default;
 }
@@ -2897,6 +3217,28 @@ body.icons-locked .file-item.draggable:active {
   align-items: center;
   justify-content: space-between;
   margin-bottom: 6px;
+  cursor: pointer;
+  user-select: none;
+}
+
+/* harness 分组折叠：小三角（展开朝下，收起向右旋转 90°），点击分组头收起/展开通知列表 */
+.wa-toggle {
+  flex: 0 0 auto;
+  width: 0;
+  height: 0;
+  margin-right: 6px;
+  border-left: 5px solid transparent;
+  border-right: 5px solid transparent;
+  border-top: 6px solid var(--text-muted);
+  transition: transform 0.15s ease;
+}
+
+.wa-group.collapsed .wa-toggle {
+  transform: rotate(-90deg);
+}
+
+.wa-group.collapsed .wa-list {
+  display: none;
 }
 
 .wa-name {
@@ -4189,6 +4531,13 @@ input:focus-visible,
 [data-theme="glass-dark"] .groups-bar {
   margin: 0 0 12px;
   border-radius: var(--skin-panel-radius);
+}
+
+/* 玻璃主题组件背景：保留主题自带材质公式（--glass-surface-strong），
+   再乘组件透明度倍率（同基础规则的 color-mix 写法） */
+[data-theme="glass-light"] .widget-item,
+[data-theme="glass-dark"] .widget-item {
+  background: color-mix(in srgb, var(--glass-surface-strong) calc(var(--widget-opacity, 1) * 100%), transparent);
 }
 
 [data-theme="glass-light"] .search-bar,

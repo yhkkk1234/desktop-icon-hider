@@ -1,4 +1,4 @@
-const { app, BrowserWindow, ipcMain, shell, nativeTheme, globalShortcut, nativeImage } = require('electron');
+const { app, BrowserWindow, ipcMain, shell, nativeTheme, globalShortcut, nativeImage, screen } = require('electron');
 const path = require('path');
 const fs = require('fs');
 const os = require('os');
@@ -8,6 +8,7 @@ const { getFileIcon, getFileIcons, initializeDesktopAPI, getSystemIconEmoji, cle
 const { showDesktopContextMenu, showFileContextMenu, cancelDesktopContextMenu, compileExe } = require('./shell-context-menu');
 const { 
   createMainWindow, 
+  getExpandedHeight,
   setAutoHideEnabled, 
   getAutoHideStatus,
   isFullscreenAppForeground,
@@ -16,12 +17,14 @@ const {
 } = require('./window-manager');
 const { createTray, updateTrayMenu, destroyTray, autoLauncher } = require('./tray');
 const { startSampler, stopSampler, getSystemStats } = require('./hardware-monitor');
-const { AgentMonitor, createOpencodeAdapter, createOpencodeServerStatusProvider, detectOpencodeRunning, isValidSessionId } = require('./agent-monitor');
+const { AgentMonitor, createOpencodeAdapter, createOpencodeServerStatusProvider, createDshAdapter, detectOpencodeRunning, detectDshRunning, isValidSessionId } = require('./agent-monitor');
 
 const store = new Store({
   name: 'desktop-icon-hider',
   defaults: {
     windowBounds: null,
+    // 展开状态是否记住手动调整的窗口高度（false = 始终占满工作区高度，原设计行为）
+    rememberWindowHeight: false,
     isCollapsed: false,
     autoLaunch: false,
     autoHideEnabled: false,
@@ -79,11 +82,15 @@ const store = new Store({
     widgets: [],
     showWidgets: true,
     widgetsAvoidIcons: false,
+    // 组件透明度倍率：type → 30..100（100 = 完全保持主题默认透明度）。
+    // 乘在主题自带透明度之上（effective = theme_base × multiplier）
+    widgetOpacity: {},
     weatherFxEnabled: true,
     weatherCity: null, // { name, lat, lon }
     agentReadSessions: [], // agent 组件已读（已查看并跳转）的会话 id
     agentActiveThreshold: 120, // agent 会话活跃判定窗口（秒）
     agentDoneRetentionDays: 7, // 已完成会话保留天数（0 = 不限制）
+    agentCollapsedHarnesses: [], // agent 组件已折叠（收起通知列表）的 harness 名
     // agent 组件各 harness 的配置（嵌套结构，未来多 agent 各占一组）：
     // { opencode: { port: 0, password: '' }, codex: { ... } }
     // port 0 = 默认 4096（自跑 serve 自定义端口时手动指定）；password 空 = 无认证
@@ -101,7 +108,6 @@ let fsWatchers = [];
 let agentMonitor = null;
 let agentStatusProvider = null; // agent 组件 server 状态提供器（退出时释放 SSE 连接）
 let agentRuntimeTimer = null; // agent 运行状态检测定时器
-let agentRuntimeRunning = true; // opencode 是否在运行（变化时推送渲染端）
 
 // 获取桌面路径
 function getDesktopPath() {
@@ -642,6 +648,8 @@ async function processFilesWithConcurrency(files, basePath, seenPaths, limit) {
 }
 
 // 隐藏桌面图标
+// 注意：ps1 以 UTF-8 BOM 写入（Windows PowerShell 5.1 无 BOM 时按系统 ANSI 代码页读取，
+// 中文注释会乱码且可能引发 Add-Type 编译异常）；C# 模板全部使用英文注释
 function hideDesktopIcons() {
   try {
     const psScript = `Add-Type @"
@@ -654,8 +662,9 @@ public class DesktopHelper {
     public static extern IntPtr FindWindowEx(IntPtr parentHandle, IntPtr childAfter, string className, string windowTitle);
     [DllImport("user32.dll")]
     public static extern bool ShowWindow(IntPtr hWnd, int nCmdShow);
-    // 查找 SHELLDLL_DefView：优先 Progman 下；Win11 新桌面模型 / explorer 重启后
-    // 可能挂在 WorkerW 下，遍历兜底。找不到返回 Zero 由调用方抛错（避免静默失效）。
+    // Find SHELLDLL_DefView: usually under Progman; on Win11 / after explorer restart
+    // it may hang under WorkerW. Fall back by enumerating. Zero means not found,
+    // caller throws so failures are never silent.
     public static IntPtr FindShellView() {
         IntPtr progman = FindWindow("Progman", null);
         IntPtr shellView = FindWindowEx(progman, IntPtr.Zero, "SHELLDLL_DefView", null);
@@ -677,7 +686,7 @@ public class DesktopHelper {
 [DesktopHelper]::Hide()`;
     
     const tempFile = path.join(os.tmpdir(), `temp-hide-${process.pid}.ps1`);
-    fs.writeFileSync(tempFile, psScript, 'utf8');
+    fs.writeFileSync(tempFile, '\ufeff' + psScript, 'utf8');
     
     try {
       execSync(`powershell -ExecutionPolicy Bypass -File "${tempFile}"`, { 
@@ -691,7 +700,13 @@ public class DesktopHelper {
     store.set('desktopIconsHidden', true);
     return true;
   } catch (error) {
-    console.error('隐藏桌面图标失败:', error.message);
+    // 生产模式只打印一行摘要：Add-Type 编译错误的完整信息（含 GBK 乱码）对用户无意义且刷屏
+    const brief = String((error && error.message) || error).split('\n')[0].slice(0, 200);
+    if (process.argv.includes('--dev')) {
+      console.error('隐藏桌面图标失败:', error.message);
+    } else {
+      console.error('隐藏桌面图标失败:', brief);
+    }
     return false;
   }
 }
@@ -711,7 +726,8 @@ public class DesktopHelper {
     public static extern bool ShowWindow(IntPtr hWnd, int nCmdShow);
     [DllImport("user32.dll")]
     public static extern bool PostMessage(IntPtr hWnd, uint Msg, IntPtr wParam, IntPtr lParam);
-    // 查找 SHELLDLL_DefView：优先 Progman 下；Win11 / explorer 重启后可能挂在 WorkerW 下
+    // Find SHELLDLL_DefView: usually under Progman; on Win11 / after explorer restart
+    // it may hang under WorkerW. Fall back by enumerating.
     public static IntPtr FindShellView() {
         IntPtr progman = FindWindow("Progman", null);
         IntPtr shellView = FindWindowEx(progman, IntPtr.Zero, "SHELLDLL_DefView", null);
@@ -737,7 +753,7 @@ public class DesktopHelper {
 [DesktopHelper]::Show()`;
     
     const tempFile = path.join(os.tmpdir(), `temp-show-${process.pid}.ps1`);
-    fs.writeFileSync(tempFile, psScript, 'utf8');
+    fs.writeFileSync(tempFile, '\ufeff' + psScript, 'utf8');
     
     try {
       execSync(`powershell -ExecutionPolicy Bypass -File "${tempFile}"`, { 
@@ -750,7 +766,13 @@ public class DesktopHelper {
     store.set('desktopIconsHidden', false);
     return true;
   } catch (error) {
-    console.error('显示桌面图标失败:', error.message);
+    // 生产模式只打印一行摘要：Add-Type 编译错误的完整信息（含 GBK 乱码）对用户无意义且刷屏
+    const brief = String((error && error.message) || error).split('\n')[0].slice(0, 200);
+    if (process.argv.includes('--dev')) {
+      console.error('显示桌面图标失败:', error.message);
+    } else {
+      console.error('显示桌面图标失败:', brief);
+    }
     return false;
   }
 }
@@ -776,6 +798,7 @@ function createWindow() {
           isCollapsed: store.get('isCollapsed', false),
           autoHideEnabled: store.get('autoHideEnabled', false),
           autoHideEdge: store.get('autoHideEdge', EDGE_TYPES.NONE),
+          rememberWindowHeight: store.get('rememberWindowHeight', false),
           sortBy: store.get('sortBy', 'name-asc'),
           theme: store.get('theme', 'dark'),
           opacity: store.get('opacity', 92),
@@ -807,10 +830,12 @@ function createWindow() {
           widgets: store.get('widgets', []),
           showWidgets: store.get('showWidgets', true),
           widgetsAvoidIcons: store.get('widgetsAvoidIcons', false),
+          widgetOpacity: store.get('widgetOpacity', {}),
           weatherCity: store.get('weatherCity', null),
           weatherFxEnabled: store.get('weatherFxEnabled', true),
           agentReadSessions: store.get('agentReadSessions', []),
           agentDoneRetentionDays: store.get('agentDoneRetentionDays', 7),
+          agentCollapsedHarnesses: store.get('agentCollapsedHarnesses', []),
           agentConfigs: store.get('agentConfigs', {}),
           mouseEffects: store.get('mouseEffects', {})
         });
@@ -821,6 +846,7 @@ function createWindow() {
           isCollapsed: store.get('isCollapsed', false),
           autoHideEnabled: store.get('autoHideEnabled', false),
           autoHideEdge: store.get('autoHideEdge', EDGE_TYPES.NONE),
+          rememberWindowHeight: store.get('rememberWindowHeight', false),
           sortBy: store.get('sortBy', 'name-asc'),
           theme: store.get('theme', 'dark'),
           opacity: store.get('opacity', 92),
@@ -852,10 +878,12 @@ function createWindow() {
           widgets: store.get('widgets', []),
           showWidgets: store.get('showWidgets', true),
           widgetsAvoidIcons: store.get('widgetsAvoidIcons', false),
+          widgetOpacity: store.get('widgetOpacity', {}),
           weatherCity: store.get('weatherCity', null),
           weatherFxEnabled: store.get('weatherFxEnabled', true),
           agentReadSessions: store.get('agentReadSessions', []),
           agentDoneRetentionDays: store.get('agentDoneRetentionDays', 7),
+          agentCollapsedHarnesses: store.get('agentCollapsedHarnesses', []),
           agentConfigs: store.get('agentConfigs', {}),
           mouseEffects: store.get('mouseEffects', {})
         });
@@ -943,8 +971,13 @@ ipcMain.handle('get-files', async () => {
   }
 });
 
-ipcMain.handle('toggle-collapse', async (event, collapse) => {
-  if (!mainWindow) return false;
+// 展开状态是否记住手动调整的窗口高度（false = 始终占满工作区高度，原设计行为）
+ipcMain.handle('set-remember-window-height', async (event, enabled) => {
+  store.set('rememberWindowHeight', !!enabled);
+  return true;
+});
+
+ipcMain.handle('toggle-collapse', async (event, collapse) => {  if (!mainWindow) return false;
   
   const bounds = mainWindow.getBounds();
   mainWindow.isCollapsed = !!collapse;
@@ -971,13 +1004,14 @@ ipcMain.handle('toggle-collapse', async (event, collapse) => {
       height: 40
     }, true);
   } else {
-    const savedBounds = store.get('windowBounds');
-    const savedHeight = (savedBounds && typeof savedBounds.height === 'number') ? savedBounds.height : 600;
+    // 展开高度：与启动恢复共用 getExpandedHeight（记住高度时用保存值，否则满工作区高）
+    const workAreaHeight = screen.getDisplayMatching(bounds).workArea.height;
+    const targetHeight = getExpandedHeight(store, workAreaHeight);
     mainWindow.setBounds({
       x: bounds.x,
       y: bounds.y,
       width: bounds.width,
-      height: Math.max(savedHeight, 200)
+      height: targetHeight
     }, true);
     
     // 展开时重置隐藏状态
@@ -1117,6 +1151,20 @@ ipcMain.handle('set-widgets-avoid', async (event, enabled) => {
   return true;
 });
 
+// 组件透明度倍率：type → 30..100（100 = 主题默认）。白名单外类型丢弃
+ipcMain.handle('set-widget-opacity', async (event, map) => {
+  const valid = {};
+  if (map && typeof map === 'object') {
+    for (const [type, v] of Object.entries(map)) {
+      if (typeof type === 'string' && type.length > 0 && type.length <= 32 && Number.isFinite(v)) {
+        valid[type] = Math.max(30, Math.min(100, Math.round(v)));
+      }
+    }
+  }
+  store.set('widgetOpacity', valid);
+  return true;
+});
+
 // ============ agent 会话监控组件 ============
 // 返回全部快照 + 已读标记，由渲染端按"活跃 || 未读"规则过滤显示
 ipcMain.handle('get-agent-sessions', async () => {
@@ -1171,6 +1219,23 @@ ipcMain.handle('set-agent-retention-days', async (event, days) => {
   return true;
 });
 
+// harness 分组折叠状态（点击分组头三角收起/展开通知列表，持久化）
+ipcMain.handle('set-agent-collapsed', async (event, payload) => {
+  const { harness, collapsed } = payload || {};
+  const h = typeof harness === 'string' && harness ? harness.slice(0, 64) : '';
+  if (!h) return false;
+  const current = new Set(store.get('agentCollapsedHarnesses', []));
+  if (collapsed) {
+    current.add(h);
+  } else {
+    current.delete(h);
+  }
+  // 上限 50 个分组名，超出丢弃最早记录
+  const arr = [...current];
+  store.set('agentCollapsedHarnesses', arr.length > 50 ? arr.slice(arr.length - 50) : arr);
+  return true;
+});
+
 // 设置指定 harness 的 agent 配置（嵌套存储 agentConfigs[harness]）。
 // opencode 当前支持 port/password（自跑 serve 的校准通道；端口 0/密码空 = 默认无认证）；
 // 未来其他 harness 可扩展各自配置项。opencode 配置变更时重建 server 状态提供器即时生效
@@ -1180,14 +1245,25 @@ ipcMain.handle('set-agent-config', async (event, payload) => {
   const cfg = (config && typeof config === 'object') ? config : {};
   const current = store.get('agentConfigs', {}) || {};
   const merged = { ...(current[h] || {}) };
-  // 通用校验：port 0-65535 整数；password 字符串限长
+  // 通用校验：port 0-65535 整数；password 字符串限长；home 路径字符串限长
   if ('port' in cfg) {
     merged.port = Number.isFinite(cfg.port) ? Math.max(0, Math.min(65535, Math.round(cfg.port))) : 0;
   }
   if ('password' in cfg) {
     merged.password = typeof cfg.password === 'string' ? cfg.password.slice(0, 200) : '';
   }
+  if ('home' in cfg) {
+    merged.home = typeof cfg.home === 'string' ? cfg.home.slice(0, 500) : '';
+  }
   store.set('agentConfigs', { ...current, [h]: merged });
+  // dsh 的校准通道不需要；数据目录变更时即时更新适配器（下次轮询生效）
+  if (h === 'dsh' && agentMonitor) {
+    for (const adapter of agentMonitor.adapters) {
+      if (adapter && adapter.id === 'dsh' && typeof adapter.setHome === 'function') {
+        adapter.setHome(merged.home || '');
+      }
+    }
+  }
   // opencode 的 server 校准通道：重建状态提供器（旧 SSE 连接释放，下次探测用新端口/密码）
   if (h === 'opencode' && agentMonitor) {
     if (agentStatusProvider && typeof agentStatusProvider.dispose === 'function') {
@@ -2392,12 +2468,22 @@ app.whenReady().then(async () => {
       ports: serverPort > 0 ? [serverPort] : undefined,
       password: serverPassword ? serverPassword : undefined
     });
+    // dsh（DeepSeek Harness）适配器：读取 ~/.dsh 会话投影缓存，无需额外配置；
+    // 数据目录/端口可在设置中自定义（agentConfigs.dsh.{home,port}）
+    const dshCfg = (store.get('agentConfigs', {}) || {}).dsh || {};
+    const dshAdapter = createDshAdapter({
+      home: typeof dshCfg.home === 'string' ? dshCfg.home : '',
+      activeWindowMs
+    });
     agentMonitor = new AgentMonitor({
-      adapters: [createOpencodeAdapter({
-        // server 权威状态校准：探测 `opencode serve`(默认 4096)，
-        // 用 busy/idle/retry 覆盖 DB 推断；探测失败自动回落纯 DB 模式（desktop/TUI 场景即此模式）
-        statusProvider: agentStatusProvider
-      })],
+      adapters: [
+        createOpencodeAdapter({
+          // server 权威状态校准：探测 `opencode serve`(默认 4096)，
+          // 用 busy/idle/retry 覆盖 DB 推断；探测失败自动回落纯 DB 模式（desktop/TUI 场景即此模式）
+          statusProvider: agentStatusProvider
+        }),
+        dshAdapter
+      ],
       activeWindowMs,
       onUpdate: (sessions) => {
         if (mainWindow && !mainWindow.isDestroyed() && mainWindow.webContents) {
@@ -2407,15 +2493,24 @@ app.whenReady().then(async () => {
     });
     agentMonitor.start();
 
-    // opencode 运行状态检测：关闭时渲染端锁定条目点击并显示提示。
-    // 每 5s 检测一次（内部缓存 10s + 60s 确认期，信号抖动不会误判），变化才推送
+    // opencode / dsh 运行状态检测：关闭时渲染端锁定条目点击并显示提示。
+    // 每 5s 检测一次（opencode 内部缓存 10s + 60s 确认期，信号抖动不会误判），
+    // 按 harness 分别推送（渲染端逐个显示"（未开启）"标记）
+    let agentRuntime = { opencode: false, dsh: false };
     const checkRuntime = async () => {
       try {
-        const running = await detectOpencodeRunning(spawn);
-        if (running !== agentRuntimeRunning) {
-          agentRuntimeRunning = running;
+        // 每次检测从 store 读取 dsh 配置：设置中改端口/数据目录即时生效，无需重启
+        const dshCfgNow = (store.get('agentConfigs', {}) || {}).dsh || {};
+        const dshPort = Number.isFinite(dshCfgNow.port) && dshCfgNow.port > 0 ? dshCfgNow.port : undefined;
+        const [ocRunning, dshRunning] = await Promise.all([
+          detectOpencodeRunning(spawn),
+          detectDshRunning(dshPort, undefined, undefined, dshCfgNow.home)
+        ]);
+        const next = { opencode: ocRunning, dsh: dshRunning };
+        if (next.opencode !== agentRuntime.opencode || next.dsh !== agentRuntime.dsh) {
+          agentRuntime = next;
           if (mainWindow && !mainWindow.isDestroyed() && mainWindow.webContents) {
-            mainWindow.webContents.send('agent-runtime-changed', { running });
+            mainWindow.webContents.send('agent-runtime-changed', { running: next });
           }
         }
       } catch (e) { /* 检测失败保持上次状态 */ }
