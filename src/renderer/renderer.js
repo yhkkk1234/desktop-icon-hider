@@ -762,6 +762,9 @@ async function handleToggleCollapse() {
 }
 
 function updateCollapseState() {
+  const app = document.getElementById('app');
+  if (app) app.classList.toggle('collapsed', isCollapsed);
+
   if (isCollapsed) {
     contentEl.style.display = 'none';
     toggleIcon.textContent = '▶';
@@ -774,6 +777,11 @@ function updateCollapseState() {
   // 折叠时隐藏小组件层
   if (widgetsLayer) {
     widgetsLayer.style.display = (isCollapsed || !showWidgets) ? 'none' : 'block';
+  }
+  // 折叠时隐藏背景层，避免背景图被压缩成 40px 高度挤在标题栏中间
+  if (bgLayer) {
+    const bgEnabled = bgConfig && bgConfig.enabled && bgData;
+    bgLayer.style.display = (isCollapsed || !bgEnabled) ? 'none' : 'block';
   }
   // 折叠时关闭设置面板（窗口只剩 40px 头部，面板会被裁切）
   if (isCollapsed && settingsPanel && settingsPanel.style.display !== 'none') {
