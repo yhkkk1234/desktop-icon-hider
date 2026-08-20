@@ -847,7 +847,8 @@ function createWindow() {
           agentDoneRetentionDays: store.get('agentDoneRetentionDays', 7),
           agentCollapsedHarnesses: store.get('agentCollapsedHarnesses', []),
           agentConfigs: store.get('agentConfigs', {}),
-          mouseEffects: store.get('mouseEffects', {})
+          mouseEffects: store.get('mouseEffects', {}),
+          liquidGlass: store.get('liquidGlass', {})
         });
       } catch (error) {
         console.error('发送初始化数据失败:', error);
@@ -895,7 +896,8 @@ function createWindow() {
           agentDoneRetentionDays: store.get('agentDoneRetentionDays', 7),
           agentCollapsedHarnesses: store.get('agentCollapsedHarnesses', []),
           agentConfigs: store.get('agentConfigs', {}),
-          mouseEffects: store.get('mouseEffects', {})
+          mouseEffects: store.get('mouseEffects', {}),
+          liquidGlass: store.get('liquidGlass', {})
         });
       }
     });
