@@ -698,6 +698,59 @@
           鼠标划过时在窗口内显示特效；关闭后完全无性能开销。水波特效仅在设置背景图后可用完整扭曲效果。
         </div>
       </div>
+
+      <!-- 巡航流光边框特效 -->
+      <div class="settings-section">
+        <h3 data-i18n="settings.borderBeam">巡航流光边框 (Border Beam)</h3>
+        <div class="setting-item">
+          <label class="switch">
+            <input type="checkbox" id="border-beam-toggle">
+            <span class="slider"></span>
+          </label>
+          <span class="setting-label" data-i18n="settings.borderBeamEnable">启用巡航流光边框</span>
+        </div>
+        <div id="border-beam-subpanel" class="border-beam-settings-group" style="display:none;">
+          <div class="setting-label" style="font-weight:600;font-size:12px;" data-i18n="settings.borderBeamScenes">联动场景选择:</div>
+          <div class="beam-sub-options">
+            <label class="beam-sub-item">
+              <input type="checkbox" id="beam-opt-window" checked>
+              <span data-i18n="settings.beamOptWindow">主窗口外框常驻巡航</span>
+            </label>
+            <label class="beam-sub-item">
+              <input type="checkbox" id="beam-opt-agent" checked>
+              <span data-i18n="settings.beamOptAgent">AI Agent 运行状态指示</span>
+            </label>
+            <label class="beam-sub-item">
+              <input type="checkbox" id="beam-opt-drop" checked>
+              <span data-i18n="settings.beamOptDrop">拖拽进组磁吸瞄准光环</span>
+            </label>
+            <label class="beam-sub-item">
+              <input type="checkbox" id="beam-opt-search" checked>
+              <span data-i18n="settings.beamOptSearch">搜索栏聚焦激活流光</span>
+            </label>
+          </div>
+          <div class="beam-params-row">
+            <label for="beam-color-select" data-i18n="settings.beamColor">流光色彩:</label>
+            <select id="beam-color-select">
+              <option value="theme" data-i18n="settings.beamColorTheme">跟随当前主题</option>
+              <option value="aurora" data-i18n="settings.beamColorAurora">极光霓虹 (Aurora)</option>
+              <option value="cyan" data-i18n="settings.beamColorCyan">冰蓝极光 (Cyan)</option>
+              <option value="gold" data-i18n="settings.beamColorGold">熔金流光 (Gold)</option>
+              <option value="purple" data-i18n="settings.beamColorPurple">幻紫赛博 (Purple)</option>
+            </select>
+          </div>
+          <div class="beam-params-row">
+            <label for="beam-speed-slider" data-i18n="settings.beamSpeed">巡航速度:</label>
+            <div class="beam-slider-wrap">
+              <input type="range" id="beam-speed-slider" min="2" max="8" step="0.5" value="4">
+              <span id="beam-speed-value">4.0s</span>
+            </div>
+          </div>
+        </div>
+        <div class="setting-description" data-i18n="settings.borderBeamDesc">
+          基于 GPU 硬件加速的圆角流光动效系统，提供状态指示与交互反馈；窗口折叠或失焦时自动休眠。
+        </div>
+      </div>
       
       <!-- 语言设置 -->
       <div class="settings-section">
@@ -925,6 +978,7 @@
   <script src="effects/trail.js"></script>
   <script src="effects/aura.js"></script>
   <script src="effects/liquid-glass.js"></script>
+  <script src="effects/border-beam.js"></script>
   <script src="effects/cursor.js"></script>
   <script src="renderer.js"></script>
 </body>

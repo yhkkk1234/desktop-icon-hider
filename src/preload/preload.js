@@ -12,11 +12,13 @@ contextBridge.exposeInMainWorld('api', {
   getFileIcons: (files) => ipcRenderer.invoke('get-file-icons', files),
   onInitData: (callback) => ipcRenderer.on('init-data', (event, data) => callback(data)),
   
-  // 主题功能API
+  // 主题与特效功能API
   setTheme: (theme) => ipcRenderer.invoke('set-theme', theme),
   getTheme: () => ipcRenderer.invoke('get-theme'),
   getLiquidGlassSettings: () => ipcRenderer.invoke('get-liquid-glass-settings'),
   setLiquidGlassSettings: (settings) => ipcRenderer.invoke('set-liquid-glass-settings', settings),
+  getBorderBeamSettings: () => ipcRenderer.invoke('get-border-beam-settings'),
+  setBorderBeamSettings: (settings) => ipcRenderer.invoke('set-border-beam-settings', settings),
   
   // 透明度功能API
   setOpacity: (opacity) => ipcRenderer.invoke('set-opacity', opacity),

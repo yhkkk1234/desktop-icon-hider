@@ -60,6 +60,15 @@ const store = new Store({
       spread: 55,
       chromaticMetal: 75
     },
+    borderBeam: {
+      enabled: false,
+      windowBeam: true,
+      agentBeam: true,
+      dropBeam: true,
+      searchBeam: true,
+      colorMode: 'theme',
+      speed: 4
+    },
     everythingEnabled: false,
     backgroundImage: {
       enabled: false,
@@ -848,7 +857,16 @@ function createWindow() {
           agentCollapsedHarnesses: store.get('agentCollapsedHarnesses', []),
           agentConfigs: store.get('agentConfigs', {}),
           mouseEffects: store.get('mouseEffects', {}),
-          liquidGlass: store.get('liquidGlass', {})
+          liquidGlass: store.get('liquidGlass', {}),
+          borderBeam: store.get('borderBeam', {
+            enabled: false,
+            windowBeam: true,
+            agentBeam: true,
+            dropBeam: true,
+            searchBeam: true,
+            colorMode: 'theme',
+            speed: 4
+          })
         });
       } catch (error) {
         console.error('发送初始化数据失败:', error);
@@ -897,7 +915,16 @@ function createWindow() {
           agentCollapsedHarnesses: store.get('agentCollapsedHarnesses', []),
           agentConfigs: store.get('agentConfigs', {}),
           mouseEffects: store.get('mouseEffects', {}),
-          liquidGlass: store.get('liquidGlass', {})
+          liquidGlass: store.get('liquidGlass', {}),
+          borderBeam: store.get('borderBeam', {
+            enabled: false,
+            windowBeam: true,
+            agentBeam: true,
+            dropBeam: true,
+            searchBeam: true,
+            colorMode: 'theme',
+            speed: 4
+          })
         });
       }
     });
@@ -2181,6 +2208,51 @@ ipcMain.handle('set-liquid-glass-settings', async (event, settings) => {
     return true;
   } catch (error) {
     console.error('Error setting liquid glass settings:', error);
+    return false;
+  }
+});
+
+// 巡航流光边框（Border Beam）功能的IPC处理
+ipcMain.handle('get-border-beam-settings', async () => {
+  return store.get('borderBeam', {
+    enabled: false,
+    windowBeam: true,
+    agentBeam: true,
+    dropBeam: true,
+    searchBeam: true,
+    colorMode: 'theme',
+    speed: 4
+  });
+});
+
+ipcMain.handle('set-border-beam-settings', async (event, settings) => {
+  try {
+    if (!settings || typeof settings !== 'object') return false;
+    const current = store.get('borderBeam', {
+      enabled: false,
+      windowBeam: true,
+      agentBeam: true,
+      dropBeam: true,
+      searchBeam: true,
+      colorMode: 'theme',
+      speed: 4
+    });
+    const validColors = ['theme', 'aurora', 'cyan', 'gold', 'purple'];
+    const speedNum = Number(settings.speed);
+    const validSpeed = Number.isFinite(speedNum) ? Math.max(1, Math.min(12, speedNum)) : (current.speed || 4);
+    const next = {
+      enabled: typeof settings.enabled === 'boolean' ? settings.enabled : current.enabled,
+      windowBeam: typeof settings.windowBeam === 'boolean' ? settings.windowBeam : current.windowBeam,
+      agentBeam: typeof settings.agentBeam === 'boolean' ? settings.agentBeam : current.agentBeam,
+      dropBeam: typeof settings.dropBeam === 'boolean' ? settings.dropBeam : current.dropBeam,
+      searchBeam: typeof settings.searchBeam === 'boolean' ? settings.searchBeam : current.searchBeam,
+      colorMode: validColors.includes(settings.colorMode) ? settings.colorMode : (current.colorMode || 'theme'),
+      speed: validSpeed
+    };
+    store.set('borderBeam', next);
+    return true;
+  } catch (error) {
+    console.error('Error setting border beam settings:', error);
     return false;
   }
 });

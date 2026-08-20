@@ -5279,3 +5279,193 @@ body.fx-cursor-hidden,
 body.fx-cursor-hidden * {
   cursor: none !important;
 }
+
+/* ==========================================================================
+   巡航流光边框 (Border Beam FX) 核心动效与全场景联动
+   ========================================================================== */
+
+@property --beam-angle {
+  syntax: '<angle>';
+  initial-value: 0deg;
+  inherits: false;
+}
+
+@keyframes beam-spin {
+  0% {
+    --beam-angle: 0deg;
+  }
+  100% {
+    --beam-angle: 360deg;
+  }
+}
+
+/* 通用流光装饰层（GPU 纯硬件加速，完美自适应任意圆角） */
+.has-window-beam::after,
+.widget-agent.beam-agent-active::after,
+.agent-widget.beam-agent-active::after,
+.beam-drop-target::after,
+.group-tab.beam-drop-target::after,
+.group-folder.beam-drop-target::after,
+.file-item.beam-drop-target::after,
+.search-bar.beam-search-active::after,
+.everything-bar.beam-search-active::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  border-radius: inherit;
+  padding: 1.5px;
+  background: conic-gradient(
+    from var(--beam-angle, 0deg),
+    transparent 0%,
+    transparent 60%,
+    var(--beam-color-from, #60a5fa) 80%,
+    var(--beam-color-to, #38bdf8) 94%,
+    #ffffff 98%,
+    transparent 100%
+  );
+  -webkit-mask: linear-gradient(#fff 0 0) content-box, linear-gradient(#fff 0 0);
+  -webkit-mask-composite: xor;
+  mask: linear-gradient(#fff 0 0) content-box, linear-gradient(#fff 0 0);
+  mask-composite: exclude;
+  pointer-events: none;
+  z-index: 95;
+  animation: beam-spin var(--beam-speed, 4s) linear infinite;
+  box-sizing: border-box;
+}
+
+/* 1. 主窗口外框常驻巡航光边 */
+#app.has-window-beam::after {
+  z-index: 9000;
+  border-radius: 12px;
+}
+
+#app.collapsed.has-window-beam::after {
+  display: none !important;
+}
+
+/* 2. AI Agent 状态流光（运行中疾速转圈，等待输入慢速琥珀金） */
+.widget-agent.beam-agent-active,
+.agent-widget.beam-agent-active {
+  position: relative;
+}
+
+.widget-agent.beam-running::after,
+.agent-widget.beam-running::after {
+  animation-duration: calc(var(--beam-speed, 4s) * 0.65);
+}
+
+.widget-agent.beam-waiting::after,
+.agent-widget.beam-waiting::after {
+  --beam-color-from: #f59e0b !important;
+  --beam-color-to: #fbbf24 !important;
+  animation-duration: calc(var(--beam-speed, 4s) * 1.25);
+}
+
+/* 3. 拖拽进组/文件夹磁吸流光 */
+.beam-drop-target,
+.group-tab.beam-drop-target,
+.group-folder.beam-drop-target,
+.file-item.beam-drop-target {
+  position: relative !important;
+  box-shadow: 0 0 16px var(--beam-glow-color, rgba(96, 165, 250, 0.65)),
+              inset 0 0 12px var(--beam-glow-color, rgba(96, 165, 250, 0.45)) !important;
+  border-color: var(--beam-color-from, #60a5fa) !important;
+  transform: scale(1.05);
+  transition: transform 0.15s ease, box-shadow 0.15s ease;
+  z-index: 100;
+}
+
+.beam-drop-target::after,
+.group-tab.beam-drop-target::after,
+.group-folder.beam-drop-target::after,
+.file-item.beam-drop-target::after {
+  padding: 2px !important;
+  animation-duration: calc(var(--beam-speed, 4s) * 0.4) !important;
+}
+
+/* 4. 搜索框聚焦激活流光 */
+.search-bar.beam-search-active,
+.everything-bar.beam-search-active {
+  position: relative;
+}
+
+.search-bar.beam-search-active::after,
+.everything-bar.beam-search-active::after {
+  animation-duration: calc(var(--beam-speed, 4s) * 0.55);
+}
+
+/* 流光边框设置面板专属控件样式 */
+.border-beam-settings-group {
+  margin-top: 14px;
+  margin-bottom: 18px;
+  padding: 14px 16px;
+  background: var(--bg-tertiary, rgba(20, 30, 50, 0.45));
+  border: 1px solid var(--border-primary, rgba(255, 255, 255, 0.12));
+  border-radius: 12px;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.beam-sub-options {
+  display: grid;
+  grid-template-columns: repeat(2, 1fr);
+  gap: 8px 12px;
+  padding: 10px 12px;
+  background: rgba(0, 0, 0, 0.15);
+  border-radius: 8px;
+  border: 1px solid var(--border-secondary, rgba(255, 255, 255, 0.08));
+}
+
+.beam-sub-item {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 12px;
+  color: var(--text-secondary);
+  cursor: pointer;
+  user-select: none;
+}
+
+.beam-sub-item input[type="checkbox"] {
+  cursor: pointer;
+  accent-color: var(--accent-primary, #60a5fa);
+}
+
+.beam-sub-item:hover {
+  color: var(--text-primary);
+}
+
+.beam-params-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  font-size: 12px;
+  color: var(--text-secondary);
+}
+
+.beam-params-row select {
+  padding: 4px 8px;
+  background: var(--bg-secondary, rgba(0, 0, 0, 0.3));
+  border: 1px solid var(--border-primary, rgba(255, 255, 255, 0.15));
+  border-radius: 6px;
+  color: var(--text-primary);
+  font-size: 12px;
+  outline: none;
+}
+
+.beam-slider-wrap {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex: 1;
+  max-width: 200px;
+}
+
+.beam-slider-wrap input[type="range"] {
+  flex: 1;
+  cursor: pointer;
+  accent-color: var(--accent-primary, #60a5fa);
+}
+

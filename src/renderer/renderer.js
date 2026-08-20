@@ -336,6 +336,9 @@ document.addEventListener('DOMContentLoaded', () => {
   // 拟态液体玻璃参数控制
   setupLiquidGlassControls();
 
+  // 巡航流光边框参数控制
+  setupBorderBeamControls();
+
   // 用户资料
   headerUser.addEventListener('click', (e) => {
     // 仅点击头像或用户名时打开编辑器，标题栏空白处保持窗口拖拽
@@ -378,8 +381,14 @@ document.addEventListener('DOMContentLoaded', () => {
   // 一键显示/隐藏组件（分组栏按钮）
   toggleWidgetsBtn.addEventListener('click', toggleWidgetsVisibility);
 
-  // 搜索栏事件
+  // 搜索栏事件与巡航流光联动
   searchInput.addEventListener('input', handleSearchInput);
+  searchInput.addEventListener('focus', () => {
+    if (window.borderBeamController) window.borderBeamController.triggerSearchBeam(true);
+  });
+  searchInput.addEventListener('blur', () => {
+    if (window.borderBeamController) window.borderBeamController.triggerSearchBeam(false);
+  });
   searchClear.addEventListener('click', clearSearch);
 
   // 分组栏事件
@@ -539,6 +548,12 @@ document.addEventListener('DOMContentLoaded', () => {
       if (window.liquidGlassController) {
         window.liquidGlassController.apply(data.liquidGlass);
         syncLiquidGlassUI(window.liquidGlassController.settings);
+      }
+    }
+    if (data.borderBeam && typeof data.borderBeam === 'object') {
+      if (window.borderBeamController) {
+        window.borderBeamController.init(data.borderBeam);
+        syncBorderBeamUI(window.borderBeamController.settings);
       }
     }
     iconsVisible = true;
@@ -930,6 +945,11 @@ function applyTheme(themeMode) {
     }
   }
 
+  // 刷新巡航流光边框色彩（跟随新主题）
+  if (window.borderBeamController) {
+    window.borderBeamController.apply();
+  }
+
   // 更新下拉菜单选中状态
   if (themeSelect) {
     themeSelect.value = normalizedTheme;
@@ -996,6 +1016,87 @@ function setupLiquidGlassControls() {
       if (window.liquidGlassController) {
         const defaults = window.liquidGlassController.resetDefaults();
         syncLiquidGlassUI(defaults);
+      }
+    });
+  }
+}
+
+/** 同步巡航流光边框设置控件状态 */
+function syncBorderBeamUI(settings) {
+  if (!settings) return;
+  const toggle = document.getElementById('border-beam-toggle');
+  const subpanel = document.getElementById('border-beam-subpanel');
+  if (toggle) toggle.checked = !!settings.enabled;
+  if (subpanel) subpanel.style.display = settings.enabled ? 'flex' : 'none';
+
+  const setCheck = (id, val) => {
+    const el = document.getElementById(id);
+    if (el) el.checked = val !== false;
+  };
+  setCheck('beam-opt-window', settings.windowBeam);
+  setCheck('beam-opt-agent', settings.agentBeam);
+  setCheck('beam-opt-drop', settings.dropBeam);
+  setCheck('beam-opt-search', settings.searchBeam);
+
+  const colorSelect = document.getElementById('beam-color-select');
+  if (colorSelect && settings.colorMode) colorSelect.value = settings.colorMode;
+
+  const speedSlider = document.getElementById('beam-speed-slider');
+  const speedVal = document.getElementById('beam-speed-value');
+  if (speedSlider) speedSlider.value = String(settings.speed || 4);
+  if (speedVal) speedVal.textContent = (Number(settings.speed) || 4).toFixed(1) + 's';
+}
+
+/** 绑定巡航流光边框设置面板事件 */
+function setupBorderBeamControls() {
+  const toggle = document.getElementById('border-beam-toggle');
+  const subpanel = document.getElementById('border-beam-subpanel');
+  if (toggle) {
+    toggle.addEventListener('change', () => {
+      const enabled = toggle.checked;
+      if (subpanel) subpanel.style.display = enabled ? 'flex' : 'none';
+      if (window.borderBeamController) {
+        window.borderBeamController.apply({ enabled });
+        window.borderBeamController.saveToStore();
+      }
+    });
+  }
+
+  const bindCheck = (id, key) => {
+    const el = document.getElementById(id);
+    if (!el) return;
+    el.addEventListener('change', () => {
+      if (window.borderBeamController) {
+        window.borderBeamController.apply({ [key]: el.checked });
+        window.borderBeamController.saveToStore();
+      }
+    });
+  };
+
+  bindCheck('beam-opt-window', 'windowBeam');
+  bindCheck('beam-opt-agent', 'agentBeam');
+  bindCheck('beam-opt-drop', 'dropBeam');
+  bindCheck('beam-opt-search', 'searchBeam');
+
+  const colorSelect = document.getElementById('beam-color-select');
+  if (colorSelect) {
+    colorSelect.addEventListener('change', () => {
+      if (window.borderBeamController) {
+        window.borderBeamController.apply({ colorMode: colorSelect.value });
+        window.borderBeamController.saveToStore();
+      }
+    });
+  }
+
+  const speedSlider = document.getElementById('beam-speed-slider');
+  const speedVal = document.getElementById('beam-speed-value');
+  if (speedSlider) {
+    speedSlider.addEventListener('input', () => {
+      const speed = parseFloat(speedSlider.value) || 4;
+      if (speedVal) speedVal.textContent = speed.toFixed(1) + 's';
+      if (window.borderBeamController) {
+        window.borderBeamController.apply({ speed });
+        window.borderBeamController.saveToStore();
       }
     });
   }
@@ -2726,12 +2827,17 @@ function createGroupFolderElement(group) {
     e.preventDefault();
     e.dataTransfer.dropEffect = 'move';
     el.classList.add('drop-target');
+    if (window.borderBeamController) window.borderBeamController.triggerDropBeam(el, true);
   });
-  el.addEventListener('dragleave', () => el.classList.remove('drop-target'));
+  el.addEventListener('dragleave', () => {
+    el.classList.remove('drop-target');
+    if (window.borderBeamController) window.borderBeamController.triggerDropBeam(el, false);
+  });
   el.addEventListener('drop', (e) => {
     e.preventDefault();
     e.stopPropagation();
     el.classList.remove('drop-target');
+    if (window.borderBeamController) window.borderBeamController.triggerDropBeam(el, false);
     if (iconsLocked) return;
     const paths = getDraggedPaths(e);
     if (paths.length === 0) return;
@@ -2876,11 +2982,14 @@ function getDraggedPaths(e) {
 
 function handleDragEnd() {
   if (draggedItem) draggedItem.classList.remove('dragging');
-  // 清理所有 drag-over 标记
+  // 清理所有 drag-over 标记与磁吸流光
   document.querySelectorAll('.file-item.drag-over').forEach(el => el.classList.remove('drag-over'));
-  document.querySelectorAll('.group-tab.drag-active, .group-tab.drop-target, .group-folder.drag-active, .group-folder.drop-target').forEach(el => {
-    el.classList.remove('drag-active', 'drop-target');
+  document.querySelectorAll('.group-tab.drag-active, .group-tab.drop-target, .group-folder.drag-active, .group-folder.drop-target, .beam-drop-target').forEach(el => {
+    el.classList.remove('drag-active', 'drop-target', 'beam-drop-target');
   });
+  if (window.borderBeamController) {
+    window.borderBeamController.triggerDropBeam(null, false);
+  }
   draggedItem = null;
 }
 
@@ -2895,17 +3004,23 @@ function handleDragEnter(e) {
   const item = e.currentTarget;
   if (item === draggedItem) return;
   item.classList.add('drag-over');
+  // 若拖拽目标是文件夹或分组条目，点亮磁吸流光
+  if (item.dataset && (item.dataset.groupId || item.dataset.isDirectory === 'true')) {
+    if (window.borderBeamController) window.borderBeamController.triggerDropBeam(item, true);
+  }
 }
 
 function handleDragLeave(e) {
   const item = e.currentTarget;
   item.classList.remove('drag-over');
+  if (window.borderBeamController) window.borderBeamController.triggerDropBeam(item, false);
 }
 
 function handleDrop(e) {
   e.preventDefault();
   e.stopPropagation();
   const targetItem = e.currentTarget;
+  if (window.borderBeamController) window.borderBeamController.triggerDropBeam(targetItem, false);
   if (!draggedItem || targetItem === draggedItem) return;
   targetItem.classList.remove('drag-over');
 
@@ -2990,13 +3105,16 @@ function renderGroups() {
       if (!draggedItem || iconsLocked) return;
       e.preventDefault();
       tab.classList.add('drop-target');
+      if (window.borderBeamController) window.borderBeamController.triggerDropBeam(tab, true);
     });
     tab.addEventListener('dragleave', () => {
       tab.classList.remove('drop-target');
+      if (window.borderBeamController) window.borderBeamController.triggerDropBeam(tab, false);
     });
     tab.addEventListener('drop', (e) => {
       e.preventDefault();
       tab.classList.remove('drop-target');
+      if (window.borderBeamController) window.borderBeamController.triggerDropBeam(tab, false);
       if (!draggedItem || iconsLocked) return;
       const paths = getDraggedPaths(e);
       if (paths.length === 0) return;
@@ -4677,6 +4795,12 @@ function createWidgetElement(widget) {
       </div>
     `;
     const eInput = node.querySelector('#everything-input');
+    eInput.addEventListener('focus', () => {
+      if (window.borderBeamController) window.borderBeamController.triggerSearchBeam(true);
+    });
+    eInput.addEventListener('blur', () => {
+      if (window.borderBeamController) window.borderBeamController.triggerSearchBeam(false);
+    });
     eInput.addEventListener('keydown', (e) => {
       if (e.key === 'Enter') {
         e.preventDefault();
@@ -5116,6 +5240,13 @@ function updateAgentWidgets() {
   const nodes = widgetsLayer.querySelectorAll('.widget-item.widget-agent');
   for (const node of nodes) {
     renderAgentWidget(node);
+  }
+
+  // 联动巡航流光边框：检测后台 Agent 运行/等待状态
+  const hasRunning = agentSessions.some(s => s.status === 'active');
+  const hasWaiting = agentSessions.some(s => s.status === 'interrupted');
+  if (window.borderBeamController) {
+    window.borderBeamController.updateAgentBeam({ hasRunning, hasWaiting });
   }
 }
 
