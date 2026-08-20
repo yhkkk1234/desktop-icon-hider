@@ -87,6 +87,16 @@ class FxStars extends window.FxBase {
     }
   }
 
+  stop() {
+    super.stop();
+    this.particles = [];
+    if (this.ctx && this.w) {
+      const dpr = this.dpr || 1;
+      this.ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+      this.ctx.clearRect(0, 0, this.w, this.h);
+    }
+  }
+
   drawStar(ctx, p) {
     const spikes = p.spikes;
     const outer = p.size;

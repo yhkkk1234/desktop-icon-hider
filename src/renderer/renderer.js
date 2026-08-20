@@ -527,7 +527,7 @@ document.addEventListener('DOMContentLoaded', () => {
     if (data.mouseEffects && typeof data.mouseEffects === 'object') {
       mouseFx = {
         enabled: !!data.mouseEffects.enabled,
-        type: ['ripple', 'stars', 'trail'].includes(data.mouseEffects.type) ? data.mouseEffects.type : 'stars',
+        type: ['ripple', 'stars', 'trail', 'aura'].includes(data.mouseEffects.type) ? data.mouseEffects.type : 'stars',
         customCursor: ['none', 'dot', 'arrow', 'star'].includes(data.mouseEffects.customCursor)
           ? data.mouseEffects.customCursor
           : 'none'

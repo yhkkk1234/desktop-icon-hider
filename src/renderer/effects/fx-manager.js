@@ -15,6 +15,7 @@ class FxManager {
 
     this.fgCanvas = document.getElementById('fx-fg-canvas');
     this.cursorCanvas = document.getElementById('fx-cursor-canvas');
+    this.auraCanvas = document.getElementById('fx-aura-canvas');
     this.bgCanvas = document.getElementById('fx-bg-canvas');
     this.bgLayer = document.getElementById('bg-layer');
     this.bgImage = document.getElementById('bg-image');
@@ -63,6 +64,7 @@ class FxManager {
     if (!this.enabled) {
       if (this.fgCanvas) this.fgCanvas.style.display = 'none';
       if (this.cursorCanvas) this.cursorCanvas.style.display = 'none';
+      if (this.auraCanvas) this.auraCanvas.style.display = 'none';
       return;
     }
     if (this.fgCanvas) this.fgCanvas.style.display = 'block';
@@ -80,16 +82,28 @@ class FxManager {
       bgLayer: this.bgLayer,
       bgEnabled: this.bgEnabled
     };
-    switch (this.type) {
-    case 'ripple':
-      this.effect = new window.FxRipple(opts);
-      break;
-    case 'trail':
-      this.effect = new window.FxTrail(opts);
-      break;
-    default:
-      this.effect = new window.FxStars(opts);
+    let created = false;
+    try {
+      switch (this.type) {
+      case 'ripple':
+        this.effect = new window.FxRipple(opts);
+        break;
+      case 'trail':
+        this.effect = new window.FxTrail(opts);
+        break;
+      case 'aura':
+        this.effect = new window.FxAura({ canvas: this.auraCanvas });
+        break;
+      default:
+        this.effect = new window.FxStars(opts);
+      }
+      created = !!this.effect;
+    } catch (err) {
+      // 个别特效构造异常（如驱动/上下文问题）不能拖垮整个特效系统
+      console.warn('鼠标特效创建失败:', err);
+      this.effect = null;
     }
+    if (!created) return;
     // 特效每帧绘制完成后叠加自定义光标（光标始终处于最上层）
     const cursorFx = this.cursorFx;
     this.effect.onFrame = () => {
@@ -103,7 +117,9 @@ class FxManager {
 
   teardown() {
     if (this.effect) {
-      this.effect.stop();
+      // 部分特效（极光流体）持有独占画布与监听器，需要完整释放
+      if (this.effect.dispose) this.effect.dispose();
+      else this.effect.stop();
       this.effect = null;
     }
     if (this.cursorFx) {
@@ -116,6 +132,7 @@ class FxManager {
     if (this.bgCanvas) this.bgCanvas.style.display = 'none';
     if (this.bgImage) this.bgImage.style.display = '';
     if (this.cursorCanvas) this.cursorCanvas.style.display = 'none';
+    if (this.auraCanvas) this.auraCanvas.style.display = 'none';
   }
 
   bindPointer() {

@@ -47,7 +47,7 @@ const store = new Store({
     folderPreviewEnabled: true,
     mouseEffects: {
       enabled: false,
-      type: 'stars', // 特效类型: ripple(水波) | stars(星星) | trail(彩虹拖尾)
+      type: 'stars', // 特效类型: ripple(水波) | stars(星星) | trail(彩虹拖尾) | aura(极光流体)
       customCursor: 'none' // 自定义光标: none | dot | arrow | star
     },
     everythingEnabled: false,
@@ -1462,7 +1462,7 @@ ipcMain.handle('set-mouse-effects', async (event, effects) => {
   const current = store.get('mouseEffects', {});
   const next = {
     enabled: typeof effects.enabled === 'boolean' ? effects.enabled : !!current.enabled,
-    type: ['ripple', 'stars', 'trail'].includes(effects.type) ? effects.type : (current.type || 'stars'),
+    type: ['ripple', 'stars', 'trail', 'aura'].includes(effects.type) ? effects.type : (current.type || 'stars'),
     customCursor: ['none', 'dot', 'arrow', 'star'].includes(effects.customCursor)
       ? effects.customCursor
       : (current.customCursor || 'none')

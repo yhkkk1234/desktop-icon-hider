@@ -618,6 +618,7 @@
             <option value="ripple" data-i18n="settings.mouseFxRipple">水波涟漪</option>
             <option value="stars" data-i18n="settings.mouseFxStars">卡通星星</option>
             <option value="trail" data-i18n="settings.mouseFxTrail">彩虹拖尾</option>
+            <option value="aura" data-i18n="settings.mouseFxAura">极光流体</option>
           </select>
         </div>
         <div class="setting-item">
@@ -851,6 +852,8 @@
 
   <!-- 鼠标特效前景层（星星/拖尾/水波降级，最顶层、不拦截鼠标事件） -->
   <canvas id="fx-fg-canvas" class="fx-fg-canvas" width="1" height="1"></canvas>
+  <!-- 极光流体专用层（WebGL 上下文独立，避免与 2D 前景画布互斥） -->
+  <canvas id="fx-aura-canvas" class="fx-aura-canvas" width="1" height="1"></canvas>
   <!-- 自定义光标独立层（避免清除特效画面） -->
   <canvas id="fx-cursor-canvas" class="fx-cursor-canvas" width="1" height="1"></canvas>
 
@@ -859,6 +862,7 @@
   <script src="effects/ripple.js"></script>
   <script src="effects/stars.js"></script>
   <script src="effects/trail.js"></script>
+  <script src="effects/aura.js"></script>
   <script src="effects/cursor.js"></script>
   <script src="renderer.js"></script>
 </body>
