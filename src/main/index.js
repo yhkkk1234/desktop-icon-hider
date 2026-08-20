@@ -50,6 +50,16 @@ const store = new Store({
       type: 'stars', // 特效类型: ripple(水波) | stars(星星) | trail(彩虹拖尾) | aura(极光流体)
       customCursor: 'none' // 自定义光标: none | dot | arrow | star
     },
+    liquidGlass: {
+      light: 70,
+      lightAngle: 135,
+      refraction: 35,
+      depth: 45,
+      dispersion: 50,
+      frost: 18,
+      spread: 55,
+      chromaticMetal: 75
+    },
     everythingEnabled: false,
     backgroundImage: {
       enabled: false,
@@ -2115,7 +2125,7 @@ ipcMain.handle('clear-icon-cache', async () => {
 // 主题功能的IPC处理
 const SUPPORTED_THEMES = new Set([
   'dark', 'light', 'system', 'topo', 'ocean', 'forest', 'cream', 'sakura', 'mist', 'cyber', 'terminal', 'sunset',
-  'clay', 'night-clay', 'glass-light', 'glass-dark', 'obsidian'
+  'clay', 'night-clay', 'glass-light', 'glass-dark', 'obsidian', 'liquid-glass'
 ]);
 
 ipcMain.handle('set-theme', async (event, theme) => {
@@ -2131,6 +2141,46 @@ ipcMain.handle('set-theme', async (event, theme) => {
 
 ipcMain.handle('get-theme', async () => {
   return store.get('theme', 'dark');
+});
+
+// 拟态液体玻璃主题参数的IPC处理
+ipcMain.handle('get-liquid-glass-settings', async () => {
+  return store.get('liquidGlass', {
+    light: 70,
+    lightAngle: 135,
+    refraction: 35,
+    depth: 45,
+    dispersion: 50,
+    frost: 18,
+    spread: 55,
+    chromaticMetal: 75
+  });
+});
+
+ipcMain.handle('set-liquid-glass-settings', async (event, settings) => {
+  try {
+    if (!settings || typeof settings !== 'object') return false;
+    const current = store.get('liquidGlass', {});
+    const clamp = (val, min, max, def) => {
+      const num = Number(val);
+      return Number.isFinite(num) ? Math.max(min, Math.min(max, Math.round(num))) : def;
+    };
+    const next = {
+      light: clamp(settings.light, 0, 100, current.light ?? 70),
+      lightAngle: clamp(settings.lightAngle, 0, 360, current.lightAngle ?? 135),
+      refraction: clamp(settings.refraction, 0, 100, current.refraction ?? 35),
+      depth: clamp(settings.depth, 0, 100, current.depth ?? 45),
+      dispersion: clamp(settings.dispersion, 0, 100, current.dispersion ?? 50),
+      frost: clamp(settings.frost, 0, 60, current.frost ?? 18),
+      spread: clamp(settings.spread, 0, 100, current.spread ?? 55),
+      chromaticMetal: clamp(settings.chromaticMetal, 0, 100, current.chromaticMetal ?? 75)
+    };
+    store.set('liquidGlass', next);
+    return true;
+  } catch (error) {
+    console.error('Error setting liquid glass settings:', error);
+    return false;
+  }
 });
 
 // 透明度功能的IPC处理

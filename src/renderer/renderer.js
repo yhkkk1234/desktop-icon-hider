@@ -278,8 +278,7 @@ document.addEventListener('DOMContentLoaded', () => {
   themeGallery.addEventListener('click', (event) => {
     const card = event.target.closest('[data-theme-option]');
     if (!card) return;
-    themeSelect.value = card.dataset.themeOption;
-    handleThemeChange();
+    handleThemeChange(card.dataset.themeOption);
   });
   opacitySlider.addEventListener('input', handleOpacityChange);
   iconSizeSlider.addEventListener('input', handleIconSizeChange);
@@ -333,6 +332,9 @@ document.addEventListener('DOMContentLoaded', () => {
   bgVignetteToggle.addEventListener('change', handleBgVignetteToggle);
   bgVignetteSlider.addEventListener('input', handleBgVignette);
   bgEffectsResetBtn.addEventListener('click', handleBgEffectsReset);
+
+  // 拟态液体玻璃参数控制
+  setupLiquidGlassControls();
 
   // 用户资料
   headerUser.addEventListener('click', (e) => {
@@ -532,6 +534,12 @@ document.addEventListener('DOMContentLoaded', () => {
           ? data.mouseEffects.customCursor
           : 'none'
       };
+    }
+    if (data.liquidGlass && typeof data.liquidGlass === 'object') {
+      if (window.liquidGlassController) {
+        window.liquidGlassController.apply(data.liquidGlass);
+        syncLiquidGlassUI(window.liquidGlassController.settings);
+      }
     }
     iconsVisible = true;
     folderPreviewEnabled = data.folderPreviewEnabled !== false;
@@ -863,9 +871,12 @@ function handleToggleSettings() {
 }
 
 // 主题切换
-async function handleThemeChange() {
+async function handleThemeChange(targetTheme) {
   try {
-    theme = themeSelect.value;
+    theme = targetTheme || (themeSelect ? themeSelect.value : 'dark');
+    if (themeSelect && themeSelect.value !== theme) {
+      themeSelect.value = theme;
+    }
     await window.api.setTheme(theme);
     applyTheme(theme);
   } catch (error) {
@@ -878,7 +889,7 @@ function applyTheme(themeMode) {
   const html = document.documentElement;
   const supportedThemes = new Set([
     'dark', 'light', 'system', 'topo', 'ocean', 'forest', 'cream', 'sakura', 'mist', 'cyber', 'terminal', 'sunset',
-    'clay', 'night-clay', 'glass-light', 'glass-dark', 'obsidian'
+    'clay', 'night-clay', 'glass-light', 'glass-dark', 'obsidian', 'liquid-glass'
   ]);
   const normalizedTheme = supportedThemes.has(themeMode) ? themeMode : 'dark';
   const visualTheme = normalizedTheme === 'night-clay' ? 'clay' : normalizedTheme;
@@ -897,6 +908,20 @@ function applyTheme(themeMode) {
     html.removeAttribute('data-skin');
   }
 
+  // 拟态液体玻璃专属参数面板与控制器生命周期切换
+  const lqGroup = document.getElementById('liquid-glass-settings-group');
+  if (lqGroup) {
+    lqGroup.style.display = normalizedTheme === 'liquid-glass' ? 'flex' : 'none';
+  }
+  if (window.liquidGlassController) {
+    if (normalizedTheme === 'liquid-glass') {
+      window.liquidGlassController.apply();
+      syncLiquidGlassUI(window.liquidGlassController.settings);
+    } else {
+      window.liquidGlassController.teardown();
+    }
+  }
+
   // 更新下拉菜单选中状态
   if (themeSelect) {
     themeSelect.value = normalizedTheme;
@@ -911,6 +936,61 @@ function applyTheme(themeMode) {
 
   // 切换主题后按新主题默认文字色重算明暗
   applyTextTone();
+}
+
+/** 同步液体玻璃材质各滑块与数值显示 */
+function syncLiquidGlassUI(settings) {
+  if (!settings) return;
+  const setEl = (id, val, text) => {
+    const el = document.getElementById(id);
+    if (el) el.value = val;
+    const txt = document.getElementById(id.replace('-slider', '-value'));
+    if (txt) txt.textContent = text !== undefined ? text : val;
+  };
+  setEl('lq-light-slider', settings.light, settings.light + '%');
+  setEl('lq-angle-slider', settings.lightAngle, settings.lightAngle + '°');
+  setEl('lq-refraction-slider', settings.refraction, settings.refraction);
+  setEl('lq-depth-slider', settings.depth, settings.depth);
+  setEl('lq-dispersion-slider', settings.dispersion, settings.dispersion);
+  setEl('lq-frost-slider', settings.frost, settings.frost);
+  setEl('lq-spread-slider', settings.spread, settings.spread + '%');
+  setEl('lq-metal-slider', settings.chromaticMetal, settings.chromaticMetal + '%');
+}
+
+/** 绑定液体玻璃材质微调滑块及重置事件 */
+function setupLiquidGlassControls() {
+  const bind = (id, key, format) => {
+    const el = document.getElementById(id);
+    if (!el) return;
+    el.addEventListener('input', () => {
+      const val = parseInt(el.value, 10);
+      const txt = document.getElementById(id.replace('-slider', '-value'));
+      if (txt) txt.textContent = format ? format(val) : val;
+      if (window.liquidGlassController) {
+        window.liquidGlassController.apply({ [key]: val });
+        window.liquidGlassController.saveToStore();
+      }
+    });
+  };
+
+  bind('lq-light-slider', 'light', (v) => v + '%');
+  bind('lq-angle-slider', 'lightAngle', (v) => v + '°');
+  bind('lq-refraction-slider', 'refraction');
+  bind('lq-depth-slider', 'depth');
+  bind('lq-dispersion-slider', 'dispersion');
+  bind('lq-frost-slider', 'frost');
+  bind('lq-spread-slider', 'spread', (v) => v + '%');
+  bind('lq-metal-slider', 'chromaticMetal', (v) => v + '%');
+
+  const resetBtn = document.getElementById('lq-reset-btn');
+  if (resetBtn) {
+    resetBtn.addEventListener('click', () => {
+      if (window.liquidGlassController) {
+        const defaults = window.liquidGlassController.resetDefaults();
+        syncLiquidGlassUI(defaults);
+      }
+    });
+  }
 }
 
 // 监听系统主题变化（用于跟随系统模式）

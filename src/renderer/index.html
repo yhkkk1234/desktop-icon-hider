@@ -114,6 +114,7 @@
             <option value="glass-light" data-i18n="settings.themeGlassLight">玻璃明亮</option>
             <option value="glass-dark" data-i18n="settings.themeGlassDark">玻璃深色</option>
             <option value="obsidian" data-i18n="settings.themeObsidian">黑曜机械</option>
+            <option value="liquid-glass" data-i18n="settings.themeLiquidGlass">拟态液体玻璃</option>
           </select>
           <div id="theme-gallery" class="theme-gallery" role="group" aria-label="主题预览">
             <button type="button" class="theme-card" data-theme-option="dark" data-i18n-title="settings.themeDark" aria-pressed="false">
@@ -184,6 +185,66 @@
               <span class="theme-swatch" aria-hidden="true"></span>
               <span class="theme-card-label" data-i18n="settings.themeObsidian">黑曜机械</span>
             </button>
+            <button type="button" class="theme-card" data-theme-option="liquid-glass" data-i18n-title="settings.themeLiquidGlass" aria-pressed="false">
+              <span class="theme-swatch" aria-hidden="true"></span>
+              <span class="theme-card-label" data-i18n="settings.themeLiquidGlass">拟态液体玻璃</span>
+            </button>
+          </div>
+        </div>
+
+        <!-- 拟态液体玻璃专属材质参数微调面板（当选中 liquid-glass 时展示） -->
+        <div id="liquid-glass-settings-group" class="liquid-glass-settings-group" style="display: none;">
+          <div class="lq-group-header">
+            <span class="lq-group-title" data-i18n="settings.lqParamsTitle">液体玻璃材质调优</span>
+            <button type="button" id="lq-reset-btn" class="prompt-btn prompt-btn-cancel lq-reset-btn" data-i18n="settings.lqReset">恢复默认</button>
+          </div>
+          
+          <div class="setting-item lq-slider-item">
+            <label for="lq-light-slider" data-i18n="settings.lqLight">光线亮度:</label>
+            <input type="range" id="lq-light-slider" min="0" max="100" step="1" value="70">
+            <span id="lq-light-value">70%</span>
+          </div>
+
+          <div class="setting-item lq-slider-item">
+            <label for="lq-angle-slider" data-i18n="settings.lqLightAngle">光源角度:</label>
+            <input type="range" id="lq-angle-slider" min="0" max="360" step="5" value="135">
+            <span id="lq-angle-value">135°</span>
+          </div>
+
+          <div class="setting-item lq-slider-item">
+            <label for="lq-refraction-slider" data-i18n="settings.lqRefraction">折射扭曲:</label>
+            <input type="range" id="lq-refraction-slider" min="0" max="100" step="1" value="35">
+            <span id="lq-refraction-value">35</span>
+          </div>
+
+          <div class="setting-item lq-slider-item">
+            <label for="lq-depth-slider" data-i18n="settings.lqDepth">透镜深度:</label>
+            <input type="range" id="lq-depth-slider" min="0" max="100" step="1" value="45">
+            <span id="lq-depth-value">45</span>
+          </div>
+
+          <div class="setting-item lq-slider-item">
+            <label for="lq-dispersion-slider" data-i18n="settings.lqDispersion">边缘色散(彩虹边):</label>
+            <input type="range" id="lq-dispersion-slider" min="0" max="100" step="1" value="50">
+            <span id="lq-dispersion-value">50</span>
+          </div>
+
+          <div class="setting-item lq-slider-item">
+            <label for="lq-frost-slider" data-i18n="settings.lqFrost">表面霜化:</label>
+            <input type="range" id="lq-frost-slider" min="0" max="60" step="1" value="18">
+            <span id="lq-frost-value">18</span>
+          </div>
+
+          <div class="setting-item lq-slider-item">
+            <label for="lq-spread-slider" data-i18n="settings.lqSpread">边缘衰减:</label>
+            <input type="range" id="lq-spread-slider" min="0" max="100" step="1" value="55">
+            <span id="lq-spread-value">55%</span>
+          </div>
+
+          <div class="setting-item lq-slider-item">
+            <label for="lq-metal-slider" data-i18n="settings.lqChromaticMetal">色度金属光泽:</label>
+            <input type="range" id="lq-metal-slider" min="0" max="100" step="1" value="75">
+            <span id="lq-metal-value">75%</span>
           </div>
         </div>
         <div class="setting-item opacity-control">
@@ -863,6 +924,7 @@
   <script src="effects/stars.js"></script>
   <script src="effects/trail.js"></script>
   <script src="effects/aura.js"></script>
+  <script src="effects/liquid-glass.js"></script>
   <script src="effects/cursor.js"></script>
   <script src="renderer.js"></script>
 </body>

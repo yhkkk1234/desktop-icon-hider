@@ -15,6 +15,8 @@ contextBridge.exposeInMainWorld('api', {
   // 主题功能API
   setTheme: (theme) => ipcRenderer.invoke('set-theme', theme),
   getTheme: () => ipcRenderer.invoke('get-theme'),
+  getLiquidGlassSettings: () => ipcRenderer.invoke('get-liquid-glass-settings'),
+  setLiquidGlassSettings: (settings) => ipcRenderer.invoke('set-liquid-glass-settings', settings),
   
   // 透明度功能API
   setOpacity: (opacity) => ipcRenderer.invoke('set-opacity', opacity),
