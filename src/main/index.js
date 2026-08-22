@@ -17,7 +17,7 @@ const {
 } = require('./window-manager');
 const { createTray, updateTrayMenu, destroyTray, autoLauncher } = require('./tray');
 const { startSampler, stopSampler, getSystemStats } = require('./hardware-monitor');
-const { AgentMonitor, createOpencodeAdapter, createOpencodeServerStatusProvider, createDshAdapter, detectOpencodeRunning, detectDshRunning, isValidSessionId } = require('./agent-monitor');
+const { AgentMonitor, createOpencodeAdapter, createOpencodeServerStatusProvider, createDshAdapter, createZcodeAdapter, createAntigravityAdapter, createCodexAdapter, createClaudeAdapter, detectOpencodeRunning, detectDshRunning, isValidSessionId } = require('./agent-monitor');
 
 const store = new Store({
   name: 'desktop-icon-hider',
@@ -2606,7 +2606,13 @@ app.whenReady().then(async () => {
           // 用 busy/idle/retry 覆盖 DB 推断；探测失败自动回落纯 DB 模式（desktop/TUI 场景即此模式）
           statusProvider: agentStatusProvider
         }),
-        dshAdapter
+        dshAdapter,
+        // ZCode / Antigravity / Codex / Claude Code：全部默认路径只读检测，
+        // 未安装时适配器静默返回空列表（渲染端不显示对应分组），无需任何配置
+        createZcodeAdapter(),
+        createAntigravityAdapter(),
+        createCodexAdapter(),
+        createClaudeAdapter()
       ],
       activeWindowMs,
       onUpdate: (sessions) => {

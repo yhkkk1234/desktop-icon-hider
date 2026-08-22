@@ -4,17 +4,28 @@ const {
   applyServerStatus,
   classifySession,
   classifyDshSession,
+  createAntigravityAdapter,
+  createClaudeAdapter,
+  createCodexAdapter,
   createDshAdapter,
   createOpencodeAdapter,
   createOpencodeServerStatusProvider,
+  createZcodeAdapter,
   detectDshRunning,
+  extractWorkspaceUri,
   filterVisibleSessions,
   getDshHomePath,
   getOpencodeDbPath,
+  getZcodeDbPath,
   isValidSessionId,
+  mapAntigravityStepStatus,
+  parseClaudeHead,
+  parseClaudeTail,
+  parseCodexTail,
   parseDshProjection,
   parseLastPartType,
   parseSSEChunk,
+  stripExtendedPathPrefix,
   DEFAULT_ACTIVE_WINDOW_MS,
   DEFAULT_DSH_WEB_PORT
 } = require('../src/main/agent-monitor');
@@ -882,6 +893,595 @@ describe('detectDshRunning', () => {
     expect(ok).toBe(false);
     const stale = await detectDshRunning(DEFAULT_DSH_WEB_PORT, async () => false, () => ({ mtimeMs: Date.now() - 600000 }));
     expect(stale).toBe(false);
+  });
+});
+
+// ============ ZCode 适配器（与 opencode 同族 schema，复用通用 SQLite 工厂） ============
+
+const path = require('path');
+
+/** 伪造 better-sqlite3 Database（按 SQL 形状分发，供通用 SQLite 适配器测试） */
+function makeSqliteDbFactory({ sessions, parts }) {
+  return function FakeDb() {
+    return {
+      prepare(sql) {
+        if (/FROM session/.test(sql)) {
+          return {
+            all(limit) {
+              let rows = sessions.filter(s => s.time_archived === null || s.time_archived === undefined);
+              // zcode 过滤条件在 SQL 里，伪造层按相同语义过滤
+              if (/task_type = 'interactive'/.test(sql)) {
+                rows = rows.filter(s => s.task_type === 'interactive');
+              }
+              return [...rows].sort((a, b) => b.time_updated - a.time_updated).slice(0, limit);
+            }
+          };
+        }
+        if (/IN \(/.test(sql)) {
+          return {
+            all(...ids) {
+              // 等价 SQL 语义：每个会话只取 time_created 最大的 part
+              const latest = new Map();
+              for (const p of parts) {
+                if (!ids.includes(p.session_id)) continue;
+                const cur = latest.get(p.session_id);
+                if (!cur || p.time_created > cur.time_created) latest.set(p.session_id, p);
+              }
+              return [...latest.entries()].map(([sid, p]) => ({ sid, data: p.data }));
+            }
+          };
+        }
+        if (/FROM part WHERE session_id/.test(sql)) {
+          return {
+            get(sid) {
+              const list = parts.filter(p => p.session_id === sid)
+                .sort((a, b) => a.time_created - b.time_created);
+              return list.length ? { data: list[list.length - 1].data } : undefined;
+            }
+          };
+        }
+        throw new Error('unexpected sql: ' + sql);
+      },
+      close() {}
+    };
+  };
+}
+
+describe('getZcodeDbPath', () => {
+  const OLD = process.env.ZCODE_HOME;
+
+  afterEach(() => {
+    if (OLD === undefined) delete process.env.ZCODE_HOME;
+    else process.env.ZCODE_HOME = OLD;
+  });
+
+  it('ZCODE_HOME 优先', () => {
+    process.env.ZCODE_HOME = 'D:/zc-root';
+    expect(getZcodeDbPath()).toBe(path.join('D:/zc-root', 'cli', 'db', 'db.sqlite'));
+  });
+
+  it('未设置时回落 ~/.zcode/cli/db/db.sqlite', () => {
+    delete process.env.ZCODE_HOME;
+    expect(getZcodeDbPath()).toContain(path.join('.zcode', 'cli', 'db', 'db.sqlite'));
+  });
+});
+
+describe('createZcodeAdapter', () => {
+  const sessions = [
+    { id: 'sess_main', title: '主会话', directory: 'F:\\Proj', task_type: 'interactive',
+      time_created: 1000, time_updated: NOW - 3000 },
+    { id: 'sess_subagent_agent_x', title: '子代理任务原文……', directory: 'F:\\Proj',
+      task_type: 'subagent_child', time_created: 1000, time_updated: NOW - 1000 }
+  ];
+  let parts = [
+    { session_id: 'sess_main', time_created: NOW - 6000, data: JSON.stringify({ type: 'tool' }) },
+    { session_id: 'sess_main', time_created: NOW - 3000,
+      data: JSON.stringify({ type: 'step-finish', reason: 'stop' }) }
+  ];
+
+  it('DB 不可用时降级为空列表', () => {
+    const adapter = createZcodeAdapter({ Database: null });
+    expect(adapter.id).toBe('zcode');
+    expect(adapter.displayName).toBe('ZCode');
+    expect(adapter.listSessions()).toEqual([]);
+  });
+
+  it('过滤 subagent_child 子代理会话，主会话复用共享状态分类', () => {
+    const adapter = createZcodeAdapter({
+      dbPath: 'D:/fake/zcode.db',
+      Database: makeSqliteDbFactory({ sessions, parts })
+    });
+    const rows = adapter.listSessions();
+    expect(rows).toHaveLength(1);
+    expect(rows[0].id).toBe('sess_main');
+    expect(rows[0].title).toBe('主会话');
+    expect(rows[0].directory).toBe('F:\\Proj');
+    expect(rows[0].agent).toBe('default'); // zcode 无 agent 列 → 默认值
+    expect(rows[0].lastPartType).toBe('step-finish');
+    // 共享分类器：step-finish 未过 15s 确认窗 → active；过窗 → completed
+    expect(classifySession(rows[0], NOW, ACTIVE_MS)).toBe('active');
+    expect(classifySession({ ...rows[0], timeUpdated: NOW - 20 * 1000 }, NOW, ACTIVE_MS)).toBe('completed');
+  });
+
+  it('会话更新后增量查询刷新 last part', () => {
+    const adapter = createZcodeAdapter({
+      dbPath: 'D:/fake/zcode.db',
+      Database: makeSqliteDbFactory({ sessions, parts })
+    });
+    expect(adapter.listSessions()[0].lastPartType).toBe('step-finish');
+    // 模拟新一轮对话：session 更新 + 新 part（非 step-finish，运行中）。
+    // 用 push 保持同一数组引用（伪造层闭包持有的就是该数组）
+    sessions[0].time_updated = NOW - 1000;
+    parts.push({
+      session_id: 'sess_main', time_created: NOW - 1000, data: JSON.stringify({ type: 'text' })
+    });
+    const rows2 = adapter.listSessions();
+    expect(rows2[0].timeUpdated).toBe(NOW - 1000);
+    expect(rows2[0].lastPartType).toBe('text');
+  });
+});
+
+describe('createOpencodeAdapter（通用工厂回归）', () => {
+  it('会话数少于 100 时批量 last-part 查询不因占位符数量不匹配失败', () => {
+    const sessions = [
+      { id: 'ses_1', title: 'A', directory: 'F:\\A', agent: 'build',
+        time_created: 1, time_updated: NOW - 5000 },
+      { id: 'ses_2', title: 'B', directory: 'F:\\B', agent: 'plan',
+        time_created: 2, time_updated: NOW - 600000 }
+    ];
+    const parts = [
+      { session_id: 'ses_1', time_created: NOW - 5000, data: JSON.stringify({ type: 'step-finish' }) },
+      { session_id: 'ses_2', time_created: NOW - 600000, data: JSON.stringify({ type: 'text' }) }
+    ];
+    const adapter = createOpencodeAdapter({
+      dbPath: 'D:/fake/oc.db',
+      Database: makeSqliteDbFactory({ sessions, parts })
+    });
+    const rows = adapter.listSessions();
+    expect(rows).toHaveLength(2);
+    expect(rows.find(r => r.id === 'ses_1').lastPartType).toBe('step-finish');
+    expect(rows.find(r => r.id === 'ses_2').lastPartType).toBe('text');
+  });
+
+  it('AgentMonitor 合并 zcode 分组并按共享规则分类', async () => {
+    const sessions = [
+      { id: 'sess_m', title: 't', directory: 'F:\\P', task_type: 'interactive',
+        time_created: 1, time_updated: NOW - 3000 }
+    ];
+    const parts = [
+      { session_id: 'sess_m', time_created: NOW - 3000, data: JSON.stringify({ type: 'step-finish' }) }
+    ];
+    const monitor = new AgentMonitor({
+      adapters: [createZcodeAdapter({ dbPath: 'x', Database: makeSqliteDbFactory({ sessions, parts }) })],
+      activeWindowMs: ACTIVE_MS,
+      now: () => NOW
+    });
+    await monitor.poll();
+    const snap = monitor.getSnapshot();
+    expect(snap).toHaveLength(1);
+    expect(snap[0].harness).toBe('zcode');
+    expect(snap[0].harnessName).toBe('ZCode');
+    expect(snap[0].status).toBe('active');
+  });
+});
+
+// ============ Antigravity（谷歌反重力）适配器 ============
+
+describe('mapAntigravityStepStatus', () => {
+  it('3=完成 → step-finish；9=运行中 → step-start；2/6/7=异常 → error', () => {
+    expect(mapAntigravityStepStatus(3)).toBe('step-finish');
+    expect(mapAntigravityStepStatus(9)).toBe('step-start');
+    for (const s of [2, 6, 7]) expect(mapAntigravityStepStatus(s)).toBe('error');
+  });
+
+  it('未知值/无 steps → null（老会话 = 已完成语义）', () => {
+    expect(mapAntigravityStepStatus(null)).toBeNull();
+    expect(mapAntigravityStepStatus(undefined)).toBeNull();
+    expect(mapAntigravityStepStatus(42)).toBeNull();
+  });
+});
+
+describe('extractWorkspaceUri', () => {
+  it('从 protobuf BLOB 明文扫描出工作区 URI', () => {
+    const blob = Buffer.from('\x12\x0afile:///f:/MyGame01\x18\x03', 'latin1');
+    expect(extractWorkspaceUri(blob)).toBe('f:/MyGame01');
+  });
+
+  it('百分号编码解码 / 无匹配 / 空入参 → null 或原文', () => {
+    expect(extractWorkspaceUri(Buffer.from('file:///f:/My%20Game', 'latin1'))).toBe('f:/My Game');
+    expect(extractWorkspaceUri(Buffer.from('no uri here', 'latin1'))).toBeNull();
+    expect(extractWorkspaceUri(null)).toBeNull();
+    expect(extractWorkspaceUri(Buffer.alloc(0))).toBeNull();
+  });
+});
+
+describe('createAntigravityAdapter', () => {
+  const home = 'C:/fake-ag';
+  const convRoot = path.join(home, 'conversations');
+  const convA = path.join(convRoot, 'aaaaaaaa-0000-0000-0000-000000000000.db');
+  const convB = path.join(convRoot, 'bbbbbbbb-1111-1111-1111-111111111111.db');
+  const uuidA = 'aaaaaaaa-0000-0000-0000-000000000000';
+  const uuidB = 'bbbbbbbb-1111-1111-1111-111111111111';
+  let dbOpens = 0;
+
+  function makeFs({ mtimeA = NOW - 3000, mtimeB = NOW - 600000 } = {}) {
+    dbOpens = 0;
+    const statTimes = new Map([[convA, mtimeA], [convB, mtimeB]]);
+    function FakeDb(fileArg) {
+      dbOpens += 1;
+      return {
+        prepare(sql) {
+          if (/FROM steps/.test(sql)) {
+            // A 正在运行（status 9），B 已完成（status 3）
+            return { get: () => ({ status: fileArg === convA ? 9 : 3 }) };
+          }
+          if (/trajectory_metadata_blob/.test(sql)) {
+            return { get: () => ({ data: Buffer.from('..file:///f:/MyGame01..', 'latin1') }) };
+          }
+          throw new Error('unexpected sql: ' + sql);
+        },
+        close() {}
+      };
+    }
+    return {
+      Database: FakeDb,
+      readdirSync(p) {
+        if (p === convRoot) return [`${uuidA}.db`, `${uuidB}.db`, 'notes.txt'];
+        const e = new Error('ENOENT: ' + p);
+        e.code = 'ENOENT';
+        throw e;
+      },
+      statSync(p) {
+        if (!statTimes.has(p)) {
+          const e = new Error('ENOENT: ' + p);
+          e.code = 'ENOENT';
+          throw e;
+        }
+        return { mtimeMs: statTimes.get(p) };
+      },
+      readFileSync(p) {
+        if (p === path.join(home, 'brain', uuidA, 'implementation_plan.md.metadata.json')) {
+          return JSON.stringify({ summary: '更新第一章剧情的实施计划' });
+        }
+        const e = new Error('ENOENT: ' + p);
+        e.code = 'ENOENT';
+        throw e;
+      }
+    };
+  }
+
+  it('listSessions：标题回退链 + mtime 判活 + 状态映射', () => {
+    const adapter = createAntigravityAdapter({ home, ...makeFs() });
+    const rows = adapter.listSessions();
+    expect(rows).toHaveLength(2);
+    // 最后活动倒序：A（新鲜）居顶
+    expect(rows[0].id).toBe(uuidA);
+    expect(rows[0].title).toBe('更新第一章剧情的实施计划'); // brain 摘要
+    expect(rows[0].directory).toBe('f:/MyGame01');
+    expect(rows[0].lastPartType).toBe('step-start'); // status 9 = 运行中
+    expect(rows[0].timeUpdated).toBe(NOW - 3000);
+    expect(classifySession(rows[0], NOW, ACTIVE_MS)).toBe('active');
+    // B：无 brain 摘要 → 工作区目录名 + 时间；status 3 → step-finish
+    expect(rows[1].id).toBe(uuidB);
+    expect(rows[1].title).toContain('MyGame01 ·');
+    expect(rows[1].lastPartType).toBe('step-finish');
+    expect(classifySession(rows[1], NOW, ACTIVE_MS)).toBe('completed');
+  });
+
+  it('mtime 未变的库命中缓存不重开（稳态零 SQLite 打开）', () => {
+    const fsx = makeFs();
+    const adapter = createAntigravityAdapter({ home, ...fsx });
+    adapter.listSessions();
+    expect(dbOpens).toBe(2);
+    adapter.listSessions();
+    expect(dbOpens).toBe(2); // 未变化 → 缓存命中
+    expect(adapter.lastError).toBeNull();
+  });
+
+  it('conversations 目录不存在 → 空列表（未安装静默降级）', () => {
+    const adapter = createAntigravityAdapter({
+      home,
+      readdirSync() {
+        const e = new Error('ENOENT');
+        e.code = 'ENOENT';
+        throw e;
+      }
+    });
+    expect(adapter.listSessions()).toEqual([]);
+    expect(typeof adapter.lastError).toBe('string');
+  });
+});
+
+// ============ Codex 适配器 ============
+
+describe('parseCodexTail', () => {
+  const TASK_COMPLETE = '{"timestamp":"t","type":"event_msg","payload":{"type":"task_complete","turn_id":"t1"}}';
+
+  it('尾行 task_complete → step-finish（正常完成回合）', () => {
+    const text = `{"type":"event_msg","payload":{"type":"user_message"}}\n${TASK_COMPLETE}`;
+    expect(parseCodexTail(text)).toBe('step-finish');
+  });
+
+  it('首行半截被丢弃后仍能取到最后完整记录', () => {
+    const text = `{"timestamp":"2026-05-19T05:15:04.2\n${TASK_COMPLETE}`;
+    expect(parseCodexTail(text)).toBe('step-finish');
+  });
+
+  it('尾行非 task_complete → tool（回合未完成）', () => {
+    const text = '{"type":"event_msg","payload":{"type":"user_message"}}';
+    expect(parseCodexTail(text)).toBe('tool');
+    expect(parseCodexTail('{"type":"response_item","payload":{"type":"message"}}')).toBe('tool');
+  });
+
+  it('空/全非 JSON → null', () => {
+    expect(parseCodexTail('')).toBeNull();
+    expect(parseCodexTail('not json\nalso not json')).toBeNull();
+  });
+});
+
+describe('stripExtendedPathPrefix', () => {
+  it('剥离 \\\\?\\ 前缀；普通路径/非字符串容错', () => {
+    expect(stripExtendedPathPrefix(String.raw`\\?\F:\桌宠A\DeskPet`)).toBe('F:\\桌宠A\\DeskPet');
+    expect(stripExtendedPathPrefix('F:\\normal')).toBe('F:\\normal');
+    expect(stripExtendedPathPrefix(undefined)).toBe('');
+  });
+});
+
+describe('createCodexAdapter', () => {
+  const home = 'C:/fake-codex';
+  const uuid = '019e3e9b-c546-7920-8f85-3ef12965df39';
+
+  function makeAdapter({ fsx, threadsRows, tailByFile }) {
+    let sliceCalls = 0;
+    const sliceCounts = () => sliceCalls;
+    const Database = function FakeDb() {
+      return {
+        prepare(sql) {
+          if (/FROM threads/.test(sql)) return { all: () => threadsRows };
+          throw new Error('unexpected sql: ' + sql);
+        },
+        close() {}
+      };
+    };
+    const readFileSlice = (file) => {
+      sliceCalls += 1;
+      return Buffer.from(tailByFile[file] || '', 'utf8');
+    };
+    const adapter = createCodexAdapter({ home, Database, readFileSlice, ...fsx });
+    return { adapter, sliceCounts };
+  }
+
+  const stateFs = {
+    readdirSync(p) {
+      if (p === home) return ['state_4.sqlite', 'state_5.sqlite', 'logs_2.sqlite'];
+      const e = new Error('ENOENT: ' + p);
+      e.code = 'ENOENT';
+      throw e;
+    },
+    statSync: () => ({ mtimeMs: 0 })
+  };
+
+  it('threads 表查询：标题/cwd 剥前缀/秒列时间 + rollout 尾行映射', () => {
+    const rollout = 'C:/fake-codex/roll/1.jsonl';
+    const threadsRows = [{
+      id: uuid, title: '你能检查下代码么', first_user_message: null,
+      cwd: String.raw`\\?\F:\桌宠A\DeskPet`,
+      created_at: 1779167463, created_at_ms: null,
+      updated_at: 1779167704, updated_at_ms: null,
+      rollout_path: rollout
+    }];
+    const { adapter, sliceCounts } = makeAdapter({
+      fsx: stateFs,
+      threadsRows,
+      tailByFile: { [rollout]: `{"type":"event_msg","payload":{"type":"task_complete"}}\n` }
+    });
+    const rows = adapter.listSessions();
+    expect(rows).toHaveLength(1);
+    expect(rows[0].id).toBe(uuid);
+    expect(rows[0].title).toBe('你能检查下代码么');
+    expect(rows[0].directory).toBe('F:\\桌宠A\\DeskPet'); // \\?\ 前缀已剥离
+    expect(rows[0].timeUpdated).toBe(1779167704 * 1000); // 无 _ms 列 → 秒 ×1000
+    expect(rows[0].lastPartType).toBe('step-finish');
+    expect(classifySession(rows[0], NOW, ACTIVE_MS)).toBe('completed'); // 静止 + 完成回合
+    // 未更新的会话不重读 rollout 尾
+    adapter.listSessions();
+    expect(sliceCounts()).toBe(1);
+  });
+
+  it('updated_at_ms 毫秒列优先', () => {
+    const threadsRows = [{
+      id: 'x1', title: 'T', first_user_message: null, cwd: 'C:/x',
+      created_at: 1, created_at_ms: 1111, updated_at: 2, updated_at_ms: 2222,
+      rollout_path: null
+    }];
+    const { adapter } = makeAdapter({ fsx: stateFs, threadsRows, tailByFile: {} });
+    const rows = adapter.listSessions();
+    expect(rows[0].timeUpdated).toBe(2222);
+    expect(rows[0].timeCreated).toBe(1111);
+    expect(rows[0].lastPartType).toBeNull(); // 无 rollout → 老会话语义
+  });
+
+  it('无 state 库时回退扫描 sessions 目录（uuid 提取 + 时间戳标题）', () => {
+    const daysDir = path.join(home, 'sessions', '2026', '05', '19');
+    const file = path.join(daysDir, `rollout-2026-05-19T13-00-56-${uuid}.jsonl`);
+    const fsx = {
+      readdirSync(p, opts) {
+        const names = {
+          [home]: [],
+          [path.join(home, 'sessions')]: ['2026'],
+          [path.join(home, 'sessions', '2026')]: ['05'],
+          [path.join(home, 'sessions', '2026', '05')]: ['19'],
+          [daysDir]: [path.basename(file)]
+        };
+        if (!(p in names)) {
+          const e = new Error('ENOENT: ' + p);
+          e.code = 'ENOENT';
+          throw e;
+        }
+        return opts && opts.withFileTypes
+          ? names[p].map(name => ({ name, isDirectory: () => true }))
+          : names[p];
+      },
+      statSync: (p) => (p === file ? { mtimeMs: NOW - 5000 } : (() => {
+        const e = new Error('ENOENT');
+        e.code = 'ENOENT';
+        throw e;
+      })())
+    };
+    const adapter = createCodexAdapter({
+      home,
+      Database: null, // 回退路径不应触碰 SQLite
+      readdirSync: fsx.readdirSync,
+      statSync: fsx.statSync,
+      readFileSlice: () => Buffer.from('{"type":"event_msg","payload":{"type":"task_complete"}}\n', 'utf8')
+    });
+    const rows = adapter.listSessions();
+    expect(rows).toHaveLength(1);
+    expect(rows[0].id).toBe(uuid); // 完整 uuid（时间戳含 - 不被误切）
+    expect(rows[0].title).toBe('2026-05-19T13-00-56');
+    expect(rows[0].timeUpdated).toBe(NOW - 5000);
+    expect(rows[0].lastPartType).toBe('step-finish');
+  });
+});
+
+// ============ Claude Code 适配器 ============
+
+describe('parseClaudeHead', () => {
+  it('summary 行标题优先；补齐 sessionId/cwd/timestamp', () => {
+    const lines = [
+      JSON.stringify({ type: 'summary', summary: '修复登录bug', sessionId: 'sid-1', cwd: 'F:\\Proj' }),
+      JSON.stringify({ type: 'user', message: { content: 'help' }, timestamp: '2026-08-01T00:00:00.000Z' })
+    ];
+    const head = parseClaudeHead(lines);
+    expect(head.title).toBe('修复登录bug');
+    expect(head.sessionId).toBe('sid-1');
+    expect(head.cwd).toBe('F:\\Proj');
+    expect(head.timeCreated).toBe(Date.parse('2026-08-01T00:00:00.000Z'));
+  });
+
+  it('无 summary 时用首条用户消息（字符串/数组内容均可）', () => {
+    const a = parseClaudeHead([
+      JSON.stringify({ type: 'user', message: { content: '帮我看看插件' }, sessionId: 's', cwd: 'C:/a' })
+    ]);
+    expect(a.title).toBe('帮我看看插件');
+    const b = parseClaudeHead([
+      JSON.stringify({ type: 'user', message: { content: [{ type: 'text', text: '数组消息' }] } })
+    ]);
+    expect(b.title).toBe('数组消息');
+  });
+
+  it('工具结果与系统注入文本不作标题；空输入容错', () => {
+    const lines = [
+      JSON.stringify({ type: 'user', message: { content: [{ type: 'tool_result', content: 'ok' }] } }),
+      JSON.stringify({ type: 'user', message: { content: '<system-reminder>内部标记</system-reminder>' } }),
+      JSON.stringify({ type: 'assistant', message: { content: '回复' } })
+    ];
+    expect(parseClaudeHead(lines).title).toBe('');
+    expect(parseClaudeHead([]).title).toBe('');
+    expect(parseClaudeHead(null).sessionId).toBe('');
+  });
+});
+
+describe('parseClaudeTail', () => {
+  it('result/success → step-finish；result/error_* → error；其他 → tool', () => {
+    expect(parseClaudeTail('{"type":"result","subtype":"success"}\n')).toBe('step-finish');
+    expect(parseClaudeTail('{"type":"result","subtype":"error_max_turns"}\n')).toBe('error');
+    expect(parseClaudeTail('{"type":"assistant","message":{}}\n')).toBe('tool');
+    expect(parseClaudeTail('')).toBeNull();
+  });
+
+  it('首行半截被丢弃', () => {
+    const text = '{"type":"result","subtype":"succ\n{"type":"result","subtype":"success"}';
+    expect(parseClaudeTail(text)).toBe('step-finish');
+  });
+});
+
+describe('createClaudeAdapter', () => {
+  const home = 'C:/fake-claude';
+  const projectsRoot = path.join(home, 'projects');
+  const projDir = path.join(projectsRoot, 'F--MyProj');
+  const f1 = path.join(projDir, '11111111-1111-1111-1111-111111111111.jsonl');
+  const f2 = path.join(projDir, '22222222-2222-2222-2222-222222222222.jsonl');
+
+  function makeAdapter({ mtime1 = NOW - 5000, mtime2 = NOW - 700000 } = {}) {
+    let sliceCalls = 0;
+    const headText = {
+      [f1]: [
+        JSON.stringify({ type: 'user', message: { content: '运行中会话' },
+          sessionId: 'sess-1', cwd: 'F:\\MyProj', timestamp: '2026-08-20T00:00:00.000Z' })
+      ].join('\n') + '\n',
+      [f2]: [
+        JSON.stringify({ type: 'summary', summary: '旧会话摘要',
+          sessionId: 'sess-2', cwd: 'F:\\MyProj', timestamp: '2026-08-01T00:00:00.000Z' })
+      ].join('\n') + '\n'
+    };
+    const tailText = {
+      [f1]: '{"type":"assistant","message":{"content":"working"}}\n',
+      [f2]: '{"type":"result","subtype":"error_during_execution"}\n'
+    };
+    const adapter = createClaudeAdapter({
+      home,
+      readdirSync(p, opts) {
+        if (p === projectsRoot) return opts && opts.withFileTypes
+          ? [projDir].map((d) => ({ name: path.basename(d), isDirectory: () => true }))
+          : [projDir];
+        if (p === projDir) return [path.basename(f1), path.basename(f2)];
+        const e = new Error('ENOENT: ' + p);
+        e.code = 'ENOENT';
+        throw e;
+      },
+      statSync(p) {
+        const times = { [f1]: mtime1, [f2]: mtime2 };
+        if (!(p in times)) {
+          const e = new Error('ENOENT: ' + p);
+          e.code = 'ENOENT';
+          throw e;
+        }
+        return { mtimeMs: times[p] };
+      },
+      readFileSlice(file, start) {
+        sliceCalls += 1;
+        return Buffer.from(start === 0 ? headText[file] : tailText[file], 'utf8');
+      }
+    });
+    return { adapter, sliceCount: () => sliceCalls };
+  }
+
+  it('扫描 projects 布局：首行元信息 + 尾行状态映射 + mtime 排序', () => {
+    const { adapter } = makeAdapter();
+    const rows = adapter.listSessions();
+    expect(rows).toHaveLength(2);
+    expect(rows[0].id).toBe('sess-1');
+    expect(rows[0].title).toBe('运行中会话');
+    expect(rows[0].directory).toBe('F:\\MyProj');
+    expect(rows[0].timeUpdated).toBe(NOW - 5000);
+    expect(rows[0].lastPartType).toBe('tool');
+    expect(classifySession(rows[0], NOW, ACTIVE_MS)).toBe('active');
+    expect(rows[1].id).toBe('sess-2');
+    expect(rows[1].title).toBe('旧会话摘要');
+    expect(rows[1].lastPartType).toBe('error');
+    expect(classifySession(rows[1], NOW, ACTIVE_MS)).toBe('interrupted');
+  });
+
+  it('mtime 未变的文件命中缓存不重读', () => {
+    const { adapter, sliceCount } = makeAdapter();
+    adapter.listSessions();
+    expect(sliceCount()).toBe(4); // 2 文件 × 首+尾
+    adapter.listSessions();
+    expect(sliceCount()).toBe(4);
+  });
+
+  it('projects 目录不存在 → 空列表（未安装静默降级）', () => {
+    const adapter = createClaudeAdapter({
+      home,
+      readdirSync() {
+        const e = new Error('ENOENT');
+        e.code = 'ENOENT';
+        throw e;
+      }
+    });
+    expect(adapter.listSessions()).toEqual([]);
+    expect(typeof adapter.lastError).toBe('string');
   });
 });
 

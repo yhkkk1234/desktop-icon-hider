@@ -1,9 +1,15 @@
 // agent-monitor.js - 监控本地 AI agent（harness）正在运行的会话状态
-// 架构：harness 适配器接口 + 轮询器。
-// 首个实现：opencode（只读 SQLite，~/.local/share/opencode/opencode.db）
+// 架构：harness 适配器接口 + 轮询器。支持的 harness（未安装时适配器静默降级为空列表）：
+// - opencode：只读 SQLite，~/.local/share/opencode/opencode.db
+// - ZCode：只读 SQLite，~/.zcode/cli/db/db.sqlite（schema 与 opencode 同族，复用同一工厂）
+// - Antigravity（谷歌反重力）：~/.gemini/antigravity/conversations/ 每会话一个 SQLite
+// - Codex：~/.codex/state_*.sqlite 的 threads 表 + rollout JSONL 尾行
+// - Claude Code：~/.claude/projects/**/*.jsonl 转录文件
+// - dsh（DeepSeek Harness）：~/.dsh 投影缓存 JSON + 转录 mtime
 // 状态判定原理：会话每次有活动（用户输入/AI 流式输出/工具调用）都会刷新
-// session.time_updated；超过活跃阈值视为"静止"。静止后看最后一条 part 类型
-// （step-finish = 正常完成一轮，其余 = 被中断），把"完成"与"中断"区分开。
+// 会话的最后活动时间（DB time_updated 或文件 mtime）；超过活跃阈值视为"静止"。
+// 静止后看最后一条记录的类型（回合正常结束 = completed，其余 = interrupted），
+// 把"完成"与"中断"区分开。各适配器把自家数据源映射到该统一语义。
 const path = require('path');
 const os = require('os');
 const fs = require('fs');
@@ -485,45 +491,54 @@ function createOpencodeServerStatusProvider(options = {}) {
  *   statusProvider：createOpencodeServerStatusProvider 产物，用于 server 权威状态校准
  * @returns {{ id: string, displayName: string, listSessions: Function, getServerStatuses: Function }}
  */
-function createOpencodeAdapter(options = {}) {
+// ============ 通用 SQLite 会话适配器（opencode / ZCode 共用） ============
+// 两者 schema 同族：session(id,title,directory[,agent],time_created,time_updated,
+// time_archived[,task_type]) + part(session_id,time_created,data JSON 含 type 字段，
+// step-finish = AI 完成一轮输出)。差异仅在库路径 / 列清单 / 过滤条件。
+
+/**
+ * 创建通用 SQLite 会话适配器（依赖注入便于测试）
+ * @param {{ id?: string, displayName?: string, dbPath?: string, sessionColumns?: string,
+ *   sessionFilter?: string, Database?: ?Function, statusProvider?: ?Object }} options
+ *   Database：显式传入（含 null=禁用）时尊重调用方；未传时自动加载 better-sqlite3
+ * @returns {{ id: string, displayName: string, lastError: string,
+ *   listSessions: Function, getServerStatuses: Function, setStatusProvider: Function }}
+ */
+function createSqliteSessionAdapter(options = {}) {
+  const adapterId = options.id || 'opencode';
+  const displayName = options.displayName || adapterId;
   const dbPath = options.dbPath || getOpencodeDbPath();
-  // 显式传入 Database（含 null=禁用）时尊重调用方；未传时才自动加载
+  // 查询列清单：zcode 无 agent 列，由调用方自定义
+  const sessionColumns = options.sessionColumns ||
+    's.id, s.title, s.directory, s.agent, s.time_created, s.time_updated';
+  // 追加过滤条件（如 zcode 隐藏内部子代理会话）
+  const sessionFilter = options.sessionFilter || '';
   const DB = Object.prototype.hasOwnProperty.call(options, 'Database') ? options.Database : getDatabaseModule();
   let statusProvider = options.statusProvider || null;
   let db = null;
   let lastError = null;
   let stmtSession = null;
-  let stmtBatchPart = null;
   let stmtSinglePart = null;
   // last_part 缓存：静止会话的 timeUpdated 不变 → 不必重查 part 表。
-  // part 表无 (session_id, time_created) 索引，直接子查询需全表扫描（11 万行），
+  // part 表无 (session_id, time_created) 索引时直接子查询需全表扫描（11 万行），
   // 实测原查询单次 700ms，会阻塞主进程导致 UI 卡顿。
   const lastPartCache = new Map(); // id -> { timeUpdated, data }
   let batchLoaded = false;
 
   function getStatements() {
-    if (stmtSession) return { stmtSession, stmtBatchPart, stmtSinglePart };
+    if (stmtSession) return { stmtSession, stmtSinglePart };
     stmtSession = db.prepare(
-      `SELECT s.id, s.title, s.directory, s.agent, s.time_created, s.time_updated
+      `SELECT ${sessionColumns}
        FROM session s
-       WHERE s.time_archived IS NULL
+       WHERE s.time_archived IS NULL ${sessionFilter}
        ORDER BY s.time_updated DESC
        LIMIT ?`
-    );
-    // 首次全量：一条 IN + GROUP BY 取全部会话的最后 part（一次全表扫描 ~90ms，仅启动时一次）
-    const ph = new Array(SESSION_LIMIT).fill('?').join(',');
-    stmtBatchPart = db.prepare(
-      `SELECT p.session_id AS sid, p.data AS data
-       FROM part p
-       JOIN (SELECT session_id, MAX(time_created) AS mt FROM part
-             WHERE session_id IN (${ph}) GROUP BY session_id) m
-         ON p.session_id = m.session_id AND p.time_created = m.mt`
     );
     // 增量：单个会话的最后 part（命中页缓存，毫秒级）
     stmtSinglePart = db.prepare(
       'SELECT data FROM part WHERE session_id = ? ORDER BY time_created DESC LIMIT 1'
     );
-    return { stmtSession, stmtBatchPart, stmtSinglePart };
+    return { stmtSession, stmtSinglePart };
   }
 
   function openDb() {
@@ -547,15 +562,34 @@ function createOpencodeAdapter(options = {}) {
       try { db.close(); } catch (e) { /* 忽略 */ }
       db = null;
       stmtSession = null;
-      stmtBatchPart = null;
       stmtSinglePart = null;
     }
   }
 
+  /** 首次全量：一条 IN + GROUP BY 取全部会话的最后 part（一次全表扫描，仅启动时一次）。
+   * 占位符按实际行数构建——固定上限个占位符在会话数不足时会因绑定参数数量
+   * 不匹配抛错（better-sqlite3 严格校验），导致适配器永远返回空列表。 */
+  function queryBatchParts(rows) {
+    const partData = new Map();
+    if (rows.length === 0) return partData;
+    const ph = new Array(rows.length).fill('?').join(',');
+    const stmt = db.prepare(
+      `SELECT p.session_id AS sid, p.data AS data
+       FROM part p
+       JOIN (SELECT session_id, MAX(time_created) AS mt FROM part
+             WHERE session_id IN (${ph}) GROUP BY session_id) m
+         ON p.session_id = m.session_id AND p.time_created = m.mt`
+    );
+    for (const p of stmt.all(...rows.map(r => r.id))) partData.set(p.sid, p.data);
+    return partData;
+  }
+
   return {
-    id: 'opencode',
-    displayName: 'opencode',
-    lastError,
+    id: adapterId,
+    displayName,
+    get lastError() {
+      return lastError;
+    },
 
     /** 只读查询最近活跃会话（含静止的已完成会话，由渲染端按已读过滤）。
      * 性能：session 表查询 <1ms；part 表仅对 timeUpdated 变化的会话增量查询，
@@ -563,7 +597,7 @@ function createOpencodeAdapter(options = {}) {
     listSessions() {
       if (!openDb()) return [];
       try {
-        const { stmtSession: ss, stmtBatchPart: bp, stmtSinglePart: sp } = getStatements();
+        const { stmtSession: ss, stmtSinglePart: sp } = getStatements();
         const rows = ss.all(SESSION_LIMIT);
 
         // 找出 last_part 缓存失效的会话（timeUpdated 变化或首次出现）
@@ -572,14 +606,14 @@ function createOpencodeAdapter(options = {}) {
           return !cached || cached.timeUpdated !== r.time_updated;
         });
 
-        const partData = new Map();
+        let partData;
         if (!batchLoaded) {
           // 首次：批量查询，一次扫全表
-          const batchRows = bp.all(...rows.map(r => r.id));
-          for (const p of batchRows) partData.set(p.sid, p.data);
+          partData = queryBatchParts(rows);
           batchLoaded = true;
         } else {
           // 增量：只查变化会话（通常 1-3 个）
+          partData = new Map();
           for (const r of stale) {
             const p = sp.get(r.id);
             partData.set(r.id, p ? p.data : null);
@@ -637,6 +671,53 @@ function createOpencodeAdapter(options = {}) {
       statusProvider = provider || null;
     }
   };
+}
+
+/**
+ * 创建 opencode 适配器（只读 SQLite，详见通用工厂注释）
+ * @param {{ dbPath?: string, Database?: ?Function, statusProvider?: ?Object }} options
+ */
+function createOpencodeAdapter(options = {}) {
+  return createSqliteSessionAdapter({
+    id: 'opencode',
+    displayName: 'opencode',
+    dbPath: options.dbPath || getOpencodeDbPath(),
+    ...(Object.prototype.hasOwnProperty.call(options, 'Database') ? { Database: options.Database } : {}),
+    statusProvider: options.statusProvider
+  });
+}
+
+// ============ ZCode 适配器 ============
+// ZCode 的会话库与 opencode 同族（session/part 表、step-finish part 类型、
+// epoch 毫秒时间戳、WAL 只读安全），直接复用通用 SQLite 工厂。差异：
+// - 路径：~/.zcode/cli/db/db.sqlite（ZCODE_HOME 环境变量可覆盖根目录）
+// - session 无 agent 列
+// - session.task_type 区分主会话（interactive）与内部子代理（subagent_child）：
+//   子代理的 title 是原始任务 prompt，全部展示会刷屏，一律隐藏
+
+/**
+ * ZCode 会话数据库路径
+ * @returns {string}
+ */
+function getZcodeDbPath() {
+  const envHome = process.env.ZCODE_HOME && String(process.env.ZCODE_HOME).trim();
+  return path.join(envHome || path.join(os.homedir(), '.zcode'), 'cli', 'db', 'db.sqlite');
+}
+
+/**
+ * 创建 ZCode 适配器（依赖注入便于测试）
+ * @param {{ dbPath?: string, Database?: ?Function }} options
+ * @returns {{ id: string, displayName: string, lastError: string, listSessions: Function }}
+ */
+function createZcodeAdapter(options = {}) {
+  return createSqliteSessionAdapter({
+    id: 'zcode',
+    displayName: 'ZCode',
+    dbPath: options.dbPath || getZcodeDbPath(),
+    sessionColumns: 's.id, s.title, s.directory, s.time_created, s.time_updated',
+    sessionFilter: 'AND s.task_type = \'interactive\'',
+    ...(Object.prototype.hasOwnProperty.call(options, 'Database') ? { Database: options.Database } : {})
+  });
 }
 
 // ============ DeepSeek Harness (dsh) 适配器 ============
@@ -866,6 +947,639 @@ function createDshAdapter(options = {}) {
   };
 }
 
+// ============ Antigravity（谷歌反重力）适配器 ============
+// 数据源：~/.gemini/antigravity/conversations/<会话uuid>.db —— 每个会话一个独立
+// SQLite 库（10-30MB）。库内 steps 表无时间戳列、BLOB 为 protobuf（无正式 schema）：
+// - 活跃度：db 文件 mtime 即该会话最后活动时间（实测与写入精确同步）
+// - 状态：steps 末行 status —— 3=步骤完成（主流终态，非活跃会话的末行几乎都是
+//   (15,3)）/ 9=运行中瞬态 / 2,6,7=异常态（疑似错误或取消）。映射为统一 part
+//   类型后走共享 classifySession
+// - 标题（尽力而为回退链）：brain/<uuid>/implementation_plan.md.metadata.json 的
+//   summary → trajectory_metadata_blob 明文扫描出的工作区目录名 + 时间 → uuid
+// 性能：每轮仅 stat 全部库文件（个位数，微秒级），mtime 未变的库直接命中内存
+// 缓存，稳态零 SQLite 打开。只解析最近 mtime 的 30 个库，更老的会话库不碰。
+const ANTIGRAVITY_CONVERSATION_LIMIT = 30;
+
+/**
+ * Antigravity 数据目录
+ * @returns {string}
+ */
+function getAntigravityHomePath() {
+  return path.join(os.homedir(), '.gemini', 'antigravity');
+}
+
+/**
+ * steps 末行 status → 统一 part 类型语义（供 classifySession）：
+ * 3（完成）→ step-finish；9（运行中）→ step-start；2/6/7（异常态）→ error；
+ * 未知/无 steps → null（老会话语义 = 已完成）
+ * @param {?number} status
+ * @returns {?string}
+ */
+function mapAntigravityStepStatus(status) {
+  if (status === 3) return 'step-finish';
+  if (status === 9) return 'step-start';
+  if (status === 2 || status === 6 || status === 7) return 'error';
+  return null;
+}
+
+/**
+ * 从 protobuf BLOB 中明文扫描 file:/// 工作区 URI（protobuf 文本字段是明文字节，
+ * 无正式 schema，按 latin1 逐字节扫描避免多字节字符被截断）
+ * @param {Buffer} blob
+ * @returns {?string} 形如 f:/MyGame01 的路径；未找到返回 null
+ */
+function extractWorkspaceUri(blob) {
+  if (!blob || !blob.length) return null;
+  const m = /file:\/\/\/[A-Za-z]:[A-Za-z0-9%./_+-]+/.exec(blob.toString('latin1'));
+  if (!m) return null;
+  // 尾部点号多为 protobuf 后续字段的字节（0x2E 恰是 '.'），剪掉；Windows 路径本身不能以点结尾
+  const raw = m[0].slice('file:///'.length).replace(/\.+$/, '');
+  try {
+    return decodeURIComponent(raw);
+  } catch (e) {
+    return raw;
+  }
+}
+
+/** 短日期时间（用于标题回退，纯数字避免 locale 差异） */
+function formatShortDateTime(ms) {
+  const d = new Date(ms);
+  const pad = (n) => String(n).padStart(2, '0');
+  return `${d.getMonth() + 1}-${d.getDate()} ${pad(d.getHours())}:${pad(d.getMinutes())}`;
+}
+
+/**
+ * 创建 Antigravity 适配器（依赖注入便于测试）
+ * @param {{ home?: string, Database?: ?Function, readdirSync?: Function,
+ *   statSync?: Function, readFileSync?: Function }} options
+ * @returns {{ id: string, displayName: string, lastError: string, listSessions: Function }}
+ */
+function createAntigravityAdapter(options = {}) {
+  const DB = Object.prototype.hasOwnProperty.call(options, 'Database') ? options.Database : getDatabaseModule();
+  const readdirSync = options.readdirSync || fs.readdirSync;
+  const statSync = options.statSync || fs.statSync;
+  const readFileSync = options.readFileSync || ((p) => fs.readFileSync(p, 'utf8'));
+  let home = typeof options.home === 'string' && options.home.trim() ? options.home.trim() : '';
+  let lastError = null;
+  // uuid → { mtimeMs, row }：mtime 未变不重开库（稳态零 SQLite 打开）
+  const cache = new Map();
+
+  function homePath() {
+    return home || getAntigravityHomePath();
+  }
+
+  /** 读取 brain 计划摘要作为标题（尽力而为，任何失败返回 null） */
+  function readBrainSummary(uuid) {
+    try {
+      const meta = JSON.parse(readFileSync(
+        path.join(homePath(), 'brain', uuid, 'implementation_plan.md.metadata.json')));
+      const summary = meta && typeof meta.summary === 'string' ? meta.summary.trim() : '';
+      return summary ? summary.slice(0, 80) : null;
+    } catch (e) {
+      return null;
+    }
+  }
+
+  /** 打开单个会话库解析：末步 status + 工作区路径（blob 不变，有旧值时不重查） */
+  function parseConversationDb(file, prevDirectory) {
+    let db = null;
+    try {
+      db = new DB(file, { readonly: true, fileMustExist: true });
+      const last = db.prepare('SELECT status FROM steps ORDER BY idx DESC LIMIT 1').get();
+      let directory = prevDirectory || '';
+      if (!directory) {
+        try {
+          const row = db.prepare('SELECT data FROM trajectory_metadata_blob WHERE id = \'main\'').get();
+          directory = row ? (extractWorkspaceUri(row.data) || '') : '';
+        } catch (e) { /* 无 blob 表时保持空 */ }
+      }
+      return { lastPartType: mapAntigravityStepStatus(last ? last.status : null), directory };
+    } finally {
+      if (db) {
+        try { db.close(); } catch (e) { /* 忽略 */ }
+      }
+    }
+  }
+
+  return {
+    id: 'antigravity',
+    displayName: 'Antigravity',
+    get lastError() {
+      return lastError;
+    },
+
+    /**
+     * 只读查询 Antigravity 会话（conversations 目录 mtime + 增量开库）。
+     * @returns {Array<Object>} 规范化会话行（无自带 status，由轮询器用共享规则判定）
+     */
+    listSessions() {
+      lastError = null;
+      const convRoot = path.join(homePath(), 'conversations');
+      let names;
+      try {
+        names = readdirSync(convRoot);
+      } catch (e) {
+        lastError = e.message; // 未安装/目录不存在 → 静默空列表
+        return [];
+      }
+      const dbs = [];
+      for (const name of names) {
+        if (!name.endsWith('.db')) continue;
+        try {
+          const st = statSync(path.join(convRoot, name));
+          dbs.push({ uuid: name.slice(0, -3), file: path.join(convRoot, name), mtimeMs: st.mtimeMs });
+        } catch (e) { /* 文件竞争消失，跳过 */ }
+      }
+      dbs.sort((a, b) => b.mtimeMs - a.mtimeMs);
+      const top = dbs.slice(0, ANTIGRAVITY_CONVERSATION_LIMIT);
+      const rows = [];
+      for (const info of top) {
+        const cached = cache.get(info.uuid);
+        if (cached && cached.mtimeMs === info.mtimeMs) {
+          rows.push(cached.row);
+          continue;
+        }
+        try {
+          const parsed = parseConversationDb(info.file, cached ? cached.row.directory : '');
+          const folder = parsed.directory.split(/[\\/]/).filter(Boolean).pop() || '';
+          const title = readBrainSummary(info.uuid) ||
+            (folder ? `${folder} · ${formatShortDateTime(info.mtimeMs)}`
+              : `Antigravity ${info.uuid.slice(0, 8)}`);
+          const row = {
+            id: info.uuid,
+            title,
+            directory: parsed.directory,
+            timeUpdated: info.mtimeMs,
+            // 库内无创建时间，用 mtime 近似（渲染端保留期只看 timeUpdated）
+            timeCreated: info.mtimeMs,
+            lastPartType: parsed.lastPartType
+          };
+          cache.set(info.uuid, { mtimeMs: info.mtimeMs, row });
+          rows.push(row);
+        } catch (e) {
+          // 单个库解析失败（占用/表结构变化/原生模块缺失）：沿用旧缓存，无缓存则跳过
+          if (cached) rows.push(cached.row);
+        }
+      }
+      // 清理已不在结果中的缓存（会话被删除/跌出最近范围）
+      const alive = new Set(top.map(d => d.uuid));
+      for (const key of cache.keys()) {
+        if (!alive.has(key)) cache.delete(key);
+      }
+      rows.sort((a, b) => b.timeUpdated - a.timeUpdated);
+      return rows;
+    }
+  };
+}
+
+// ============ Codex 适配器 ============
+// 数据源：~/.codex/state_*.sqlite 的 threads 表（id/title/cwd/updated_at[_ms]/
+// archived/rollout_path；实测 updated_at 与 rollout 尾行 completed_at 精确同步）。
+// threads 无 status 列：活跃 = updated_at 在活跃窗口内；回合是否正常结束看
+// rollout JSONL 尾行（event_msg + payload.type=task_complete → 等价 step-finish）。
+// state 库不存在时（旧版本）回退扫描 sessions/YYYY/MM/DD/rollout-*.jsonl。
+// 注意 cwd 形如 \\?\F:\xx（Windows 扩展长度路径前缀），展示前需剥离。
+
+/**
+ * Codex 数据目录
+ * @returns {string}
+ */
+function getCodexHomePath() {
+  return path.join(os.homedir(), '.codex');
+}
+
+/**
+ * 剥离 Windows 扩展长度路径前缀（\\?\）
+ * @param {string} cwd
+ * @returns {string}
+ */
+function stripExtendedPathPrefix(cwd) {
+  if (typeof cwd !== 'string') return '';
+  return cwd.replace(/^\\\\\?\\/, '');
+}
+
+/**
+ * 读文件切片：start >= 0 时从偏移 start 读 length 字节；start < 0 时从文件尾部
+ * 往回取 |start| 字节（length 忽略）。大 JSONL 只解析首/尾记录时使用，
+ * 避免整文件读入（转录可达数十 MB）。
+ * @param {string} file
+ * @param {number} start
+ * @param {number} length
+ * @returns {Buffer}
+ */
+function defaultReadFileSlice(file, start, length) {
+  const fd = fs.openSync(file, 'r');
+  try {
+    const size = fs.fstatSync(fd).size;
+    const from = start < 0 ? Math.max(0, size + start) : Math.min(start, size);
+    const len = Math.min(start < 0 ? size - from : length, size - from);
+    if (len <= 0) return Buffer.alloc(0);
+    const buf = Buffer.alloc(len);
+    fs.readSync(fd, buf, 0, len, from);
+    return buf;
+  } finally {
+    fs.closeSync(fd);
+  }
+}
+
+/**
+ * 解析 rollout JSONL 尾部文本的最后一条完整记录 → 统一 part 类型。
+ * @param {string} text 尾部字节文本（首行可能不完整，会被丢弃）
+ * @returns {?string} 'step-finish'（task_complete）| 'tool'（回合未完成）| null（无记录）
+ */
+function parseCodexTail(text) {
+  if (!text) return null;
+  // 从尾行向前找第一条可解析记录；被截断的首行 JSON.parse 失败会被自然跳过
+  const lines = text.split('\n');
+  for (let i = lines.length - 1; i >= 0; i--) {
+    const line = lines[i].trim();
+    if (!line) continue;
+    try {
+      const obj = JSON.parse(line);
+      if (obj && obj.type === 'event_msg' && obj.payload &&
+          obj.payload.type === 'task_complete') {
+        return 'step-finish';
+      }
+      return 'tool';
+    } catch (e) { /* 半行/非 JSON 继续向前找 */ }
+  }
+  return null;
+}
+
+/**
+ * 创建 Codex 适配器（依赖注入便于测试）
+ * @param {{ home?: string, Database?: ?Function, readdirSync?: Function,
+ *   statSync?: Function, readFileSlice?: Function }} options
+ * @returns {{ id: string, displayName: string, lastError: string, listSessions: Function }}
+ */
+function createCodexAdapter(options = {}) {
+  const DB = Object.prototype.hasOwnProperty.call(options, 'Database') ? options.Database : getDatabaseModule();
+  const readdirSync = options.readdirSync || fs.readdirSync;
+  const statSync = options.statSync || fs.statSync;
+  const readFileSlice = options.readFileSlice || defaultReadFileSlice;
+  let home = typeof options.home === 'string' && options.home.trim() ? options.home.trim() : '';
+  let db = null;
+  let stmtThreads = null;
+  let lastError = null;
+  // id → { updatedAt, lastPartType }：rollout 尾行只在会话更新后重读
+  const tailCache = new Map();
+
+  function homePath() {
+    return home || getCodexHomePath();
+  }
+
+  /** 选版本号最高的 state_*.sqlite（state_4/state_5 并存时取新，兼容未来版本） */
+  function findStateDb() {
+    let entries;
+    try {
+      entries = readdirSync(homePath());
+    } catch (e) {
+      return null;
+    }
+    let best = null;
+    let bestVer = -1;
+    for (const name of entries) {
+      const m = /^state_(\d+)\.sqlite$/.exec(name);
+      if (!m) continue;
+      const ver = parseInt(m[1], 10);
+      if (ver > bestVer) {
+        bestVer = ver;
+        best = path.join(homePath(), name);
+      }
+    }
+    return best;
+  }
+
+  function openDb(statePath) {
+    if (db) return true;
+    if (!DB) {
+      lastError = 'better-sqlite3 未加载（原生模块缺失）';
+      return false;
+    }
+    try {
+      db = new DB(statePath, { readonly: true, fileMustExist: true });
+      return true;
+    } catch (e) {
+      lastError = e.message;
+      return false;
+    }
+  }
+
+  function closeDb() {
+    if (db) {
+      try { db.close(); } catch (e) { /* 忽略 */ }
+      db = null;
+      stmtThreads = null;
+    }
+  }
+
+  /** threads 行时间：优先毫秒列，缺失时秒列 ×1000 */
+  function rowTimeUpdated(r) {
+    if (Number.isFinite(r.updated_at_ms) && r.updated_at_ms > 0) return r.updated_at_ms;
+    return Number.isFinite(r.updated_at) ? r.updated_at * 1000 : 0;
+  }
+
+  /** rollout 尾行 → part 类型（带 updatedAt 缓存，未更新的会话不重读文件） */
+  function lastPartTypeOf(r) {
+    const updatedAt = rowTimeUpdated(r);
+    const cached = tailCache.get(r.id);
+    if (cached && cached.updatedAt === updatedAt) return cached.lastPartType;
+    let lastPartType = null;
+    if (typeof r.rollout_path === 'string' && r.rollout_path) {
+      try {
+        lastPartType = parseCodexTail(readFileSlice(r.rollout_path, -4096, 0).toString('utf8'));
+      } catch (e) { /* 文件被移动/删除 → null（按老会话处理） */ }
+    }
+    tailCache.set(r.id, { updatedAt, lastPartType });
+    return lastPartType;
+  }
+
+  /** 回退：扫描 sessions/YYYY/MM/DD/rollout-*.jsonl（无 state 库的旧版本，
+   * 标题/目录尽力而为——文件名时间戳当标题，cwd 缺失为空） */
+  function scanRollouts() {
+    const sessionsRoot = path.join(homePath(), 'sessions');
+    const found = [];
+    try {
+      for (const year of readdirSync(sessionsRoot, { withFileTypes: true })) {
+        if (!year.isDirectory()) continue;
+        for (const month of readdirSync(path.join(sessionsRoot, year.name), { withFileTypes: true })) {
+          if (!month.isDirectory()) continue;
+          const daysRoot = path.join(sessionsRoot, year.name, month.name);
+          for (const day of readdirSync(daysRoot, { withFileTypes: true })) {
+            if (!day.isDirectory()) continue;
+            const filesRoot = path.join(daysRoot, day.name);
+            for (const f of readdirSync(filesRoot)) {
+              if (!f.endsWith('.jsonl')) continue;
+              const file = path.join(filesRoot, f);
+              try {
+                found.push({ file, mtimeMs: statSync(file).mtimeMs });
+              } catch (e) { /* 文件竞争消失，跳过 */ }
+            }
+          }
+        }
+      }
+    } catch (e) {
+      lastError = e.message;
+      return [];
+    }
+    found.sort((a, b) => b.mtimeMs - a.mtimeMs);
+    const rows = [];
+    for (const f of found.slice(0, SESSION_LIMIT)) {
+      const base = path.basename(f.file, '.jsonl');
+      // 文件名内嵌完整会话 uuid（时间戳本身含 -，不能按 - 切分）
+      const idMatch = /[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}/i.exec(base);
+      const tsMatch = /^rollout-(\d{4}-\d{2}-\d{2}T\d{2}-\d{2}-\d{2})/.exec(base);
+      let lastPartType = null;
+      try {
+        lastPartType = parseCodexTail(readFileSlice(f.file, -4096, 0).toString('utf8'));
+      } catch (e) { /* 读取失败按老会话处理 */ }
+      rows.push({
+        id: idMatch ? idMatch[0] : base,
+        title: tsMatch ? tsMatch[1] : base.slice(0, 80),
+        directory: '',
+        timeUpdated: f.mtimeMs,
+        timeCreated: f.mtimeMs,
+        lastPartType
+      });
+    }
+    return rows;
+  }
+
+  return {
+    id: 'codex',
+    displayName: 'Codex',
+    get lastError() {
+      return lastError;
+    },
+
+    /**
+     * 只读查询 Codex 会话（state 库 threads 表 + rollout 尾行）。
+     * @returns {Array<Object>} 规范化会话行（无自带 status，由轮询器用共享规则判定）
+     */
+    listSessions() {
+      lastError = null;
+      const statePath = findStateDb();
+      if (!statePath) return scanRollouts();
+      if (!openDb(statePath)) return [];
+      try {
+        if (!stmtThreads) {
+          try {
+            stmtThreads = db.prepare(
+              `SELECT id, title, first_user_message, cwd, created_at, created_at_ms,
+                      updated_at, updated_at_ms, rollout_path
+               FROM threads WHERE archived = 0 ORDER BY updated_at DESC LIMIT ?`);
+          } catch (e) {
+            // 旧版本无 *_ms 列：补 NULL 保持行结构一致
+            stmtThreads = db.prepare(
+              `SELECT id, title, first_user_message, cwd, created_at, NULL AS created_at_ms,
+                      updated_at, NULL AS updated_at_ms, rollout_path
+               FROM threads WHERE archived = 0 ORDER BY updated_at DESC LIMIT ?`);
+          }
+        }
+        const rows = stmtThreads.all(SESSION_LIMIT);
+        return rows.map(r => ({
+          id: r.id,
+          title: String(r.title || r.first_user_message || '').slice(0, 80),
+          directory: stripExtendedPathPrefix(r.cwd),
+          timeUpdated: rowTimeUpdated(r),
+          timeCreated: Number.isFinite(r.created_at_ms) && r.created_at_ms > 0
+            ? r.created_at_ms
+            : (Number.isFinite(r.created_at) ? r.created_at * 1000 : 0),
+          lastPartType: lastPartTypeOf(r)
+        }));
+      } catch (e) {
+        lastError = e.message;
+        closeDb();
+        return [];
+      }
+    }
+  };
+}
+
+// ============ Claude Code 适配器 ============
+// 数据源：~/.claude/projects/<项目路径编码>/<会话uuid>.jsonl（官方标准布局）。
+// 每行 JSON 自带 sessionId/cwd/timestamp；回合结束标记 = type:'result' 行
+// （subtype success=正常完成，error_*=异常）；文件 mtime 即最后活动时间。
+// 不支持 oh-my-opencode 的 transcripts/ 变体：无完成标记，静止会话会全部
+// 误判为"被中断"，不纳入监控。
+
+const CLAUDE_HEAD_BYTES = 16384;
+const CLAUDE_TAIL_BYTES = 4096;
+
+/**
+ * Claude Code 数据目录
+ * @returns {string}
+ */
+function getClaudeHomePath() {
+  return path.join(os.homedir(), '.claude');
+}
+
+/**
+ * 解析 jsonl 头部行数组 → 会话元信息（纯函数，可单测）。
+ * 标题优先 summary 行，其次首条用户消息文本；工具结果/系统注入（< 开头）跳过。
+ * @param {string[]} lines
+ * @returns {{sessionId: string, cwd: string, title: string, timeCreated: number}}
+ */
+function parseClaudeHead(lines) {
+  const out = { sessionId: '', cwd: '', title: '', timeCreated: 0 };
+  if (!Array.isArray(lines)) return out;
+  for (const line of lines) {
+    const s = typeof line === 'string' ? line.trim() : '';
+    if (!s) continue;
+    let obj;
+    try {
+      obj = JSON.parse(s);
+    } catch (e) {
+      continue;
+    }
+    if (!obj || typeof obj !== 'object') continue;
+    if (!out.sessionId && typeof obj.sessionId === 'string') out.sessionId = obj.sessionId;
+    if (!out.cwd && typeof obj.cwd === 'string') out.cwd = obj.cwd;
+    if (!out.timeCreated && typeof obj.timestamp === 'string') {
+      const t = Date.parse(obj.timestamp);
+      if (Number.isFinite(t)) out.timeCreated = t;
+    }
+    if (!out.title) {
+      if (obj.type === 'summary' && typeof obj.summary === 'string' && obj.summary.trim()) {
+        out.title = obj.summary.trim();
+      } else if (obj.type === 'user' && obj.message) {
+        const content = obj.message.content;
+        const text = typeof content === 'string' ? content
+          : Array.isArray(content)
+            ? content.filter(c => c && c.type === 'text' && typeof c.text === 'string')
+              .map(c => c.text).join(' ')
+            : '';
+        const trimmed = text.trim();
+        if (trimmed && !trimmed.startsWith('<')) out.title = trimmed;
+      }
+    }
+    if (out.sessionId && out.cwd && out.title && out.timeCreated) break;
+  }
+  out.title = out.title.slice(0, 80);
+  return out;
+}
+
+/**
+ * 解析 jsonl 尾部文本最后一条完整记录 → 统一 part 类型（纯函数，可单测）。
+ * @param {string} text 尾部字节文本（首行可能不完整，会被丢弃）
+ * @returns {?string} 'step-finish'（result/success）| 'error'（result/error_*）| 'tool'
+ */
+function parseClaudeTail(text) {
+  if (!text) return null;
+  // 从尾行向前找第一条可解析记录；被截断的首行 JSON.parse 失败会被自然跳过
+  const lines = text.split('\n');
+  for (let i = lines.length - 1; i >= 0; i--) {
+    const line = lines[i].trim();
+    if (!line) continue;
+    try {
+      const obj = JSON.parse(line);
+      if (obj && obj.type === 'result') {
+        return obj.subtype === 'success' ? 'step-finish' : 'error';
+      }
+      return 'tool';
+    } catch (e) { /* 半行/非 JSON 继续向前找 */ }
+  }
+  return null;
+}
+
+/**
+ * 创建 Claude Code 适配器（依赖注入便于测试）
+ * @param {{ home?: string, readdirSync?: Function, statSync?: Function,
+ *   readFileSlice?: Function }} options
+ * @returns {{ id: string, displayName: string, lastError: string, listSessions: Function }}
+ */
+function createClaudeAdapter(options = {}) {
+  const readdirSync = options.readdirSync || fs.readdirSync;
+  const statSync = options.statSync || fs.statSync;
+  const readFileSlice = options.readFileSlice || defaultReadFileSlice;
+  let home = typeof options.home === 'string' && options.home.trim() ? options.home.trim() : '';
+  let lastError = null;
+  // 文件路径 → { mtimeMs, row }：mtime 未变不重读文件
+  const cache = new Map();
+
+  function homePath() {
+    return home || getClaudeHomePath();
+  }
+
+  return {
+    id: 'claude',
+    displayName: 'Claude Code',
+    get lastError() {
+      return lastError;
+    },
+
+    /**
+     * 只读查询 Claude Code 会话（projects 目录扫描 + 首/尾增量解析）。
+     * @returns {Array<Object>} 规范化会话行（无自带 status，由轮询器用共享规则判定）
+     */
+    listSessions() {
+      lastError = null;
+      const projectsRoot = path.join(homePath(), 'projects');
+      let projectDirs;
+      try {
+        projectDirs = readdirSync(projectsRoot, { withFileTypes: true });
+      } catch (e) {
+        lastError = e.message; // 未安装/目录不存在 → 静默空列表
+        return [];
+      }
+      const files = [];
+      for (const pd of projectDirs) {
+        if (!pd.isDirectory()) continue;
+        let entries;
+        try {
+          entries = readdirSync(path.join(projectsRoot, pd.name));
+        } catch (e) {
+          continue;
+        }
+        for (const name of entries) {
+          if (!name.endsWith('.jsonl')) continue;
+          const file = path.join(projectsRoot, pd.name, name);
+          try {
+            files.push({ file, projName: pd.name, mtimeMs: statSync(file).mtimeMs });
+          } catch (e) { /* 文件竞争消失，跳过 */ }
+        }
+      }
+      files.sort((a, b) => b.mtimeMs - a.mtimeMs);
+      const top = files.slice(0, SESSION_LIMIT);
+      const rows = [];
+      for (const f of top) {
+        const cached = cache.get(f.file);
+        if (cached && cached.mtimeMs === f.mtimeMs) {
+          rows.push(cached.row);
+          continue;
+        }
+        try {
+          const headText = readFileSlice(f.file, 0, CLAUDE_HEAD_BYTES).toString('utf8');
+          const headLines = headText.split('\n');
+          if (headLines.length > 1) headLines.pop(); // 末行可能被截断
+          const head = parseClaudeHead(headLines);
+          const tailText = readFileSlice(f.file, -CLAUDE_TAIL_BYTES, 0).toString('utf8');
+          const row = {
+            id: head.sessionId || path.basename(f.file, '.jsonl'),
+            title: head.title || f.projName,
+            directory: head.cwd,
+            timeUpdated: f.mtimeMs,
+            timeCreated: head.timeCreated || f.mtimeMs,
+            lastPartType: parseClaudeTail(tailText)
+          };
+          cache.set(f.file, { mtimeMs: f.mtimeMs, row });
+          rows.push(row);
+        } catch (e) {
+          // 单文件解析失败：沿用旧缓存，无缓存则跳过
+          if (cached) rows.push(cached.row);
+        }
+      }
+      // 清理已不在结果中的缓存（会话文件被删除/跌出最近范围）
+      const alive = new Set(top.map(f => f.file));
+      for (const key of cache.keys()) {
+        if (!alive.has(key)) cache.delete(key);
+      }
+      rows.sort((a, b) => b.timeUpdated - a.timeUpdated);
+      return rows;
+    }
+  };
+}
+
 // ============ 轮询器 ============
 
 /**
@@ -979,27 +1693,43 @@ module.exports = {
   applyServerStatus,
   classifySession,
   classifyDshSession,
+  createAntigravityAdapter,
+  createClaudeAdapter,
+  createCodexAdapter,
   createDshAdapter,
   createOpencodeAdapter,
   createOpencodeServerStatusProvider,
+  createZcodeAdapter,
+  defaultReadFileSlice,
   detectDshRunning,
   detectOpencodeRunning,
   detectOpencodeRunningNow,
+  extractWorkspaceUri,
   filterVisibleSessions,
+  getAntigravityHomePath,
+  getClaudeHomePath,
+  getCodexHomePath,
   getDshHomePath,
   getOpencodeDbPath,
+  getZcodeDbPath,
   hasProcessAsync,
   isValidSessionId,
+  mapAntigravityStepStatus,
   normalizeOpencodeRow,
+  parseClaudeHead,
+  parseClaudeTail,
+  parseCodexTail,
   parseDshProjection,
   parseLastPartType,
   parseSSEChunk,
   probeAnyPort,
   resetRuntimeSignal,
+  stripExtendedPathPrefix,
   DEFAULT_ACTIVE_WINDOW_MS,
   DEFAULT_DSH_WEB_PORT,
   DEFAULT_POLL_INTERVAL_MS,
   DEFAULT_SERVER_PORTS,
+  ANTIGRAVITY_CONVERSATION_LIMIT,
   DSH_PROJCACHE_ACTIVE_MS,
   IDLE_OVERRIDE_WINDOW_MS,
   RUNTIME_CONFIRM_MS,

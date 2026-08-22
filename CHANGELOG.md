@@ -9,6 +9,37 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- Agent Sessions widget: four new harness adapters, all read-only and
+  auto-detected at their default data locations (no settings needed; a
+  harness that isn't installed simply stays hidden):
+  - **ZCode** (`createZcodeAdapter`): reads `~/.zcode/cli/db/db.sqlite`.
+    Its schema is a sibling of opencode's (session/part tables, the same
+    `step-finish` part type), so it reuses the shared SQLite adapter
+    factory; internal sub-agent sessions (`task_type='subagent_child'`)
+    are filtered out. `ZCODE_HOME` env var overrides the root directory
+  - **Antigravity** (Google, `createAntigravityAdapter`): scans
+    `~/.gemini/antigravity/conversations/*.db` - one SQLite DB per
+    conversation. Activity = file mtime; status = last `steps` row
+    (3=finished / 9=running / 2,6,7=failed) mapped onto the shared
+    classifier. Titles are best-effort (brain plan summary → workspace
+    folder + time → uuid). Unchanged DBs are served from an mtime cache,
+    so steady-state polls open zero SQLite connections
+  - **Codex** (`createCodexAdapter`): reads the newest
+    `~/.codex/state_*.sqlite` `threads` table (title/cwd/updated_at) and
+    maps each rollout JSONL tail (`event_msg/task_complete` → turn
+    finished); falls back to scanning `sessions/YYYY/MM/DD/*.jsonl` when
+    no state DB exists. The `\\?\` extended-path prefix is stripped from
+    cwd
+  - **Claude Code** (`createClaudeAdapter`): scans the standard
+    `~/.claude/projects/**/*.jsonl` layout; turn end = `type:'result'`
+    line (success → done, error_* → interrupted), titles come from the
+    summary line or first user message. Only changed files are re-parsed
+    (head+tail slices, never the whole file)
+  - Also fixed a latent bug in the shared SQLite adapter: the batch
+    last-part query built a fixed 100 placeholders, so any opencode
+    install with fewer than 100 sessions threw a bind-count error and
+    the adapter always returned an empty list; placeholders are now
+    built per actual row count
 - Widget opacity: each widget type (clock / calendar / weather / monitor /
   agent / everything) now has its own opacity multiplier (30-100%, default
   100%) in Settings → Widget Opacity. It composes with the theme's own
