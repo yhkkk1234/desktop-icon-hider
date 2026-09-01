@@ -631,7 +631,6 @@ kbd {
   flex: 1;
   overflow-x: auto;
   overflow-y: hidden;
-  scrollbar-width: thin;
 }
 
 .groups-list::-webkit-scrollbar {
@@ -908,12 +907,6 @@ kbd {
 
 .content::-webkit-scrollbar-thumb:hover {
   background: var(--scrollbar-thumb-hover);
-}
-
-/* Firefox 滚动条 */
-.content {
-  scrollbar-width: thin;
-  scrollbar-color: var(--scrollbar-thumb) var(--scrollbar-track);
 }
 
 /* 设置面板间距优化 */
@@ -2580,12 +2573,6 @@ body.collapsed .bg-layer {
   background: var(--scrollbar-thumb-hover);
 }
 
-.settings-panel,
-.rules-list {
-  scrollbar-width: thin;
-  scrollbar-color: var(--scrollbar-thumb) var(--scrollbar-track);
-}
-
 /* 天气：今日温度范围 */
 .weather-today {
   font-size: 10px;
@@ -3193,11 +3180,6 @@ body.collapsed .bg-layer {
 
 .wa-body::-webkit-scrollbar-thumb:hover {
   background: var(--scrollbar-thumb-hover);
-}
-
-.wa-body {
-  scrollbar-width: thin;
-  scrollbar-color: var(--scrollbar-thumb) transparent;
 }
 
 /* 滚动/拖拽期间禁用模糊背景，避免每帧重算开销 */
