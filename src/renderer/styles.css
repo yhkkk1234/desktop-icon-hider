@@ -1196,8 +1196,6 @@ kbd {
   position: fixed;
   min-width: 180px;
   max-width: 320px;
-  max-height: 280px;
-  overflow-y: auto;
   background: var(--bg-tertiary);
   border: 1px solid var(--border-primary);
   border-radius: 10px;
@@ -1206,6 +1204,20 @@ kbd {
   z-index: 9600;
   backdrop-filter: blur(18px);
   animation: previewIn 0.15s ease;
+}
+
+/* 列表模式：标题固定，仅 .fp-scroll 滚动；overflow:hidden 让外壳按圆角裁剪滚动条。
+   注意不可在此处写 display:flex —— JS 显示面板时用内联 display:block，会覆盖掉 flex */
+.folder-preview:not([data-is-image="true"]) {
+  max-height: 280px;
+  overflow: hidden;
+}
+
+.folder-preview .fp-scroll {
+  /* 280 面板 - 2 上下边框 - 16 内边距 - 33 标题行（18 行高 + 2/6 内边距 + 1 分隔线 + 6 下边距） */
+  max-height: calc(280px - 2px - 16px - 33px);
+  overflow-y: auto;
+  overflow-x: hidden;
 }
 
 @keyframes previewIn {
@@ -1226,6 +1238,7 @@ kbd {
   gap: 8px;
   font-size: 12px;
   font-weight: 600;
+  line-height: 18px; /* 定值配合 .fp-scroll 的 max-height 计算 */
   color: var(--text-primary);
   padding: 2px 2px 6px;
   border-bottom: 1px solid var(--border-secondary);
@@ -1608,29 +1621,26 @@ body.icons-locked .file-item.draggable:active {
   }
 }
 
-/* 预览面板滚动条（与主界面主题一致；thumb 缩进避免两端顶出圆角） */
-.folder-preview::-webkit-scrollbar {
+/* 预览面板滚动条（挂在 .fp-scroll 上；thumb 缩进避免两端顶出圆角）。
+   注意：勿在此元素上再写 scrollbar-width/scrollbar-color 标准属性——
+   Chromium 121+ 会因标准属性存在而禁用整套 ::-webkit-scrollbar 自定义样式 */
+.folder-preview .fp-scroll::-webkit-scrollbar {
   width: 16px;
 }
 
-.folder-preview::-webkit-scrollbar-track {
+.folder-preview .fp-scroll::-webkit-scrollbar-track {
   background: transparent;
 }
 
-.folder-preview::-webkit-scrollbar-thumb {
+.folder-preview .fp-scroll::-webkit-scrollbar-thumb {
   background: var(--scrollbar-thumb);
   border: 5px solid transparent;
   border-radius: 8px;
   background-clip: content-box;
 }
 
-.folder-preview::-webkit-scrollbar-thumb:hover {
+.folder-preview .fp-scroll::-webkit-scrollbar-thumb:hover {
   background: var(--scrollbar-thumb-hover);
-}
-
-.folder-preview {
-  scrollbar-width: thin;
-  scrollbar-color: var(--scrollbar-thumb) var(--scrollbar-track);
 }
 
 /* 设置警告提示 */
@@ -1668,20 +1678,11 @@ body.icons-locked .file-item.draggable:active {
   cursor: pointer;
 }
 
-/* 滚动条角落：避免默认白色方块 */
-.folder-preview::-webkit-scrollbar-corner {
-  background: transparent;
-}
-
-/* 图片预览模式：放宽面板、隐藏滚动条（图片等比显示，无需滚动） */
+/* 图片预览模式：放宽面板（图片等比显示，无需滚动） */
 .folder-preview[data-is-image="true"] {
   max-width: 480px;
   max-height: 360px;
   overflow: hidden;
-}
-
-.folder-preview[data-is-image="true"]::-webkit-scrollbar {
-  display: none;
 }
 
 /* 预览条目真实图标 */

@@ -2209,11 +2209,17 @@ function showFolderPreview(item, entries) {
   folderPreview.innerHTML = '';
   folderPreview.appendChild(buildPreviewHeader(item));
 
+  // 列表放入独立滚动容器：标题固定在顶部，滚动条不侵入标题栏；
+  // 滚动条由外壳 overflow:hidden 按圆角裁剪，避免方形端头顶出圆弧
+  const scroll = document.createElement('div');
+  scroll.className = 'fp-scroll';
+  folderPreview.appendChild(scroll);
+
   if (entries.length === 0) {
     const empty = document.createElement('div');
     empty.className = 'fp-empty';
     empty.textContent = t('preview.empty');
-    folderPreview.appendChild(empty);
+    scroll.appendChild(empty);
   } else {
     for (const entry of entries.slice(0, FOLDER_PREVIEW_MAX)) {
       const row = document.createElement('div');
@@ -2226,13 +2232,13 @@ function showFolderPreview(item, entries) {
       name.textContent = entry.name;
       row.appendChild(emoji);
       row.appendChild(name);
-      folderPreview.appendChild(row);
+      scroll.appendChild(row);
     }
     if (entries.length > FOLDER_PREVIEW_MAX) {
       const more = document.createElement('div');
       more.className = 'fp-more';
       more.textContent = t('preview.more', { n: entries.length - FOLDER_PREVIEW_MAX });
-      folderPreview.appendChild(more);
+      scroll.appendChild(more);
     }
     // 异步加载真实图标（复用主列表的图标提取/缓存链路），失败保留 emoji 占位
     loadPreviewIcons(entries);
