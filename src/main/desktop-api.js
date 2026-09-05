@@ -16,6 +16,13 @@ try {
 const iconCache = new Map();
 let cacheFile = null;
 
+// 回收站等状态型虚拟项：图标随空/满动态变化，不能按固定路径缓存——
+// 否则某一时刻的图标（如满桶）会被永久固化（fs.watch 不监控回收站，缓存条目永不失效）
+const RECYCLE_BIN_CLSID_PREFIX = '::{645FF040-';
+function isDynamicIconPath(p) {
+  return typeof p === 'string' && p.toUpperCase().startsWith(RECYCLE_BIN_CLSID_PREFIX);
+}
+
 const SYSTEM_ICON_EMOJI = {
   '20D04FE0-3AEA-1069-A2D8-08002B30309D': '\u{1F5A5}\uFE0F',
   '645FF040-5081-101B-9F08-00AA002F954E': '\u{1F5D1}\uFE0F',
@@ -44,6 +51,8 @@ async function loadIconCacheAsync() {
       const data = await fs.promises.readFile(cacheFile, 'utf8');
       const parsed = JSON.parse(data);
       for (const [key, value] of Object.entries(parsed)) {
+        // 跳过状态型虚拟项（回收站）：磁盘旧条目可能是过期状态，加载后会被永久命中
+        if (isDynamicIconPath(key)) continue;
         iconCache.set(key, value);
       }
     }
@@ -75,14 +84,17 @@ function flushIconCache() {
 }
 
 async function extractFileIcon(filePath) {
-  if (iconCache.has(filePath)) return iconCache.get(filePath);
+  // 状态型虚拟项（回收站）绕过缓存，每次实时提取：shell 会按当前空/满返回正确图标
+  if (!isDynamicIconPath(filePath) && iconCache.has(filePath)) return iconCache.get(filePath);
   if (!iconExtractor) return null;
 
   try {
     const result = iconExtractor.extractIcon(filePath);
     if (result && result.length > 100) {
-      iconCache.set(filePath, result);
-      saveIconCache();
+      if (!isDynamicIconPath(filePath)) {
+        iconCache.set(filePath, result);
+        saveIconCache();
+      }
       return result;
     }
     return null;
@@ -93,14 +105,16 @@ async function extractFileIcon(filePath) {
 }
 
 async function extractDirectoryIcon(dirPath) {
-  if (iconCache.has(dirPath)) return iconCache.get(dirPath);
+  if (!isDynamicIconPath(dirPath) && iconCache.has(dirPath)) return iconCache.get(dirPath);
   if (!iconExtractor) return null;
 
   try {
     const result = iconExtractor.extractIcon(dirPath);
     if (result && result.length > 100) {
-      iconCache.set(dirPath, result);
-      saveIconCache();
+      if (!isDynamicIconPath(dirPath)) {
+        iconCache.set(dirPath, result);
+        saveIconCache();
+      }
       return result;
     }
     return null;
@@ -133,7 +147,7 @@ async function getFileIcons(files) {
     const dirsToExtract = [];
 
     for (const file of files) {
-      if (iconCache.has(file.path)) {
+      if (!isDynamicIconPath(file.path) && iconCache.has(file.path)) {
         result[file.path] = iconCache.get(file.path);
         continue;
       }
@@ -196,7 +210,7 @@ async function extractFileIconsBatch(files) {
         for (const [filePath, iconData] of Object.entries(batchResult)) {
           if (iconData && iconData.length > 100) {
             result[filePath] = iconData;
-            iconCache.set(filePath, iconData);
+            if (!isDynamicIconPath(filePath)) iconCache.set(filePath, iconData);
           }
         }
         await new Promise(resolve => setImmediate(resolve));
