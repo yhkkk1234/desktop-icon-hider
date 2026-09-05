@@ -351,10 +351,59 @@ Napi::Value IsFullscreenAppForeground(const Napi::CallbackInfo& info) {
     return Napi::Boolean::New(env, w >= mw && h >= mh);
 }
 
+// ============ 桌面视图状态探测/隐藏（explorer 重建自愈用） ============
+
+// 桌面图标列表窗口 SHELLDLL_DefView：通常挂在 Progman 下；Win11 / explorer 重启后
+// 可能挂在 WorkerW 下。与 index.js 的 PowerShell 实现保持相同的两级查找。
+static HWND FindDesktopShellView() {
+    HWND progman = FindWindowW(L"Progman", NULL);
+    // 实测个别环境（壁纸类工具接管桌面后）空标题匹配 Progman 会失败、
+    // 标题匹配成功：补一次 "Program Manager" 标题查找
+    if (!progman) progman = FindWindowW(L"Progman", L"Program Manager");
+    HWND shellView = progman ? FindWindowExW(progman, NULL, L"SHELLDLL_DefView", NULL) : NULL;
+    if (shellView) return shellView;
+    HWND worker = NULL;
+    while ((worker = FindWindowExW(NULL, worker, L"WorkerW", NULL)) != NULL) {
+        shellView = FindWindowExW(worker, NULL, L"SHELLDLL_DefView", NULL);
+        if (shellView) return shellView;
+    }
+    return NULL;
+}
+
+// 返回 { hwnd, visible }：hwnd 为十进制 HWND 字符串（未找到为空串）。
+// 主进程比对 hwnd 判断"桌面是否被 explorer 重建"（重建后句柄必然变化）——
+// 即使新视图默认不可见（Explorer 的"显示桌面图标"开关为关），也要靠这个信号
+// 补发 skipTaskbar（DeleteTab 记录随旧任务栏一起丢失）。
+Napi::Value DesktopViewInfo(const Napi::CallbackInfo& info) {
+    Napi::Env env = info.Env();
+    Napi::Object result = Napi::Object::New(env);
+    HWND shellView = FindDesktopShellView();
+    if (!shellView) {
+        result.Set("hwnd", Napi::String::New(env, ""));
+        result.Set("visible", Napi::Boolean::New(env, false));
+        return result;
+    }
+    result.Set("hwnd", Napi::String::New(env, std::to_string((unsigned long long)(uintptr_t)shellView)));
+    result.Set("visible", Napi::Boolean::New(env, IsWindowVisible(shellView) != 0));
+    return result;
+}
+
+// 对桌面图标列表窗口执行 ShowWindow(SW_HIDE)，返回"调用后图标确实不可见"。
+// 返回 false = 未找到窗口（explorer 重建中），主进程下一轮自愈重试。
+Napi::Value HideDesktopView(const Napi::CallbackInfo& info) {
+    Napi::Env env = info.Env();
+    HWND shellView = FindDesktopShellView();
+    if (!shellView) return Napi::Boolean::New(env, false);
+    ShowWindow(shellView, SW_HIDE);
+    return Napi::Boolean::New(env, IsWindowVisible(shellView) == 0);
+}
+
 Napi::Object Init(Napi::Env env, Napi::Object exports) {
     exports.Set("extractIcon", Napi::Function::New(env, [](const Napi::CallbackInfo& info) -> Napi::Value { return ExtractIcon(info); }));
     exports.Set("extractIconsBatch", Napi::Function::New(env, [](const Napi::CallbackInfo& info) -> Napi::Value { return ExtractIconsBatch(info); }));
     exports.Set("isFullscreenAppForeground", Napi::Function::New(env, [](const Napi::CallbackInfo& info) -> Napi::Value { return IsFullscreenAppForeground(info); }));
+    exports.Set("desktopViewInfo", Napi::Function::New(env, [](const Napi::CallbackInfo& info) -> Napi::Value { return DesktopViewInfo(info); }));
+    exports.Set("hideDesktopView", Napi::Function::New(env, [](const Napi::CallbackInfo& info) -> Napi::Value { return HideDesktopView(info); }));
     return exports;
 }
 

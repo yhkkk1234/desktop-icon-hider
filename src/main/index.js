@@ -796,6 +796,98 @@ public class DesktopHelper {
   }
 }
 
+// ============ 桌面隐藏自愈（explorer 重建后自动恢复） ============
+// 隐藏是对 SHELLDLL_DefView 句柄 ShowWindow(SW_HIDE)，运行时生效、无系统持久状态：
+// explorer.exe 重启/崩溃自动重启（或分辨率/DPI/RDP/主题切换等桌面重建事件）后，
+// 新桌面视图默认可见（原桌面图标重现）；同时旧任务栏的 ITaskbarList::DeleteTab
+// 记录随任务栏重建一起丢失，而 Electron 收到 TaskbarCreated 广播不会补发——
+// skipTaskbar:true 的窗口会重新出现在任务栏（electron/electron#29526，未修复）。
+// 此处以 3s 低频轮询原生检测（FindWindow + IsWindowVisible，微秒级，开销远低于
+// 自动隐藏已常驻的 50ms 全屏检测）：比对桌面视图句柄判断"桌面是否被重建"，
+// 必要时重新隐藏图标并补发 setSkipTaskbar(true)，两个症状一并自愈。
+let desktopHealNative = null;
+try {
+  desktopHealNative = require('../../build/Release/icon_extractor.node');
+} catch (e) {
+  try {
+    desktopHealNative = require(path.join(process.resourcesPath, 'app.asar.unpacked', 'build', 'Release', 'icon_extractor.node'));
+  } catch (e2) {
+    desktopHealNative = null;
+  }
+}
+
+const DESKTOP_HEAL_INTERVAL = 3000;
+let desktopHealTimer = null;
+let desktopHealLastHwnd = null;
+let desktopHealFailLogged = false;
+
+// 补发 skipTaskbar（Electron 内部重走 ITaskbarList::DeleteTab）：仅在检测到
+// 桌面重建/重新隐藏后调用，DeleteTab 对已删除的 tab 是无害幂等操作
+function reapplySkipTaskbar() {
+  if (!mainWindow || mainWindow.isDestroyed()) return;
+  try {
+    mainWindow.setSkipTaskbar(true);
+  } catch (e) { /* 忽略 */ }
+}
+
+function desktopSelfHealCheck() {
+  // 用户当前选择"显示桌面图标"：无自愈对象，句柄缓存一并清空
+  // （避免之后手动隐藏时把 explorer 重建前的旧句柄误判为变化）
+  if (!store.get('desktopIconsHidden', false)) {
+    desktopHealLastHwnd = null;
+    return;
+  }
+  if (!desktopHealNative || typeof desktopHealNative.desktopViewInfo !== 'function') return;
+
+  let info = null;
+  try {
+    info = desktopHealNative.desktopViewInfo();
+  } catch (e) {
+    return;
+  }
+  // 桌面视图尚不存在（explorer 正在重启/尚未完成）：等待下一轮
+  if (!info || !info.hwnd) return;
+
+  const hwndChanged = desktopHealLastHwnd !== null && info.hwnd !== desktopHealLastHwnd;
+  desktopHealLastHwnd = info.hwnd;
+
+  if (!info.visible && !hwndChanged) return;
+
+  let hidIcons = false;
+  if (info.visible) {
+    try {
+      hidIcons = desktopHealNative.hideDesktopView() === true;
+    } catch (e) { /* 下一轮重试 */ }
+    if (hidIcons) {
+      desktopHealFailLogged = false;
+    } else if (!desktopHealFailLogged) {
+      desktopHealFailLogged = true;
+      console.error('桌面自愈：重新隐藏桌面图标失败，将在下一轮重试');
+    }
+  }
+  if (hidIcons || hwndChanged) {
+    reapplySkipTaskbar();
+    const why = hwndChanged ? '桌面已重建' : '桌面图标被外部重新显示';
+    console.log(`桌面自愈：${why}${hidIcons ? '，已重新隐藏桌面图标' : ''}，已补发 skipTaskbar`);
+  }
+}
+
+function startDesktopSelfHeal() {
+  if (desktopHealTimer) return;
+  if (!desktopHealNative || typeof desktopHealNative.desktopViewInfo !== 'function') {
+    console.warn('原生模块不可用，桌面隐藏自愈未启用（explorer 重启后需重新启动本程序恢复隐藏）');
+    return;
+  }
+  desktopHealTimer = setInterval(desktopSelfHealCheck, DESKTOP_HEAL_INTERVAL);
+}
+
+function stopDesktopSelfHeal() {
+  if (desktopHealTimer) {
+    clearInterval(desktopHealTimer);
+    desktopHealTimer = null;
+  }
+}
+
 // 创建主窗口
 function createWindow() {
   // 开机自启（--hidden）：窗口可见但不抢占焦点（showInactive）
@@ -2563,6 +2655,9 @@ app.whenReady().then(async () => {
     
     // 监听桌面文件变化，自动刷新
     startDesktopWatchers();
+
+    // 启动桌面隐藏自愈轮询（explorer 重建后自动恢复隐藏与 skipTaskbar）
+    startDesktopSelfHeal();
     
     // 注册全局快捷键
     registerGlobalShortcuts();
@@ -2687,6 +2782,9 @@ app.on('before-quit', () => {
 
   // 停止文件监听
   stopDesktopWatchers();
+
+  // 停止桌面隐藏自愈轮询
+  stopDesktopSelfHeal();
 
   // 停止性能采样进程
   stopSampler();
