@@ -1,4 +1,7 @@
 {
+  "variables": {
+    "win_sdk_version%": "10.0.16299.0"
+  },
   "targets": [
     {
       "target_name": "icon_extractor",
@@ -11,10 +14,10 @@
       ],
       "configurations": {
         "Debug": {
-          "msvs_windows_target_platform_version": "10.0.16299.0"
+          "msvs_windows_target_platform_version": "<(win_sdk_version)"
         },
         "Release": {
-          "msvs_windows_target_platform_version": "10.0.16299.0"
+          "msvs_windows_target_platform_version": "<(win_sdk_version)"
         }
       },
       "msvs_settings": {

@@ -202,6 +202,24 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- `npm install` now works on machines other than the author's. `binding.gyp`
+  hardcoded `msvs_windows_target_platform_version: 10.0.16299.0` (required
+  locally, where that is the only installed SDK), and npm runs an implicit
+  `node-gyp rebuild` for any package that has a `binding.gyp` — so the first
+  `npm install` anywhere else, CI included, died with `MSB8036: The Windows SDK
+  version 10.0.16299.0 was not found`. The version is now the gyp variable
+  `win_sdk_version` (overridable through `GYP_DEFINES`; verified by overriding
+  it to a bogus value and watching the generated project follow), and a new
+  `install` hook (`scripts/native-build.js`) replaces npm's implicit rebuild:
+  it detects the installed SDKs, hands the newest to node-gyp, and on failure
+  prints guidance instead of aborting the install — without the addon the app
+  still starts, falling back to emoji icons (`desktop-api.js` already degraded
+  that way). CI installs with `--ignore-scripts`, since it only lints and
+  tests and the suite passes without the native module (confirmed by hiding
+  the built `.node` and re-running: 135/135)
+- CI actions bumped to `actions/checkout@v7` and `actions/setup-node@v7`;
+  the v4 pins target Node 20, which GitHub's runners now deprecate in favour
+  of Node 24
 - Launching the app a second time no longer disturbs the desktop icons.
   Startup unconditionally calls `hideDesktopIcons()` and `before-quit`
   unconditionally calls `showDesktopIcons()`, while "are the icons hidden" is

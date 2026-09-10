@@ -285,6 +285,15 @@ npm run build
 3. 完整重新编译（含图标提取插件、硬件监控库、better-sqlite3）：
    `powershell -ExecutionPolicy Bypass -File build-native.ps1`
 
+`npm install` 时原生模块由 `scripts/native-build.js` 自动编译：它会探测本机已装的
+Windows SDK 版本再交给 node-gyp。若编译失败，安装不会中断（应用仍可启动，但桌面图标
+会退化为 emoji 占位），并会打印排查提示。也可以手动指定 SDK 版本：
+
+```powershell
+# 版本号见 C:\Program Files (x86)\Windows Kits\10\Include
+$env:GYP_DEFINES = 'win_sdk_version=10.0.26100.0'; npm run rebuild-native
+```
+
 > 注意：项目路径含中文时 MSBuild 可能报 C1083 找不到源文件，
 > 建议把仓库放在纯 ASCII 路径下（这也是 `scripts/rebuild-better-sqlite3.ps1` 里记录过的坑）。
 

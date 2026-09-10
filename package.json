@@ -9,6 +9,7 @@
     "build": "powershell -ExecutionPolicy Bypass -File build-native.ps1 && node scripts/generate-icons.js && electron-builder",
     "build:win": "powershell -ExecutionPolicy Bypass -File build-native.ps1 && node scripts/generate-icons.js && electron-builder --win",
     "rebuild-native": "node-gyp rebuild",
+    "install": "node scripts/native-build.js",
     "lint": "eslint src scripts __tests__",
     "test": "jest"
   },
