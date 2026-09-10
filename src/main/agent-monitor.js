@@ -5,7 +5,7 @@
 // - Antigravity（谷歌反重力）：~/.gemini/antigravity/conversations/ 每会话一个 SQLite
 // - Codex：~/.codex/state_*.sqlite 的 threads 表 + rollout JSONL 尾行
 // - Claude Code：~/.claude/projects/**/*.jsonl 转录文件
-// - dsh（DeepSeek Harness）：~/.dsh 投影缓存 JSON + 转录 mtime
+// - dsh（DeepSeek Harness）：~/.dsh 投影缓存（新/旧两代布局）+ 转录 mtime
 // 状态判定原理：会话每次有活动（用户输入/AI 流式输出/工具调用）都会刷新
 // 会话的最后活动时间（DB time_updated 或文件 mtime）；超过活跃阈值视为"静止"。
 // 静止后看最后一条记录的类型（回合正常结束 = completed，其余 = interrupted），
@@ -721,17 +721,31 @@ function createZcodeAdapter(options = {}) {
 }
 
 // ============ DeepSeek Harness (dsh) 适配器 ============
-// 数据源（纯 JSON + 文件 stat，零原生依赖；未安装/未运行时降级为空列表）：
-// - <home>/storages/session_projcache.json：会话投影缓存，由运行中的 harness 实时写入
-//   （实测毫秒级更新）。含 identity.cwd/createdAt、title、goal.phase、
-//   sessionStats.openStep/pendingCalls、sessionListMetadata.lastPromptAt。
-// - <home>/sessions/<项目目录编码>/<会话id>/session.jsonl.zstd：会话转录文件，
-//   mtime 即该会话最后活动时间（等价于 opencode 的 time_updated）。
+// 数据源（纯 JSON + 文件 stat，零原生依赖；未安装/未运行时降级为空列表）。
+// harness 处于快速迭代期，落盘格式已变过一次，故两条数据通路都做多版本兼容：
+// - 投影缓存（会话列表/标题/状态），由运行中的 harness 实时写入，含
+//   identity.cwd/createdAt、title、goal、sessionStats.openStep/pendingCalls、
+//   sessionListMetadata.lastPromptAt：
+//   · domain v4+（每会话一文件）：<home>/storages/session_projcache/sessions/<会话id>.json
+//     （{version, record:{identity, rows}}。per-record 布局——一次检查点只重写一个会话）
+//   · domain v3（单文件）：<home>/storages/session_projcache.json
+//     （{unit:{name,version}, tables:{sessions:{id: record}}}）
+//   新布局目录存在即以新布局为准，仅在目录缺失时回退旧布局（升级前的 harness）。
+//   实测新版升级时旧单文件会原地留存，若继续读它会静默给出陈旧列表，故不能"两个都读再合并"。
+// - 会话转录：<home>/sessions/<项目目录编码>/<会话id>/session[.v<N>].jsonl[.zstd]，
+//   mtime 即该会话最后活动时间（等价于 opencode 的 time_updated）。文件名带 Session
+//   格式代号（v0 = session.jsonl，v3 = session.v3.jsonl），迁移后同目录可能多代并存。
 // 状态判定优先级：openStep/pendingCalls（正在执行）→ goal.phase
 // （complete/blocked/paused）→ 转录 mtime 新鲜度兜底 → completed。
 const DEFAULT_DSH_WEB_PORT = 3080;
-// 投影缓存 mtime 在 harness 运行期间持续刷新；超过该时长未写入视为 harness 已停止
+// 投影缓存 mtime 在 harness 运行期间持续刷新（脏了至少每 writeIntervalMs = 5s 落一次盘）；
+// 超过该时长未写入视为 harness 已停止
 const DSH_PROJCACHE_ACTIVE_MS = 60 * 1000;
+// 本适配器已适配的投影缓存 domain 版本（对应该 domain spec 的 version）。
+// 实测更高版本说明 harness 又改了布局/字段：仍尽力解析，但记录告警而不是静默给出陈旧列表。
+const DSH_TESTED_CACHE_VERSION = 7;
+// 转录文件名 → Session 格式代号：session.jsonl / session.v3.jsonl（可再带 .zstd 压缩后缀）
+const DSH_TRANSCRIPT_RE = /^session(?:\.v(\d+))?\.jsonl(?:\.zstd)?$/;
 
 /**
  * dsh 数据目录：DSH_HOME 环境变量优先，否则 ~/.dsh
@@ -744,11 +758,52 @@ function getDshHomePath() {
 }
 
 /**
- * 解析 dsh 投影缓存 JSON 内容 → 规范化会话行（纯函数，可单测）。
+ * 从 goal 行的 val 取 phase，兼容两个投影 unit 版本（实测同目录下两代记录并存）：
+ * - stateVersion 6：{current: {goal: {phase}}, seenGoalIds, failure}
+ * - stateVersion 4：{goal: {phase}, roundsStarted, ...}
+ * @param {*} goalVal goal 行的 val（可能为 null）
+ * @returns {?string} phase；无 goal 或结构未知 → null
+ */
+function readDshGoalPhase(goalVal) {
+  if (!goalVal || typeof goalVal !== 'object') return null;
+  const holder = (goalVal.current && goalVal.current.goal) || goalVal.goal;
+  return holder && typeof holder.phase === 'string' ? holder.phase : null;
+}
+
+/**
+ * 一条投影缓存记录（{identity, rows}）→ 规范化会话行（纯函数，可单测）。
  * 只取组件需要的最小字段；timeUpdated 由 createDshAdapter 按转录文件补齐。
+ * @param {string} id 会话 id
+ * @param {Object} entry 记录（含 identity 与 rows）
+ * @param {number} cacheVersion 该记录所属的 domain 版本（仅用于漂移告警）
+ * @returns {{id: string, title: string, directory: string, timeCreated: number,
+ *   openStep: ?Object, pendingCalls: Object, goalPhase: ?string, lastPromptAt: number,
+ *   cacheVersion: number}}
+ */
+function toDshRow(id, entry, cacheVersion) {
+  const r = (entry && entry.rows) || {};
+  const identity = (entry && entry.identity) || {};
+  const stats = r.sessionStats && r.sessionStats.val ? r.sessionStats.val : null;
+  const listMeta = r.sessionListMetadata && r.sessionListMetadata.val
+    ? r.sessionListMetadata.val : null;
+  return {
+    id,
+    title: r.title && r.title.val ? String(r.title.val) : '',
+    directory: typeof identity.cwd === 'string' ? identity.cwd : '',
+    timeCreated: Number.isFinite(identity.createdAt) ? identity.createdAt : 0,
+    openStep: stats ? stats.openStep : null,
+    pendingCalls: stats && stats.pendingCalls && typeof stats.pendingCalls === 'object'
+      ? stats.pendingCalls : {},
+    goalPhase: readDshGoalPhase(r.goal ? r.goal.val : null),
+    lastPromptAt: listMeta && Number.isFinite(listMeta.lastPromptAt) ? listMeta.lastPromptAt : 0,
+    cacheVersion: Number.isFinite(cacheVersion) ? cacheVersion : 0
+  };
+}
+
+/**
+ * 解析旧布局（domain v3 单文件）投影缓存 JSON → 规范化会话行（纯函数，可单测）。
  * @param {string} raw session_projcache.json 内容
- * @returns {Array<{id: string, title: string, directory: string, timeCreated: number,
- *   openStep: ?Object, pendingCalls: Object, goalPhase: ?string, lastPromptAt: number}>}
+ * @returns {Array<Object>} 规范化会话行
  */
 function parseDshProjection(raw) {
   if (!raw || typeof raw !== 'string') return [];
@@ -760,27 +815,33 @@ function parseDshProjection(raw) {
   }
   const table = data && data.tables && data.tables.sessions;
   if (!table || typeof table !== 'object') return [];
+  const version = data.unit && Number.isFinite(data.unit.version) ? data.unit.version : 0;
   const rows = [];
   for (const [id, entry] of Object.entries(table)) {
     if (!entry || typeof entry !== 'object' || !entry.identity) continue;
-    const r = entry.rows || {};
-    const stats = r.sessionStats && r.sessionStats.val ? r.sessionStats.val : null;
-    const goal = r.goal && r.goal.val ? r.goal.val : null;
-    const listMeta = r.sessionListMetadata && r.sessionListMetadata.val
-      ? r.sessionListMetadata.val : null;
-    rows.push({
-      id,
-      title: r.title && r.title.val ? String(r.title.val) : '',
-      directory: typeof entry.identity.cwd === 'string' ? entry.identity.cwd : '',
-      timeCreated: Number.isFinite(entry.identity.createdAt) ? entry.identity.createdAt : 0,
-      openStep: stats ? stats.openStep : null,
-      pendingCalls: stats && stats.pendingCalls && typeof stats.pendingCalls === 'object'
-        ? stats.pendingCalls : {},
-      goalPhase: goal && goal.goal ? goal.goal.phase : null,
-      lastPromptAt: listMeta && Number.isFinite(listMeta.lastPromptAt) ? listMeta.lastPromptAt : 0
-    });
+    rows.push(toDshRow(id, entry, version));
   }
   return rows;
+}
+
+/**
+ * 解析新布局（domain v4+ 每会话一文件）投影缓存记录 → 单条规范化会话行。
+ * 会话 id 取自文件名（记录内不再冗余存 id）。
+ * @param {string} id 会话 id（文件名去 .json）
+ * @param {string} raw <会话id>.json 内容
+ * @returns {?Object} 规范化会话行；结构不可用时 null（该会话跳过，不影响其余）
+ */
+function parseDshCacheRecord(id, raw) {
+  if (!id || !raw || typeof raw !== 'string') return null;
+  let data;
+  try {
+    data = JSON.parse(raw);
+  } catch (e) {
+    return null;
+  }
+  const record = data && data.record;
+  if (!record || typeof record !== 'object' || !record.identity) return null;
+  return toDshRow(id, record, data.version);
 }
 
 /**
@@ -811,15 +872,51 @@ function classifyDshSession(session, now, activeWindowMs) {
 }
 
 /**
+ * 投影缓存最近一次写入时间：先看新布局（每会话一文件）的最大 mtime，
+ * 目录缺失/无可用文件时回退旧布局单文件；两代都拿不到 → null。
+ * @param {string} home dsh 数据目录
+ * @param {Function} statFn 文件 stat 函数（测试注入）
+ * @param {Function} readdirFn 目录列举函数（测试注入）
+ * @returns {?number} mtime（ms）
+ */
+function newestDshCacheWriteMs(home, statFn, readdirFn) {
+  const dir = path.join(home, 'storages', 'session_projcache', 'sessions');
+  let newest = null;
+  try {
+    for (const entry of readdirFn(dir, { withFileTypes: true })) {
+      const name = typeof entry === 'string' ? entry : entry && entry.name;
+      // 只认 <id>.json：跳过 backup-and-skip 产生的 <id>.json.bak.<时间戳>
+      if (!name || !name.endsWith('.json')) continue;
+      try {
+        const st = statFn(path.join(dir, name));
+        if (st && Number.isFinite(st.mtimeMs) && (newest === null || st.mtimeMs > newest)) {
+          newest = st.mtimeMs;
+        }
+      } catch (e) { /* 单个文件不可读不影响其余 */ }
+    }
+  } catch (e) { /* 目录不存在 → 回退旧布局 */ }
+  if (newest !== null) return newest;
+  try {
+    const st = statFn(path.join(home, 'storages', 'session_projcache.json'));
+    return st && Number.isFinite(st.mtimeMs) ? st.mtimeMs : null;
+  } catch (e) {
+    return null;
+  }
+}
+
+/**
  * 判定 dsh 是否在运行：web 端口可达，或投影缓存仍在持续写入
  * （headless/纯 CLI 模式无 web 服务，但 harness 运行期间投影缓存照样刷新）。
+ * 缓存布局随 harness 版本变化，两代都探测（见 newestDshCacheWriteMs）。
  * @param {number} port web 端口（默认 3080）
  * @param {?Function} connectFn 端口连接函数（测试注入）
  * @param {?Function} statFn 文件 stat 函数（测试注入）
  * @param {?string} home 自定义数据目录（空 = DSH_HOME/~/.dsh）
+ * @param {?Function} readdirFn 目录列举函数（测试注入）
  * @returns {Promise<boolean>}
  */
-async function detectDshRunning(port = DEFAULT_DSH_WEB_PORT, connectFn = defaultConnect, statFn = fs.statSync, home) {
+async function detectDshRunning(port = DEFAULT_DSH_WEB_PORT, connectFn = defaultConnect,
+  statFn = fs.statSync, home, readdirFn = fs.readdirSync) {
   if (connectFn) {
     try {
       if (await connectFn(port, 300)) return true;
@@ -827,8 +924,8 @@ async function detectDshRunning(port = DEFAULT_DSH_WEB_PORT, connectFn = default
   }
   try {
     const h = typeof home === 'string' && home.trim() ? home.trim() : getDshHomePath();
-    const st = statFn(path.join(h, 'storages', 'session_projcache.json'));
-    return st && Date.now() - st.mtimeMs < DSH_PROJCACHE_ACTIVE_MS;
+    const newest = newestDshCacheWriteMs(h, statFn, readdirFn);
+    return newest !== null && Date.now() - newest < DSH_PROJCACHE_ACTIVE_MS;
   } catch (e) {
     return false;
   }
@@ -850,14 +947,120 @@ function createDshAdapter(options = {}) {
   let home = typeof options.home === 'string' && options.home.trim() ? options.home.trim() : '';
   const activeWindowMs = options.activeWindowMs || DEFAULT_ACTIVE_WINDOW_MS;
   let lastError = null;
+  let warnedDrift = null;
+  // 每会话文件的解析缓存（文件名 → {mtimeMs, row}）：轮询周期 2.5s，
+  // mtime 未变的记录直接命中内存，避免每轮重复 JSON.parse（会话多/单会话记录大时省 CPU）
+  const recordCache = new Map();
 
   function homePath() {
     return home || getDshHomePath();
   }
 
+  /** 投影缓存新布局目录（每会话一文件） */
+  function cacheDir() {
+    return path.join(homePath(), 'storages', 'session_projcache', 'sessions');
+  }
+
   /**
-   * 扫描 sessions 根目录，建立 会话id → session.jsonl.zstd 绝对路径 映射。
+   * 记录一次数据源漂移告警：写入 lastError（适配器诊断通道）并只打印一次，
+   * 避免 2.5s 轮询把日志刷爆。harness 升级改动落盘格式时靠这里"响亮地"失败，
+   * 而不是继续静默返回陈旧列表（历史教训：旧单文件升级后原地留存，
+   * 读它会得到冻在升级当天的列表且 lastError 为空）。
+   * @param {string} msg 告警信息
+   */
+  function warnDrift(msg) {
+    lastError = msg;
+    if (warnedDrift !== msg) {
+      warnedDrift = msg;
+      console.warn(`[agent-monitor] dsh ${msg}`);
+    }
+  }
+
+  /** 文件 mtime（ms）；不可得 → null（注入的测试 fs 可能未登记 mtime） */
+  function fileMtime(p) {
+    try {
+      const st = statSync(p);
+      return st && Number.isFinite(st.mtimeMs) ? st.mtimeMs : null;
+    } catch (e) {
+      return null;
+    }
+  }
+
+  /**
+   * 读取新布局（每会话一文件）投影缓存。
+   * 单个文件解析失败 → 跳过该会话（harness 的 backup-and-skip 策略同理，不影响其余）。
+   * @returns {?{rows: Array<Object>, maxVersion: number}} 目录不存在 → null（调用方回退旧布局）
+   */
+  function readPerRecordCache() {
+    const dir = cacheDir();
+    let entries;
+    try {
+      entries = readdirSync(dir, { withFileTypes: true });
+    } catch (e) {
+      return null;
+    }
+    const rows = [];
+    let maxVersion = 0;
+    const next = new Map();
+    for (const entry of entries) {
+      const name = typeof entry === 'string' ? entry : entry && entry.name;
+      // 只认 <id>.json：跳过 backup-and-skip 产生的 <id>.json.bak.<时间戳>
+      if (!name || !name.endsWith('.json')) continue;
+      const fp = path.join(dir, name);
+      const mtimeMs = fileMtime(fp);
+      const hit = mtimeMs === null ? null : recordCache.get(name);
+      if (hit && hit.mtimeMs === mtimeMs) {
+        next.set(name, hit);
+        rows.push(hit.row);
+        if (hit.row.cacheVersion > maxVersion) maxVersion = hit.row.cacheVersion;
+        continue;
+      }
+      let raw;
+      try {
+        raw = readFileSync(fp);
+      } catch (e) {
+        continue;
+      }
+      const row = parseDshCacheRecord(name.slice(0, -'.json'.length), raw);
+      if (!row) continue;
+      if (mtimeMs !== null) next.set(name, { mtimeMs, row });
+      rows.push(row);
+      if (row.cacheVersion > maxVersion) maxVersion = row.cacheVersion;
+    }
+    // 用本轮结果替换缓存：已删除的会话随之出清
+    recordCache.clear();
+    for (const [name, entry] of next) recordCache.set(name, entry);
+    return { rows, maxVersion };
+  }
+
+  /**
+   * 读取旧布局（domain v3 单文件）投影缓存；文件缺失/非法 → 空数组并记录 lastError。
+   * @returns {Array<Object>}
+   */
+  function readLegacyCache() {
+    let raw;
+    try {
+      raw = readFileSync(path.join(homePath(), 'storages', 'session_projcache.json'));
+    } catch (e) {
+      lastError = e.message;
+      return [];
+    }
+    return parseDshProjection(raw);
+  }
+
+  /** 同一会话多代转录并存（升级迁移）时择优：先比 mtime（真实最后活动），再比格式代号 */
+  function preferTranscript(a, b) {
+    const am = fileMtime(a.path);
+    const bm = fileMtime(b.path);
+    if (am !== null && bm !== null && am !== bm) return am > bm ? 1 : -1;
+    return a.gen === b.gen ? 0 : (a.gen > b.gen ? 1 : -1);
+  }
+
+  /**
+   * 扫描 sessions 根目录，建立 会话id → 转录文件绝对路径 映射。
    * 目录名是项目路径的编码形式，不依赖编码规则，按"id 目录下找转录文件"反查即可。
+   * 转录文件名带 Session 格式代号（session.jsonl / session.v3.jsonl，可再带 .zstd），
+   * 故按正则匹配而非硬编码文件名——硬编码会在 harness 升级换代后取不到 mtime。
    * @param {string} sessionsRoot
    * @returns {Map<string, string>}
    */
@@ -871,15 +1074,32 @@ function createDshAdapter(options = {}) {
     }
     for (const proj of projects) {
       if (!proj.isDirectory()) continue;
+      const projDir = path.join(sessionsRoot, proj.name);
       let sessionDirs;
       try {
-        sessionDirs = readdirSync(path.join(sessionsRoot, proj.name), { withFileTypes: true });
+        sessionDirs = readdirSync(projDir, { withFileTypes: true });
       } catch (e) {
         continue;
       }
       for (const sd of sessionDirs) {
         if (!sd.isDirectory()) continue;
-        map.set(sd.name, path.join(sessionsRoot, proj.name, sd.name, 'session.jsonl.zstd'));
+        const dir = path.join(projDir, sd.name);
+        let files;
+        try {
+          files = readdirSync(dir, { withFileTypes: true });
+        } catch (e) {
+          continue;
+        }
+        let best = null;
+        for (const f of files) {
+          const name = typeof f === 'string' ? f : f && f.name;
+          if (!name) continue;
+          const m = DSH_TRANSCRIPT_RE.exec(name);
+          if (!m) continue; // session.lock 等非转录文件
+          const cand = { path: path.join(dir, name), gen: m[1] === undefined ? 0 : Number(m[1]) };
+          if (best === null || preferTranscript(cand, best) > 0) best = cand;
+        }
+        if (best) map.set(sd.name, best.path);
       }
     }
     return map;
@@ -894,35 +1114,50 @@ function createDshAdapter(options = {}) {
 
     /**
      * 只读查询 dsh 会话（投影缓存 + 转录文件 mtime）。
-     * 会话量小（个位数到几十），全量重扫成本可忽略（readdir/stat 微秒级）。
+     * 会话量小（个位数到几十），全量重扫成本可忽略（readdir/stat 微秒级；
+     * 未变动的每会话记录命中 mtime 缓存，不重复解析）。
      * @returns {Array<Object>} 规范化会话行（含 status，供轮询器直接使用）
      */
     listSessions() {
       lastError = null;
       const h = homePath();
-      let raw;
-      try {
-        raw = readFileSync(path.join(h, 'storages', 'session_projcache.json'));
-      } catch (e) {
-        lastError = e.message;
-        return [];
+      const perRecord = readPerRecordCache();
+      let rows;
+      let maxVersion = 0;
+      if (perRecord) {
+        rows = perRecord.rows;
+        maxVersion = perRecord.maxVersion;
+      } else {
+        // 目录不存在 = 升级前的 harness，回退旧单文件布局
+        rows = readLegacyCache();
       }
-      const rows = parseDshProjection(raw);
-      if (rows.length === 0) return rows;
+      if (maxVersion > DSH_TESTED_CACHE_VERSION) {
+        warnDrift(`投影缓存 domain 版本 ${maxVersion} 高于已适配的 `
+          + `${DSH_TESTED_CACHE_VERSION}，字段可能已变更`);
+      }
       const transcripts = scanSessionTranscripts(path.join(h, 'sessions'));
       const now = nowFn();
+      let newestRow = 0;
       for (const r of rows) {
         const tp = transcripts.get(r.id);
-        if (tp) {
-          try {
-            r.timeUpdated = statSync(tp).mtimeMs;
-          } catch (e) {
-            r.timeUpdated = r.lastPromptAt || r.timeCreated;
-          }
-        } else {
-          r.timeUpdated = r.lastPromptAt || r.timeCreated;
-        }
+        const mtimeMs = tp ? fileMtime(tp) : null;
+        r.timeUpdated = mtimeMs !== null ? mtimeMs : (r.lastPromptAt || r.timeCreated);
         r.status = classifyDshSession(r, now, activeWindowMs);
+        if (r.timeUpdated > newestRow) newestRow = r.timeUpdated;
+      }
+      // 覆盖度金丝雀：存在转录却无对应缓存行，且该转录比所有缓存行都新
+      // → 缓存已不覆盖全部会话（布局/字段又变了），报错而不是静默漏掉活跃会话。
+      // 只对"未覆盖"的少量条目补 stat，健康时零额外开销。
+      if (transcripts.size > 0) {
+        const covered = new Set(rows.map(r => r.id));
+        for (const [id, tp] of transcripts) {
+          if (covered.has(id)) continue;
+          const mtimeMs = fileMtime(tp);
+          if (mtimeMs !== null && mtimeMs > newestRow) {
+            warnDrift('投影缓存未覆盖全部会话转录（缺活跃会话），落盘布局可能已变更');
+            break;
+          }
+        }
       }
       // 与 opencode 适配器一致：最后活动时间倒序（活跃会话居顶）
       rows.sort((a, b) => b.timeUpdated - a.timeUpdated);
@@ -943,6 +1178,7 @@ function createDshAdapter(options = {}) {
      */
     setHome(newHome) {
       home = typeof newHome === 'string' && newHome.trim() ? newHome.trim() : '';
+      recordCache.clear();
     }
   };
 }
@@ -1719,6 +1955,7 @@ module.exports = {
   parseClaudeHead,
   parseClaudeTail,
   parseCodexTail,
+  parseDshCacheRecord,
   parseDshProjection,
   parseLastPartType,
   parseSSEChunk,
@@ -1731,6 +1968,7 @@ module.exports = {
   DEFAULT_SERVER_PORTS,
   ANTIGRAVITY_CONVERSATION_LIMIT,
   DSH_PROJCACHE_ACTIVE_MS,
+  DSH_TESTED_CACHE_VERSION,
   IDLE_OVERRIDE_WINDOW_MS,
   RUNTIME_CONFIRM_MS,
   STEP_FINISH_CONFIRM_MS

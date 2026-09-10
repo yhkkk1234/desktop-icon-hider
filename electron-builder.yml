@@ -27,12 +27,18 @@ asarUnpack:
   - build/Release/*.node
   - node_modules/better-sqlite3/**/*.node
 
-# 性能监控采样脚本 + LibreHardwareMonitorLib 运行时（MPL-2.0, github.com/LibreHardwareMonitor/LibreHardwareMonitor）
+# 性能监控采样脚本 + LibreHardwareMonitorLib 运行时
+# 许可：LibreHardwareMonitorLib 0.9.4 = MPL-2.0（github.com/LibreHardwareMonitor/LibreHardwareMonitor）
+#       HidSharp 2.1.0 = Apache-2.0（其传递依赖，勿误记为 MPL）
+# 二者均为原样分发、未修改；完整声明见 THIRD_PARTY_NOTICES.md
 extraResources:
   - from: native/hardware
     to: hardware
     filter:
       - "**/*"
+  # 随发行包一同提供第三方许可声明（MPL-2.0 / Apache-2.0 的分发要求）
+  - from: THIRD_PARTY_NOTICES.md
+    to: THIRD_PARTY_NOTICES.md
 
 # 关闭打包时的自动重建：本机 Windows SDK 版本不匹配会导致 node-gyp 重编译失败，
 # 原生模块（icon_extractor / better-sqlite3）由 build-native.ps1 预先编译
@@ -66,5 +72,5 @@ portable:
 
 publish:
   provider: github
-  owner: your-username
+  owner: yhkkk1234
   repo: desktop-icon-hider

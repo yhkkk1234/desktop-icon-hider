@@ -22,6 +22,7 @@ const {
   parseClaudeHead,
   parseClaudeTail,
   parseCodexTail,
+  parseDshCacheRecord,
   parseDshProjection,
   parseLastPartType,
   parseSSEChunk,
@@ -687,6 +688,63 @@ describe('parseDshProjection', () => {
     expect(parseDshProjection('not json')).toEqual([]);
     expect(parseDshProjection(JSON.stringify({ tables: {} }))).toEqual([]);
   });
+
+  it('goal 行新形状（stateVersion 6：current.goal.phase）', () => {
+    const rows = parseDshProjection(JSON.stringify({
+      tables: {
+        sessions: {
+          s1: {
+            identity: { cwd: 'C:\\x' },
+            rows: {
+              goal: { ver: 6, seq: 9, val: { current: { goal: { phase: 'paused' } }, seenGoalIds: [], failure: null } }
+            }
+          }
+        }
+      }
+    }));
+    expect(rows[0].goalPhase).toBe('paused');
+  });
+
+  it('goal 行无 goal / 结构未知 → goalPhase 为 null（不抛错）', () => {
+    const phaseOf = (val) => parseDshProjection(JSON.stringify({
+      tables: { sessions: { s1: { identity: { cwd: 'C:\\x' }, rows: { goal: { ver: 6, val } } } } }
+    }))[0].goalPhase;
+    expect(phaseOf({ current: null, seenGoalIds: [], failure: null })).toBeNull();
+    expect(phaseOf(null)).toBeNull();
+    expect(phaseOf({ current: { goal: {} } })).toBeNull();
+    expect(phaseOf({ current: { goal: { phase: 42 } } })).toBeNull();
+  });
+});
+
+describe('parseDshCacheRecord', () => {
+  /** 每会话一文件记录（domain v4+）：{version, record:{identity, rows}} */
+  const rec = (rows, version = 7, identity = { formatVersion: 3, createdAt: 7000, cwd: 'F:\\Proj' }) =>
+    JSON.stringify({ version, record: { identity, rows } });
+
+  it('解析记录为规范化行（id 取自文件名）', () => {
+    const row = parseDshCacheRecord('session-abc', rec({
+      title: { ver: 1, seq: 34, val: '新布局任务' },
+      sessionStats: { ver: 1, seq: 34, val: { openStep: { turn: 1, step: 3 }, pendingCalls: { c1: 1 } } },
+      goal: { ver: 6, seq: 34, val: { current: { goal: { phase: 'complete' } }, seenGoalIds: [], failure: null } },
+      sessionListMetadata: { ver: 1, seq: 34, val: { blank: false, lastPromptAt: 8000 } }
+    }));
+    expect(row.id).toBe('session-abc');
+    expect(row.title).toBe('新布局任务');
+    expect(row.directory).toBe('F:\\Proj');
+    expect(row.timeCreated).toBe(7000);
+    expect(row.openStep).toEqual({ turn: 1, step: 3 });
+    expect(row.goalPhase).toBe('complete');
+    expect(row.lastPromptAt).toBe(8000);
+    expect(row.cacheVersion).toBe(7); // 供漂移告警比对
+  });
+
+  it('结构不可用 → null（坏 JSON / 缺 record / 缺 identity / 空 id）', () => {
+    expect(parseDshCacheRecord('s1', 'not json')).toBeNull();
+    expect(parseDshCacheRecord('s1', JSON.stringify({ tables: {} }))).toBeNull();
+    expect(parseDshCacheRecord('s1', JSON.stringify({ record: { rows: {} } }))).toBeNull();
+    expect(parseDshCacheRecord('', rec({}))).toBeNull();
+    expect(parseDshCacheRecord('s1', null)).toBeNull();
+  });
 });
 
 describe('classifyDshSession', () => {
@@ -734,9 +792,18 @@ describe('classifyDshSession', () => {
 describe('createDshAdapter', () => {
   const path = require('path');
   const home = 'C:/fake-dsh';
+  /** 新布局（每会话一文件）投影缓存目录 */
+  const cacheDir = (h) => path.join(h, 'storages', 'session_projcache', 'sessions');
+
+  /** 每会话一文件的记录内容（domain v4+） */
+  function cacheRecord(identity, rows, version = 7) {
+    return JSON.stringify({ version, record: { identity, rows } });
+  }
 
   /** 构造注入式假文件系统：dirs = Map<目录路径, 子项名数组>；mtimes = [[路径, mtimeMs]]；
-   *  projRaw = 注册在 home 的投影缓存；projRaws = 任意路径 → 内容（覆盖 projRaw） */
+   *  projRaw = 注册在 home 的旧布局单文件；projRaws = 任意路径 → 内容（覆盖 projRaw）。
+   *  mtimes 里出现的路径会自动补进其父目录的列举结果，因此转录文件的每一代都能被扫到；
+   *  readCount 用于断言 mtime 缓存命中后不再重复读文件。 */
   function makeFs({ dirs, projRaw, projRaws, mtimes }) {
     const files = new Map();
     if (projRaw !== undefined) {
@@ -746,8 +813,18 @@ describe('createDshAdapter', () => {
       for (const [p, raw] of Object.entries(projRaws)) files.set(p, raw);
     }
     const statTimes = new Map(mtimes || []);
-    return {
+    const dirEntries = new Map();
+    for (const [p, names] of (dirs || new Map())) dirEntries.set(p, [...names]);
+    for (const p of statTimes.keys()) {
+      const parent = path.dirname(p);
+      if (!dirEntries.has(parent)) dirEntries.set(parent, []);
+      const base = path.basename(p);
+      if (!dirEntries.get(parent).includes(base)) dirEntries.get(parent).push(base);
+    }
+    const fake = {
+      readCount: 0,
       readFileSync(p) {
+        fake.readCount += 1;
         if (!files.has(p)) { const e = new Error('ENOENT: ' + p); e.code = 'ENOENT'; throw e; }
         return files.get(p);
       },
@@ -756,10 +833,11 @@ describe('createDshAdapter', () => {
         return { mtimeMs: statTimes.get(p) };
       },
       readdirSync(p) {
-        if (!dirs.has(p)) { const e = new Error('ENOENT: ' + p); e.code = 'ENOENT'; throw e; }
-        return dirs.get(p).map(name => ({ name, isDirectory: () => true }));
+        if (!dirEntries.has(p)) { const e = new Error('ENOENT: ' + p); e.code = 'ENOENT'; throw e; }
+        return dirEntries.get(p).map(name => ({ name, isDirectory: () => true }));
       }
     };
+    return fake;
   }
 
   const PROJ = JSON.stringify({
@@ -873,26 +951,218 @@ describe('createDshAdapter', () => {
     expect(snap[0].harness).toBe('dsh');
     expect(snap[0].harnessName).toBe('DeepSeek Harness');
   });
+
+  // ---- 新布局（domain v4+ 每会话一文件）：harness 升级后的主通路 ----
+
+  /** 新布局 + 两代转录名的最小假 fs */
+  function newLayoutFs({ extraCacheFiles, legacyProjRaw } = {}) {
+    const dir = cacheDir(home);
+    return makeFs({
+      dirs: new Map([
+        [dir, ['s1.json', 's2.json', ...(extraCacheFiles || [])]],
+        [path.join(home, 'sessions'), ['p1']],
+        [path.join(home, 'sessions', 'p1'), ['s1', 's2']]
+      ]),
+      projRaw: legacyProjRaw,
+      projRaws: {
+        [path.join(dir, 's1.json')]: cacheRecord({ createdAt: 1000, cwd: 'F:\\Proj' }, {
+          title: { ver: 1, val: '任务A' },
+          goal: { ver: 6, val: { current: { goal: { phase: 'complete' } }, seenGoalIds: [], failure: null } }
+        }),
+        [path.join(dir, 's2.json')]: cacheRecord({ createdAt: 2000, cwd: 'F:\\Proj2' }, {
+          title: { ver: 1, val: '任务B' },
+          sessionStats: { ver: 1, val: { openStep: { turn: 1, step: 9 }, pendingCalls: {} } }
+        })
+      },
+      mtimes: [
+        [path.join(dir, 's1.json'), NOW - 1000],
+        [path.join(dir, 's2.json'), NOW - 1000],
+        [path.join(home, 'sessions', 'p1', 's1', 'session.v3.jsonl.zstd'), NOW - 600000],
+        [path.join(home, 'sessions', 'p1', 's2', 'session.v3.jsonl.zstd'), NOW - 3000]
+      ]
+    });
+  }
+
+  it('新布局为主：读取每会话一文件 + 新代号转录 mtime + 状态判定', () => {
+    const adapter = createDshAdapter({ home, activeWindowMs: ACTIVE_MS, now: () => NOW, ...newLayoutFs() });
+    const rows = adapter.listSessions();
+    expect(adapter.lastError).toBeNull();
+    expect(rows).toHaveLength(2);
+    // 最后活动倒序：s2（活跃）居顶
+    expect(rows[0].id).toBe('s2');
+    expect(rows[0].status).toBe('active');
+    expect(rows[0].timeUpdated).toBe(NOW - 3000); // session.v3.jsonl.zstd 的 mtime
+    expect(rows[0].title).toBe('任务B');
+    expect(rows[1].id).toBe('s1');
+    expect(rows[1].status).toBe('completed'); // goal.phase=complete（新形状 current.goal）
+    expect(rows[1].timeUpdated).toBe(NOW - 600000);
+  });
+
+  it('新布局存在时忽略旧单文件（回归：升级后旧文件原地留存 → 曾静默给出陈旧列表）', () => {
+    const staleLegacy = JSON.stringify({
+      unit: { name: 'session_projcache', version: 3 },
+      tables: { sessions: { stale1: { identity: { createdAt: 1, cwd: 'C:\\old' }, rows: {} } } }
+    });
+    const adapter = createDshAdapter({
+      home, activeWindowMs: ACTIVE_MS, now: () => NOW,
+      ...newLayoutFs({ legacyProjRaw: staleLegacy })
+    });
+    const rows = adapter.listSessions();
+    expect(rows.map(r => r.id).sort()).toEqual(['s1', 's2']); // stale1 不得出现
+  });
+
+  it('缓存目录缺失时回退旧单文件布局（升级前的 harness）', () => {
+    const adapter = createDshAdapter({
+      home, activeWindowMs: ACTIVE_MS, now: () => NOW,
+      ...makeFs({ dirs: new Map([[path.join(home, 'sessions'), []]]), projRaw: PROJ })
+    });
+    expect(adapter.listSessions()).toHaveLength(2);
+  });
+
+  it('同一会话多代转录并存：先比 mtime，mtime 不可得再比格式代号', () => {
+    const sdir = path.join(home, 'sessions', 'p', 's1');
+    const v0 = path.join(sdir, 'session.jsonl.zstd');
+    const v3 = path.join(sdir, 'session.v3.jsonl.zstd');
+    const mk = (mtimes) => makeFs({
+      dirs: new Map([
+        [cacheDir(home), ['s1.json']],
+        [path.join(home, 'sessions'), ['p']],
+        [path.join(home, 'sessions', 'p'), ['s1']],
+        [sdir, ['session.jsonl.zstd', 'session.v3.jsonl.zstd']]
+      ]),
+      projRaws: {
+        [path.join(cacheDir(home), 's1.json')]:
+          cacheRecord({ createdAt: 1000, cwd: 'F:\\Proj' }, {})
+      },
+      mtimes
+    });
+    // 两代都有 mtime → 取更新的那一份（即便格式代号更低）
+    const a1 = createDshAdapter({
+      home, activeWindowMs: ACTIVE_MS, now: () => NOW,
+      ...mk([[v0, NOW - 1000], [v3, NOW - 900000]])
+    });
+    expect(a1.listSessions()[0].timeUpdated).toBe(NOW - 1000);
+    // 只有高代号那份可 stat（迁移中间态）→ 回落代号更高的一份
+    const a2 = createDshAdapter({
+      home, activeWindowMs: ACTIVE_MS, now: () => NOW,
+      ...mk([[v3, NOW - 2000]])
+    });
+    expect(a2.listSessions()[0].timeUpdated).toBe(NOW - 2000);
+  });
+
+  it('忽略 backup-and-skip 产物与非记录文件', () => {
+    const adapter = createDshAdapter({
+      home, activeWindowMs: ACTIVE_MS, now: () => NOW,
+      ...newLayoutFs({ extraCacheFiles: ['s1.json.bak.20260910', 'notes.txt'] })
+    });
+    expect(adapter.listSessions()).toHaveLength(2);
+  });
+
+  it('mtime 未变的记录命中内存缓存，不重复读文件（轮询 2.5s 省 CPU）', () => {
+    const fsx = newLayoutFs();
+    const adapter = createDshAdapter({ home, activeWindowMs: ACTIVE_MS, now: () => NOW, ...fsx });
+    adapter.listSessions();
+    const first = fsx.readCount;
+    expect(first).toBeGreaterThan(0);
+    adapter.listSessions();
+    expect(fsx.readCount).toBe(first); // 第二轮零读取（仅 stat/readdir）
+  });
+
+  it('domain 版本高于已适配版本 → lastError 告警且只打印一次（不再静默）', () => {
+    const dir = cacheDir(home);
+    const warn = jest.spyOn(console, 'warn').mockImplementation(() => {});
+    try {
+      const fsx = makeFs({
+        dirs: new Map([[dir, ['s1.json']]]),
+        projRaws: { [path.join(dir, 's1.json')]: cacheRecord({ createdAt: 1000, cwd: 'C:\\x' }, {}, 8) },
+        mtimes: [[path.join(dir, 's1.json'), NOW - 1000]]
+      });
+      const adapter = createDshAdapter({ home, activeWindowMs: ACTIVE_MS, now: () => NOW, ...fsx });
+      expect(adapter.listSessions()).toHaveLength(1); // 仍尽力返回数据
+      expect(adapter.lastError).toMatch(/domain 版本 8/);
+      adapter.listSessions();
+      expect(warn).toHaveBeenCalledTimes(1); // 同一告警不刷屏
+    } finally {
+      warn.mockRestore();
+    }
+  });
+
+  it('缓存未覆盖活跃转录 → lastError 告警（布局漂移金丝雀）', () => {
+    const warn = jest.spyOn(console, 'warn').mockImplementation(() => {});
+    try {
+      const fsx = makeFs({
+        dirs: new Map([
+          [path.join(home, 'sessions'), ['p']],
+          [path.join(home, 'sessions', 'p'), ['s1', 'sNew']]
+        ]),
+        projRaw: JSON.stringify({
+          tables: {
+            sessions: { s1: { identity: { createdAt: 1000, cwd: 'F:\\Proj' }, rows: {} } }
+          }
+        }),
+        mtimes: [
+          [path.join(home, 'sessions', 'p', 's1', 'session.v3.jsonl.zstd'), NOW - 600000],
+          [path.join(home, 'sessions', 'p', 'sNew', 'session.v3.jsonl.zstd'), NOW - 1000]
+        ]
+      });
+      const adapter = createDshAdapter({ home, activeWindowMs: ACTIVE_MS, now: () => NOW, ...fsx });
+      adapter.listSessions();
+      expect(adapter.lastError).toMatch(/未覆盖/);
+    } finally {
+      warn.mockRestore();
+    }
+  });
 });
 
 describe('detectDshRunning', () => {
+  const path = require('path');
+  const home = 'C:/fake-dsh';
+  const dir = path.join(home, 'storages', 'session_projcache', 'sessions');
+  const legacy = path.join(home, 'storages', 'session_projcache.json');
+  const throwEnoent = () => { throw new Error('ENOENT'); };
+  /** 缓存目录列举：只认 dir，其余路径抛 ENOENT */
+  const readdirCache = (names) => (p) => {
+    if (p !== dir) throwEnoent();
+    return names.map(name => ({ name, isDirectory: () => false }));
+  };
+  /** 只对指定路径返回 mtime，其余抛 ENOENT */
+  const statOf = (entries) => (p) => {
+    if (!(p in entries)) throwEnoent();
+    return { mtimeMs: entries[p] };
+  };
+
   it('端口可达 → true（无需文件）', async () => {
     const ok = await detectDshRunning(DEFAULT_DSH_WEB_PORT, async () => true, null);
     expect(ok).toBe(true);
   });
 
-  it('端口不可达但投影缓存近期在写入 → true（headless 模式）', async () => {
-    const statFn = () => ({ mtimeMs: Date.now() - 5000 });
-    const ok = await detectDshRunning(DEFAULT_DSH_WEB_PORT, async () => false, statFn);
+  it('端口不可达但新布局（每会话一文件）近期在写入 → true（headless 模式）', async () => {
+    const statFn = statOf({ [path.join(dir, 's1.json')]: Date.now() - 5000 });
+    const ok = await detectDshRunning(DEFAULT_DSH_WEB_PORT, async () => false,
+      statFn, home, readdirCache(['s1.json', 's2.json']));
+    expect(ok).toBe(true);
+  });
+
+  it('新布局目录缺失 → 回退旧单文件 mtime（升级前的 harness）', async () => {
+    const statFn = statOf({ [legacy]: Date.now() - 5000 });
+    const ok = await detectDshRunning(DEFAULT_DSH_WEB_PORT, async () => false,
+      statFn, home, readdirCache([]));
     expect(ok).toBe(true);
   });
 
   it('端口不可达且投影缓存陈旧/缺失 → false', async () => {
-    const statFn = () => { throw new Error('ENOENT'); };
-    const ok = await detectDshRunning(DEFAULT_DSH_WEB_PORT, async () => false, statFn);
-    expect(ok).toBe(false);
-    const stale = await detectDshRunning(DEFAULT_DSH_WEB_PORT, async () => false, () => ({ mtimeMs: Date.now() - 600000 }));
-    expect(stale).toBe(false);
+    const stale = statOf({
+      [path.join(dir, 's1.json')]: Date.now() - 600000,
+      [legacy]: Date.now() - 600000
+    });
+    const noFiles = () => { throwEnoent(); };
+    expect(await detectDshRunning(DEFAULT_DSH_WEB_PORT, async () => false,
+      throwEnoent, home, readdirCache([]))).toBe(false);
+    expect(await detectDshRunning(DEFAULT_DSH_WEB_PORT, async () => false,
+      stale, home, readdirCache(['s1.json']))).toBe(false);
+    // 缓存目录列举与 stat 都失败（未安装 dsh）
+    expect(await detectDshRunning(DEFAULT_DSH_WEB_PORT, async () => false,
+      throwEnoent, home, noFiles)).toBe(false);
   });
 });
 
@@ -1273,7 +1543,7 @@ describe('createCodexAdapter', () => {
     const { adapter, sliceCounts } = makeAdapter({
       fsx: stateFs,
       threadsRows,
-      tailByFile: { [rollout]: `{"type":"event_msg","payload":{"type":"task_complete"}}\n` }
+      tailByFile: { [rollout]: '{"type":"event_msg","payload":{"type":"task_complete"}}\n' }
     });
     const rows = adapter.listSessions();
     expect(rows).toHaveLength(1);

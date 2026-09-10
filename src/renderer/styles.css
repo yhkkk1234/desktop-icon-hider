@@ -2986,7 +2986,18 @@ body.collapsed .bg-layer {
   white-space: nowrap;
 }
 
-/* 风扇区（三种风格通用） */
+/* 风扇区（三种风格通用）
+   尺寸稳定性：本组件外框宽度是 auto（.widget-item 本身没有 width，monitor 也没有
+   拖拽手柄去写 widget.w），所以尺寸由内容撑开；而这一行是三种风格里最宽的一行，
+   它一变宽整块就往右下"长"，看起来像组件移位。因此两个易变文本要预留宽度下界
+   （实测值，Electron 实测 Segoe UI / Microsoft YaHei UI 下的 max-content）：
+   - 转速：采样器只上报 value > 0 的风扇（hardware-sampler.ps1），显卡零转停转时
+     退化为 "-- RPM"（38.5px），风扇转起来变 "1234 RPM"（55.5px，tabular-nums 下
+     四位数字等宽）→ 预留 56px 同时覆盖两种状态与风扇名的切换（名字宽度被转速槽吸收）
+   - 温度：取前两条用 " · " 拼接，条目数/位数变化都会改宽度，实测两传感器组合
+     107~112px → 预留 113px；nowrap 同时避免文字折行把高度也顶高
+   代价：常态宽度比原先"无风扇"时宽约 18px（等于原先风扇转起时的宽度），换来读数
+   变化时外框完全不动。 */
 .wm-fan-row {
   display: flex;
   align-items: center;
@@ -3048,6 +3059,9 @@ body.collapsed .bg-layer {
   font-weight: 600;
   color: var(--text-primary);
   font-variant-numeric: tabular-nums;
+  /* 预留 "-- RPM" / "1234 RPM" 中较宽者，抑制外框随风扇转速出现与消失而伸缩 */
+  min-width: 56px;
+  white-space: nowrap;
 }
 
 .wm-temps {
@@ -3056,6 +3070,22 @@ body.collapsed .bg-layer {
   color: var(--text-secondary);
   text-align: right;
   line-height: 1.4;
+  /* 预留两个温度传感器的宽度，并禁止折行（折行会顶高组件） */
+  min-width: 113px;
+  white-space: nowrap;
+}
+
+/* 用户拖拽固定过宽度（widget.w 生效）后的状态：外框已经定宽，不会再随读数抖动，
+   于是上面的预留失去意义——放宽下界让内容用满空间，并用省略号兜住过窄的情况。
+   这样"钉一个更窄的宽度"也能得到紧致且完全稳定的外观。 */
+.widget-monitor.wm-pinned .wm-fan-rpm {
+  min-width: 0;
+}
+
+.widget-monitor.wm-pinned .wm-temps {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 
 @keyframes wm-spin {

@@ -22,12 +22,15 @@
 
 ### 1.1 这是什么？
 
-**Desktop Icon Hider** 是一个 Windows 桌面图标管理工具，功能类似 Fences 的简化版。它的核心能力：
+**Desktop Icon Hider** 是一个 Windows 桌面图标管理工具。它最核心的价值不是"给图标分组"
+（那是 Fences 的重心），而是**把桌面变成一块贴在屏幕边缘、可随时唤出又自动躲开的面板** ——
+鼠标划到边缘就能看到桌面内容，移开就自动收起，不打断你正在用的软件。它的主要能力：
 
+- **边缘自动隐藏**：窗口吸附到屏幕边缘后，鼠标靠近（边缘 5px 内）自动滑出、移开 500ms 后缩回；
+  前台是全屏应用时主动让位，不打扰全屏使用
 - **隐藏/显示桌面图标**：通过 Windows API 隐藏桌面图标区域，用一个自定义窗口接管展示
 - **虚拟分区展示**：在透明窗口中重新渲染桌面文件列表，支持双击打开、右键菜单
 - **窗口折叠**：可收缩为仅 40px 高的标题栏
-- **边缘自动隐藏**：窗口吸附到屏幕边缘后，鼠标离开自动隐藏，鼠标靠近自动滑出
 - **系统托盘**：最小化到托盘，支持右键菜单控制
 - **主题/透明度/图标大小/排序**：丰富的 UI 自定义选项
 - **真实文件图标提取**：通过 C++ 原生模块调用 Windows Shell API 提取文件图标
@@ -62,7 +65,7 @@ Windows 原生桌面图标管理功能有限。这个工具让用户可以：
 | 库 | 用途 |
 |---|------|
 | `electron-store` | 持久化存储用户配置（窗口位置、主题、排序等） |
-| `electron-auto-launch` | 开机自启支持 |
+| `better-sqlite3` | 只读第三方 agent 会话库（opencode / ZCode） |
 | `sharp` | 图像处理（构建时图标处理） |
 | `eslint` | 代码质量检查 |
 | `jest` | 单元测试框架 |
@@ -1288,7 +1291,7 @@ npm init -y
 npm install --save-dev electron@^27.0.0
 
 # 4. 安装其他依赖
-npm install electron-store electron-auto-launch
+npm install electron-store better-sqlite3
 npm install --save-dev electron-builder node-gyp node-addon-api sharp eslint jest
 
 # 5. 创建目录结构

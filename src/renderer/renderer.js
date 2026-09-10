@@ -109,7 +109,7 @@ let startupDelayInput, languageSelect, agentRetentionInput, agentServerPortInput
 let agentDshPortInput, agentDshHomeInput;
 let gpuAccelerationToggle;
 let shortcutToggleInput, shortcutRefreshInput, shortcutWidgetsInput;
-let exportLayoutBtn, importLayoutBtn, quitAppBtn;
+let exportLayoutBtn, importLayoutBtn, quitAppBtn, openLogBtn;
 let groupModeSelect, groupsBar, thumbStyleSelect;
 let widgetsLayer, addWidgetBtn, widgetMenu, showWidgetsToggle, widgetsAvoidToggle, weatherFxToggle, toggleWidgetsBtn;
 let rememberWindowHeightToggle;
@@ -195,6 +195,7 @@ document.addEventListener('DOMContentLoaded', () => {
   exportLayoutBtn = document.getElementById('export-layout-btn');
   importLayoutBtn = document.getElementById('import-layout-btn');
   quitAppBtn = document.getElementById('quit-app-btn');
+  openLogBtn = document.getElementById('open-log-btn');
   groupModeSelect = document.getElementById('group-mode-select');
   groupsBar = document.getElementById('groups-bar');
   thumbStyleSelect = document.getElementById('thumb-style-select');
@@ -306,6 +307,13 @@ document.addEventListener('DOMContentLoaded', () => {
   exportLayoutBtn.addEventListener('click', handleExportLayout);
   importLayoutBtn.addEventListener('click', handleImportLayout);
   quitAppBtn.addEventListener('click', handleQuit);
+  // 打开日志目录：报 issue 时用户需要把日志附上，路径由主进程给出
+  openLogBtn.addEventListener('click', async () => {
+    const res = await window.api.openLogFolder();
+    if (!res || !res.success) {
+      window.alert(t('settings.openLogFailed'));
+    }
+  });
 
   // Everything 搜索
   everythingToggle.addEventListener('change', handleEverythingToggle);
@@ -4641,16 +4649,21 @@ function refreshAllWeatherWidgets() {
 function syncWidgetElement(node, widget) {
   node.style.left = widget.x + '%';
   node.style.top = widget.y + '%';
-  if (Number.isFinite(widget.w) && widget.w > 0) {
+  const pinned = Number.isFinite(widget.w) && widget.w > 0;
+  if (pinned) {
     node.style.width = widget.w + 'px';
-    if (widget.type === 'everything') {
+    if (widget.type === 'everything' || widget.type === 'monitor') {
       // Everything 组件：高度固定（36px+内边距），不参与 h/wa-resized
+      // 性能监控组件：内容高度自适应，同样只钉宽度
       node.style.height = '';
     } else {
       node.style.height = widget.h + 'px';
       node.classList.add('wa-resized');
     }
   }
+  // 性能监控组件：宽度被用户钉住后外框不再随内容变化，内部预留可以放宽
+  // （让内容用满宽度，见 styles.css 的 .wm-pinned）
+  if (widget.type === 'monitor') node.classList.toggle('wm-pinned', pinned);
 }
 
 function createWidgetElement(widget) {
@@ -4744,11 +4757,41 @@ function createWidgetElement(widget) {
       </div>
       <button class="widget-close" title="${t('widget.delete')}">×</button>
       <button class="wm-style-btn" title="${t('widget.monitorStyle')}">◔</button>
+      <div class="widget-resize-handle" title="${t('widget.resize')}"></div>
     `;
     renderMonitorWidget(node, widget);
     node.querySelector('.wm-style-btn').addEventListener('click', (e) => {
       e.stopPropagation();
       switchMonitorStyle(widget);
+    });
+    // 右下角手柄：宽度可调（高度随内容）。默认宽度由内容决定且已做稳定性预留，
+    // 用户钉住一个更窄的宽度后可得到"紧致且不再随读数变化"的外观（.wm-pinned）
+    const mHandle = node.querySelector('.widget-resize-handle');
+    mHandle.addEventListener('mousedown', (e) => {
+      e.stopPropagation();
+      e.preventDefault();
+      widgetResize = {
+        widget,
+        node,
+        startX: e.clientX,
+        startY: e.clientY,
+        startW: node.offsetWidth,
+        startH: 0,
+        type: 'monitor'
+      };
+      window.addEventListener('mousemove', handleWidgetResizeMove);
+      window.addEventListener('mouseup', handleWidgetResizeEnd);
+    });
+    // 双击手柄：清除宽度，回到内容自适应的默认宽度
+    mHandle.addEventListener('dblclick', (e) => {
+      e.stopPropagation();
+      delete widget.w;
+      node.classList.remove('wm-pinned');
+      node.style.width = '';
+      node.style.height = '';
+      renderMonitorWidget(node, widget);
+      saveWidgets();
+      scheduleIconLayout();
     });
   } else if (widget.type === 'agent') {
     node.innerHTML = `
@@ -4916,20 +4959,26 @@ function handleWidgetDragEnd() {
   widgetDrag = null;
 }
 
-// ============ 组件拉伸（右下角手柄，仅 agent 组件） ============
+// ============ 组件拉伸（右下角手柄，agent / everything / monitor 组件） ============
 const AGENT_WIDGET_MIN_W = 220; // 最小宽度：防止过小看不到内容
 const AGENT_WIDGET_MIN_H = 140; // 最小高度
 const AGENT_WIDGET_MAX_W = 1200;
 const AGENT_WIDGET_MAX_H = 1200;
+// 性能监控组件：仅宽度可调。下限 200px 仍能放下四行指标（标签 26 + 进度条 + 数值 38 + 内边距），
+// 更窄时温度文字用省略号收尾
+const MONITOR_WIDGET_MIN_W = 200;
 
 function handleWidgetResizeMove(e) {
   if (!widgetResize) return;
   const { widget, node, startX, startY, startW, startH } = widgetResize;
-  if (widget.type === 'everything') {
+  if (widget.type === 'everything' || widget.type === 'monitor') {
     // Everything 组件：高度固定，仅水平缩放（min 220，max 视口宽-8 留左右 4px 边距，
     // 避开窗口右边缘 resize 热区又不影响拉满的视觉效果）
-    widget.w = Math.max(EVERYTHING_MIN_W, Math.min(window.innerWidth - 8, startW + (e.clientX - startX)));
+    // 性能监控组件：同样只钉宽度，高度随内容
+    const minW = widget.type === 'monitor' ? MONITOR_WIDGET_MIN_W : EVERYTHING_MIN_W;
+    widget.w = Math.max(minW, Math.min(window.innerWidth - 8, startW + (e.clientX - startX)));
     node.style.width = widget.w + 'px';
+    if (widget.type === 'monitor') node.classList.add('wm-pinned');
   } else {
     widget.w = Math.max(AGENT_WIDGET_MIN_W, Math.min(AGENT_WIDGET_MAX_W, startW + (e.clientX - startX)));
     widget.h = Math.max(AGENT_WIDGET_MIN_H, Math.min(AGENT_WIDGET_MAX_H, startH + (e.clientY - startY)));

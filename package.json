@@ -1,7 +1,7 @@
 {
   "name": "desktop-icon-hider",
   "version": "1.8.4",
-  "description": "A desktop icon management tool similar to Fences with simple hide/show functionality",
+  "description": "Edge-triggered desktop panel: peek at your desktop without minimizing windows, switching apps or pressing Win+D",
   "main": "src/main/index.js",
   "scripts": {
     "start": "electron .",
@@ -9,8 +9,7 @@
     "build": "powershell -ExecutionPolicy Bypass -File build-native.ps1 && node scripts/generate-icons.js && electron-builder",
     "build:win": "powershell -ExecutionPolicy Bypass -File build-native.ps1 && node scripts/generate-icons.js && electron-builder --win",
     "rebuild-native": "node-gyp rebuild",
-    "postinstall": "node scripts/apply-patches.js",
-    "lint": "eslint src/**/*.js",
+    "lint": "eslint src scripts __tests__",
     "test": "jest"
   },
   "keywords": [
@@ -19,8 +18,16 @@
     "fences",
     "electron"
   ],
-  "author": "Your Name",
+  "author": "yhkkk1234 <shufengjiesheng@hotmail.com>",
   "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/yhkkk1234/desktop-icon-hider.git"
+  },
+  "homepage": "https://github.com/yhkkk1234/desktop-icon-hider#readme",
+  "bugs": {
+    "url": "https://github.com/yhkkk1234/desktop-icon-hider/issues"
+  },
   "devDependencies": {
     "electron": "^43.3.0",
     "electron-builder": "^26.15.3",

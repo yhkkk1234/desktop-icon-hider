@@ -18,6 +18,7 @@ const {
 const { createTray, updateTrayMenu, destroyTray, autoLauncher } = require('./tray');
 const { startSampler, stopSampler, getSystemStats } = require('./hardware-monitor');
 const { AgentMonitor, createOpencodeAdapter, createOpencodeServerStatusProvider, createDshAdapter, createZcodeAdapter, createAntigravityAdapter, createCodexAdapter, createClaudeAdapter, detectOpencodeRunning, detectDshRunning, isValidSessionId } = require('./agent-monitor');
+const logger = require('./logger');
 
 const store = new Store({
   name: 'desktop-icon-hider',
@@ -1214,6 +1215,23 @@ ipcMain.handle('open-in-explorer', (event, filePath) => {
     return true;
   } catch (e) {
     return false;
+  }
+});
+
+// 打开日志目录：日志位于 userData 下，不在 isAllowedPath 的桌面白名单里，
+// 因此单独开一条通道（路径由主进程自己给出，不接受渲染端传参）。
+// 打开方式与 open-file 一致走 cmd start 参数数组：避免 shell.openPath 在部分
+// Windows 环境永久挂起的问题。
+ipcMain.handle('open-log-folder', () => {
+  const dir = logger.getLogDir();
+  if (!dir) return { success: false, error: '日志未初始化' };
+  try {
+    const child = spawn('cmd.exe', ['/c', 'start', '', dir], { windowsHide: true });
+    child.unref();
+    yieldTopmost();
+    return { success: true, path: dir };
+  } catch (e) {
+    return { success: false, error: e.message };
   }
 });
 
@@ -2612,7 +2630,45 @@ app.on('child-process-gone', (event, details) => {
   }
 });
 
+// ============ 单实例锁 ============
+// 这个应用启动时会**无条件** hideDesktopIcons()，退出时会**无条件** showDesktopIcons()，
+// 且把"图标是否隐藏"记在自己的配置里。所以跑起第二个实例的后果是：
+// 它启动时把桌面图标隐藏一遍，退出时又显示一遍 —— 表现为桌面图标莫名闪现/重现，
+// 而第一个实例仍以为图标是隐藏的（两份 desktopIconsHidden 互相矛盾，靠自愈轮询勉强收敛）。
+// 因此第二个实例必须尽早、且不产生任何副作用地退出。
+const gotSingleInstanceLock = app.requestSingleInstanceLock();
+
+// 用户又启动了一次：把已在运行的窗口显示出来（与托盘菜单的显示逻辑一致）
+app.on('second-instance', () => {
+  if (!mainWindow || mainWindow.isDestroyed()) return;
+  try {
+    if (mainWindow.isMinimized()) mainWindow.restore();
+    mainWindow.show();
+    mainWindow.focus();
+  } catch (e) { /* 窗口正在销毁等情况忽略 */ }
+});
+
 app.whenReady().then(async () => {
+  // 日志：尽早初始化，并把 console.warn/error 抄送进文件。
+  // 打包版没有控制台窗口，没有这份文件时"看一眼日志"对用户不是可执行的动作。
+  try {
+    logger.init(path.join(app.getPath('userData'), 'logs'));
+    logger.attachConsole();
+    logger.info(`应用启动 v${app.getVersion()} userData=${app.getPath('userData')}`);
+  } catch (e) {
+    console.error('日志初始化失败:', e.message);
+  }
+
+  // 非首个实例：立即退出。这里必须用 app.exit 而不是 app.quit ——
+  // quit 会触发 before-quit，那里的 showDesktopIcons() 会把正在运行的实例
+  // 隐藏的桌面图标顶出来。exit 不派发 before-quit/will-quit，正好什么都不做地走人。
+  if (!gotSingleInstanceLock) {
+    logger.info('检测到已有实例在运行，本实例直接退出（不触碰桌面图标状态）');
+    logger.flush();
+    app.exit(0);
+    return;
+  }
+
   // 开机延迟启动：延迟初始化窗口，避免开机时抢占焦点
   const startupDelay = store.get('startupDelay', 0);
   

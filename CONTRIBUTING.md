@@ -37,7 +37,7 @@ Enhancement suggestions are welcome! Please:
 
 1. Fork the repository
 2. Clone your fork: `git clone https://github.com/your-username/desktop-icon-hider.git`
-3. Add upstream remote: `git remote add upstream https://github.com/original-username/desktop-icon-hider.git`
+3. Add upstream remote: `git remote add upstream https://github.com/yhkkk1234/desktop-icon-hider.git`
 
 #### Create a Branch
 
@@ -77,15 +77,17 @@ git commit -m "fix: describe the bug fix"
 
 ### Prerequisites
 
-- Node.js 16.0 or higher
+- Node.js 20 or higher
 - npm or yarn
 - Git
+- Visual Studio Build Tools + Windows SDK (to compile the native icon-extractor
+  addon; `npm run rebuild-native`). Building is Windows-only.
 
 ### Installation
 
 1. Clone the repository:
 ```bash
-git clone https://github.com/your-username/desktop-icon-hider.git
+git clone https://github.com/yhkkk1234/desktop-icon-hider.git
 cd desktop-icon-hider
 ```
 

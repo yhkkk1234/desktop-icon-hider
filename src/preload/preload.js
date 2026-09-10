@@ -7,6 +7,7 @@ contextBridge.exposeInMainWorld('api', {
   refreshFiles: () => ipcRenderer.invoke('refresh-files'),
   openFile: (filePath) => ipcRenderer.invoke('open-file', filePath),
   openInExplorer: (filePath) => ipcRenderer.invoke('open-in-explorer', filePath),
+  openLogFolder: () => ipcRenderer.invoke('open-log-folder'),
   moveWindow: (newX, newY) => ipcRenderer.invoke('move-window', newX, newY),
   getFileIcon: (filePath) => ipcRenderer.invoke('get-file-icon', filePath),
   getFileIcons: (files) => ipcRenderer.invoke('get-file-icons', files),

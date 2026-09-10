@@ -9,6 +9,50 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- README screenshots (`pictures/screenshots/main.png`, `themes.png`), referenced
+  from a hero image right below the intro and from a new "界面与主题" section —
+  the README previously had no images at all. The weather widget's location in
+  the hero shot is blurred out (a real district-level location was visible);
+  both files are lossless PNG re-encoded at `effort: 10`, which took them from
+  2018/1220 KB down to 451/341 KB
+- README also embeds a 25s screen recording of the headline behaviour (an app
+  in front, cursor to the screen edge, the desktop panel slides out, cursor
+  away, it slides back), referenced by the URL of a GitHub issue attachment —
+  so the video never enters git history, where a 5 MB binary would be
+  permanent. Source was 58 MB / 1080p60 (Radeon ReLive); re-encoded at CRF 19
+  keeping the native resolution and frame rate for 5.35 MB (the 10 MB
+  attachment ceiling on free plans), audio dropped, and the opening 1.5s cut
+  because it showed Radeon ReLive's own red "recording" overlay. The weather
+  location is redacted frame-accurately the same way as the screenshot.
+  Note this URL only resolves for people with repository access while the
+  repository is private — GitHub scopes attachment visibility to the repo, so
+  it becomes publicly readable once the repository is public
+- CI (`.github/workflows/ci.yml`): lint + unit tests on `windows-latest` for
+  every push and pull request. The Electron binary download is skipped for
+  CI because the suite mocks `electron`/`electron-store` and injects fake
+  filesystems/DBs, so no native module is needed to run it
+- Main-process logging (`src/main/logger.js`): writes to
+  `<userData>/logs/main.log` with 1MB rotation (keeping `main.log.1`–`.3`),
+  captures `uncaughtException`/`unhandledRejection`, and tees
+  `console.warn`/`console.error` into the file so existing diagnostics (for
+  example the dsh data-source drift warning) are recorded without touching
+  each module. A packaged app has no console window, so before this there was
+  nothing for a bug report to attach. Reachable from Settings → About →
+  "Open Log Folder" (`open-log-folder` IPC; the log lives outside the desktop
+  path allowlist, so it needed its own channel)
+- Performance monitor widget is now resizable (right-bottom handle, like the
+  agent widget; double-click resets to the content-derived width). Once a
+  width is pinned the box is fixed by definition, so the internal width
+  reservations are relaxed (`.wm-pinned`) to let content use the space:
+  measured across three sensor states, the outer width is now constant at
+  every setting — 240.3px unpinned, exactly 222px pinned at the original
+  tighter width, 260px pinned wider (previously it swung 177–239px)
+- `THIRD_PARTY_NOTICES.md`: documents the components redistributed in the
+  installers with their real licenses — LibreHardwareMonitorLib 0.9.4
+  (MPL-2.0, upstream commit recorded) and HidSharp 2.1.0 (**Apache-2.0**,
+  which `build-native.ps1` had mislabelled as MPL-2.0). Both are shipped
+  unmodified straight from NuGet, and the notice is now bundled into the
+  package via `extraResources` to satisfy the distribution terms
 - Agent Sessions widget: four new harness adapters, all read-only and
   auto-detected at their default data locations (no settings needed; a
   harness that isn't installed simply stays hidden):
@@ -94,6 +138,43 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- README (and `package.json`'s `description`) no longer lead with "similar to
+  Fences". That framing buried the feature that actually distinguishes the
+  app: the panel sits on a screen edge and slides out on cursor hover, so the
+  desktop is one mouse-move away without Win+D, Alt+Tab, or minimizing windows
+  one by one. The intro now leads with that, the edge behaviour is the first
+  entry in the feature list (including the stand-down it performs while a
+  fullscreen app is in front), and Fences is mentioned once as a scope note —
+  Fences is about grouping icons into fences, which this project only does as
+  a single virtual partition
+- README's "系统要求" and "快速开始" now separate their two audiences: end
+  users are pointed at the Releases installers and told Node.js is not needed,
+  while the source-build path documents Node 20+, the Visual Studio Build
+  Tools/Windows SDK requirement and the ASCII-path caveat. Previously the
+  README opened straight into `npm install`, so a visitor who only wanted the
+  app was told to build it. Stale "Node.js 16.0" claims (README,
+  CONTRIBUTING.md) and a hardcoded Electron 27 download (INSTALL_GUIDE.md)
+  were corrected too
+- Package metadata filled in for publication: `package.json` carried an
+  `"author": "Your Name"` placeholder and no `repository`/`homepage`/`bugs`,
+  and `electron-builder.yml` pointed `publish` at `your-username` — an
+  `--publish` run would have failed against a non-existent repository. All
+  now reference the actual remote, and the two CONTRIBUTING.md clone URLs
+  that still said `original-username` were corrected (the fork-clone example
+  keeps its `your-username`, which is what a contributor substitutes)
+- Lint now covers `scripts/` and `__tests__/` as well as `src/` (`npm run
+  lint`), so a CI run actually checks the tooling and the tests themselves.
+  That scope widening surfaced exactly one real error (a template literal in
+  the agent-monitor tests that a sibling line already wrote as a single-quoted
+  string), and deleting the dead patch script below removed the only other
+  offenders — the rule configuration itself needed no change
+- README corrected against the code: it still documented Electron 27 and
+  `ffi-napi`, listed two Win32 APIs that are never called, and pointed at a
+  Linux-style config path for a Windows-only app. It now documents the real
+  stack (Electron 43, node-addon-api addon, inline C# P/Invoke, PowerShell +
+  LibreHardwareMonitor, better-sqlite3), the four environment variables the
+  code actually reads, the real config/log locations, and how to rebuild the
+  native modules
 - Agent widget menu label renamed from "OpenCode Sessions" to "Agent
   Sessions"; runtime detection is now per-harness (opencode + dsh) and the
   renderer marks groups offline individually
@@ -121,13 +202,95 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- Launching the app a second time no longer disturbs the desktop icons.
+  Startup unconditionally calls `hideDesktopIcons()` and `before-quit`
+  unconditionally calls `showDesktopIcons()`, while "are the icons hidden" is
+  tracked in the app's own config — so a second instance hid the icons on the
+  way up and revealed them on the way out, making icons flicker back onto a
+  desktop the first instance still believed was hidden (the two instances
+  also held contradictory `desktopIconsHidden` values). The app now takes
+  `app.requestSingleInstanceLock()`; a second launch reveals the existing
+  window instead (Settings/global shortcut behaviour unchanged), and the
+  non-primary instance exits with `app.exit(0)` rather than `app.quit()` so
+  it never runs the `before-quit` cleanup that shows the icons. Verified with
+  two processes: the primary receives `second-instance`, the second exits 0
+  by itself, and the packaged build's own log records the refusal
+  (`%APPDATA%\desktop-icon-hider\logs\main.log`). The lock is keyed to the
+  userData directory, and a dev checkout shares that directory with an
+  installed build — Electron derives it from `package.json`'s `name`, not from
+  the `productName` that only names the executable — so the two do exclude
+  each other as well
 - Monitor widget VRAM value (e.g. "534 MB") no longer wraps the number and
   unit onto two lines: the number and unit are joined with a non-breaking
   space, the value elements use `white-space: nowrap`, and the chart/bar
   value columns use `min-width` instead of a fixed width
+- Monitor widget no longer changes size as its sensor readings change: the
+  widget has no fixed width (`.widget-item` sets none, and unlike the agent
+  widget the monitor widget has no resize handle writing `widget.w`), so its
+  box was sized by content while being anchored at its top-left corner -
+  content growing made the whole widget extend right and down, which read as
+  the widget shifting position. The bottom sensor row is the widest row in
+  all three styles, and both of its volatile fields are now given a measured
+  width floor: the fan RPM slot reserves 56px, so a fan appearing
+  (`-- RPM` → `1234 RPM`, only reported while `value > 0`, i.e. the GPU's
+  zero-RPM idle state hides it) no longer widens the widget, and the
+  temperature slot reserves 113px with `white-space: nowrap` so losing a
+  sensor or its digits no longer shrinks it (nor wraps it onto a second
+  line). Measured across six sensor states, the outer width used to swing
+  177-239px and is now constant, at the width the widget previously jumped
+  to whenever the fan spun up (about 18px wider than the old fan-idle look)
 - Weather widget no longer flashes the "loading" placeholder on refresh:
   the loading state now shows only on first load, keeping the previous
   weather content visible until new data arrives
+- Agent Sessions widget: the DeepSeek Harness (dsh) group went silently
+  stale after the harness upgrade, because the upgrade changed three
+  on-disk assumptions at once. The adapter now reads both generations of
+  each:
+  - **projection cache**: the harness switched its `session_projcache`
+    storage domain to a `per-record` layout, so checkpoints moved from the
+    single `<home>/storages/session_projcache.json` file to one document
+    per session under `<home>/storages/session_projcache/sessions/<id>.json`
+    (domain version 3 → 7). The adapter's list stayed frozen at the day of
+    the upgrade (41 stale rows, `lastError` empty, newest entry 15 days
+    old) because the superseded file is left in place and still parses.
+    The per-record directory is now authoritative, with the single file
+    kept only as a fallback for pre-upgrade harnesses; unchanged records
+    are served from an mtime cache so the 2.5s poll does not re-parse them
+  - **transcript filename**: session logs are now named per Session format
+    generation (`session.jsonl` → `session.v3.jsonl.zstd`), so the
+    hardcoded `session.jsonl.zstd` path missed the file and every activity
+    time fell back to `createdAt`. Transcripts are now matched by pattern
+    and, when several generations coexist after a migration, the more
+    recently written one wins
+  - **`goal` row shape**: the goal projection unit reshaped its value
+    (`{goal:{phase}}` → `{current:{goal:{phase}}}`), which nulled every
+    goal phase and dropped the goal-driven status rules. Both shapes are
+    now read
+  - Drift is now reported instead of being served as stale data: a
+    projection-cache domain version above the adapted one, or session
+    transcripts the cache does not cover that are newer than every cached
+    row, both set `lastError` and log one warning (deduplicated across
+    polls). The old failure mode was a widget that looked alive and simply
+    showed two-week-old sessions
+
+### Removed
+
+- `.env.example`: it documented twelve variables (`ENABLE_UPDATES`,
+  `DEV_PORT`, `HOT_RELOAD`, `API_TIMEOUT`, `LOG_LEVEL`, …) that appear
+  nowhere in the code, and nothing in the app reads a `.env` file (there is
+  no dotenv dependency), so the file advertised a configuration mechanism
+  that does not exist. The four environment variables the code does read are
+  now documented in the README instead
+- `scripts/apply-patches.js`, `patches/electron-auto-launch+5.0.7.patch` and
+  the `postinstall` hook that ran it. `electron-auto-launch` has not been a
+  dependency since the app switched to its own registry-based autostart
+  (`src/main/tray.js` explains why), so every install printed "not installed,
+  skipping"; the package is absent from `package.json`, `package-lock.json`
+  and `node_modules`. Stale references to it were also dropped from
+  `INSTALL_GUIDE.md` and `LEARNING_GUIDE.md`
+- A leftover `nul` file in the repository root — a Windows reserved device
+  name that git cannot see at all (it never appeared in `git status`), so it
+  could neither be committed nor cleaned up by a normal `del`
 
 ## [1.9.0] - 2026-08-10
 

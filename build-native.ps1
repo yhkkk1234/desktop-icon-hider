@@ -1,4 +1,4 @@
-﻿# build-native.ps1 - 重新编译原生模块（icon_extractor.node）
+# build-native.ps1 - 重新编译原生模块（icon_extractor.node）
 # 处理两个环境兼容问题：
 #   1. 本机仅安装 Windows SDK 10.0.16299，node-gyp 默认生成 10.0.26100.0 项目
 #   2. node-addon-api 的 nothing.gyp 未指定 SDK 版本
@@ -42,8 +42,9 @@ try {
   Pop-Location
 }
 
-# 4. 准备性能监控所需的三方库（LibreHardwareMonitorLib + HidSharp，MPL-2.0）
+# 4. 准备性能监控所需的三方库（LibreHardwareMonitorLib = MPL-2.0，HidSharp = Apache-2.0）
 #    用于读取真实风扇转速/温度，随应用打包到 native/hardware/（electron-builder extraResources）。
+#    许可声明见 THIRD_PARTY_NOTICES.md——升级下面 Get-NugetLib 的版本号时必须同步更新该文件。
 Write-Host "==> Preparing hardware monitor libraries (LibreHardwareMonitorLib)..."
 $hwDir = Join-Path $PSScriptRoot 'native\hardware'
 New-Item -ItemType Directory -Force -Path $hwDir | Out-Null

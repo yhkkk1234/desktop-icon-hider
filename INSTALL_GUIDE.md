@@ -93,9 +93,10 @@ npm install
 
 1. **下载 Electron**
    - 访问：https://npmmirror.com/mirrors/electron/
-   - 下载版本：27.0.0
+   - 下载版本：与 `package.json` 的 `devDependencies.electron` 一致（当前为 43.3.0，
+     文件名形如 `electron-v43.3.0-win32-x64.zip`）
    - 平台：win32
-   - 架构：x64 或 ia32
+   - 架构：x64
 
 2. **放置文件**
    - 创建目录：`node_modules/electron/dist`
@@ -131,7 +132,7 @@ npm list --depth=0
 应该看到以下包：
 - electron
 - electron-store
-- electron-auto-launch
+- better-sqlite3
 
 ---
 

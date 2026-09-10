@@ -1,0 +1,43 @@
+# CI：每次 push / PR 都跑 lint 与单元测试
+#
+# 为什么锁 windows-latest：本应用是 Windows 专属（desktop-api 走 Win32/COM、
+# 采样脚本走 LibreHardwareMonitor + PowerShell、打包目标是 NSIS/portable），
+# 在 Linux/macOS runner 上跑不出有效信号。
+#
+# 单元测试不需要原生模块：agent-monitor 懒加载 better-sqlite3 并在缺失时降级为空列表，
+# 测试全部注入假 fs / 假 Database（见 jest.setup.js 对 electron 与 electron-store 的 mock）。
+# 因此这里跳过 Electron 二进制下载以缩短 CI 时间——它只在真正运行应用时才需要。
+name: CI
+
+on:
+  push:
+    branches: ['**']
+  pull_request:
+  workflow_dispatch:
+
+jobs:
+  lint-and-test:
+    runs-on: windows-latest
+    timeout-minutes: 15
+
+    env:
+      # 不下载 Electron 运行时（约 100MB）：lint 与 jest 都用不到
+      ELECTRON_SKIP_BINARY_DOWNLOAD: '1'
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Lint
+        run: npm run lint
+
+      - name: Test
+        run: npm test -- --ci
