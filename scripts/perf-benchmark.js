@@ -63,7 +63,7 @@ console.log(`\n== 测试文件集: 桌面 ${desktopFiles.length} 项 + 系统 ${
 if (iconExtractor && sysFiles.length) {
   // 预热（首次调用含 GDI+ 初始化）
   iconExtractor.extractIcon(sysFiles[0]);
-  const r = bench('extractIcon 单文件（冷）', () => iconExtractor.extractIcon(sysFiles[0]), 10);
+  bench('extractIcon 单文件（冷）', () => iconExtractor.extractIcon(sysFiles[0]), 10);
   const iconLen = (iconExtractor.extractIcon(sysFiles[0]) || '').length;
   record('单图标 base64 数据大小', iconLen / 10, `${Math.round(iconLen / 1024)} KB (注: 值为数据大小字节/10 仅用于展示)`);
 }

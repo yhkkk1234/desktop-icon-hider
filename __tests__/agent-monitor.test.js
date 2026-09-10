@@ -232,7 +232,7 @@ describe('detectOpencodeRunning', () => {
 
   it('hasProcessAsync 结果缓存 10s', async () => {
     let spawns = 0;
-    const spawnFn = (...args) => {
+    const spawnFn = () => {
       spawns++;
       return {
         stdout: { on: (ev, cb) => { if (ev === 'data') setTimeout(() => cb(Buffer.from('opencode.exe  123', 'utf8')), 0); } },
@@ -359,7 +359,7 @@ describe('createOpencodeServerStatusProvider', () => {
   }
 
   function makeFetch({ health = true, events = [] } = {}) {
-    return async (url, init) => {
+    return async (url) => {
       if (url.endsWith('/global/health')) {
         return { ok: true, json: async () => ({ healthy: health, version: '1.18.15' }) };
       }

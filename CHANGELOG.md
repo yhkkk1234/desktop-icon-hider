@@ -167,7 +167,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   That scope widening surfaced exactly one real error (a template literal in
   the agent-monitor tests that a sibling line already wrote as a single-quoted
   string), and deleting the dead patch script below removed the only other
-  offenders — the rule configuration itself needed no change
+  offenders — the rule configuration itself needed no change. The four
+  remaining `no-unused-vars` warnings were then cleared too (a benchmark
+  result assigned but never read, two unused callback parameters, and a bare
+  measurement call kept only for its side effect), so `npm run lint` and the
+  CI run are now annotation-free
 - README corrected against the code: it still documented Electron 27 and
   `ffi-napi`, listed two Win32 APIs that are never called, and pointed at a
   Linux-style config path for a Windows-only app. It now documents the real

@@ -113,9 +113,9 @@ async function main() {
     out.getFileIcons30Ms = await evaluate('performance.now()') - t0;
   }
 
-  // 6. agent 会话查询 IPC（轮询路径）
+  // 6. agent 会话查询 IPC（轮询路径）—— 只测耗时，返回的条数不参与统计
   t0 = await evaluate('performance.now()');
-  const agent = await evaluate('window.api.getAgentSessions().then(s => ({n: s.length}))').catch(() => null);
+  await evaluate('window.api.getAgentSessions().then(s => ({n: s.length}))').catch(() => null);
   out.getAgentSessionsMs = await evaluate('performance.now()') - t0;
 
   // 7. 全量渲染快照时间（模拟主渲染流水线）
